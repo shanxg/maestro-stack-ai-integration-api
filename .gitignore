@@ -11,3 +11,6 @@ npm-debug.log*
 .eslintcache
 .DS_Store
 .vscode/
+
+# Relatórios de Cobertura de Código (Jest/SWC)
+coverage/
