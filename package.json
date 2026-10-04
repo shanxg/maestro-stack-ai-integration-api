@@ -102,7 +102,7 @@
     "infra:build": "docker build -t my-api",
     "dev": "npm run infra:up && tsx --watch src/app.ts",
     "build": "tsc",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --experimental-vm-modules --loader tsx/esm jest --config jest.config.ts"
   },
   "keywords": [],
   "author": "",
@@ -112,7 +112,12 @@
     "@types/amqplib": "^0.10.8",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.19",
+    "@types/jest": "^30.0.0",
     "@types/jsonwebtoken": "^9.0.10",
+    "@types/supertest": "^7.2.1",
+    "jest": "^30.5.2",
+    "supertest": "^7.3.1",
+    "ts-jest": "^29.4.14",
     "tsx": "^4.23.15"
   }
 }
