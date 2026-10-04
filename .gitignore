@@ -1,0 +1,13 @@
+# Dependências instaladas (Pastas pesadas)
+node_modules/
+dist/
+
+# Arquivos de configuração local e chaves secretas (FinOps & Segurança)
+.env
+.env.local
+
+# Arquivos de logs do sistema e cache do editor
+npm-debug.log*
+.eslintcache
+.DS_Store
+.vscode/

@@ -1,0 +1,48 @@
+// ################################################################################################## 
+// Esse arquivo foi mantido apenas para fins de comparação com a versão atualizada do app.ts. 
+// Ele não é mais usado no projeto, mas serve como referência histórica para mostrar a evolução da arquitetura do sistema.
+// ##################################################################################################
+
+// // 1. IMPORTAÇÕES: Traz o framework Express e todas as classes que criamos para o nosso projeto.
+// import express from 'express';
+// import { UserRepository } from './repositories/UserRepository.js';
+// import { UserService } from './services/UserService.js';
+// import { UserController } from './controllers/UserController.js';
+
+// // 2. CONFIGURAÇÃO INICIAL: Inicializa o Express e ativa o middleware que lê dados em formato JSON.
+// const app = express();
+// app.use(express.json());
+
+// // === APLICAÇÃO DO PADRÃO DE PROJETO: FACTORY  ===
+// // Esta função é uma "Fábrica de Controladores". Em vez de espalhar a criação de objetos pelo código,
+// // centralizamos tudo aqui dentro. Ela sabe a receita exata para construir um UserController pronto.
+// function makeUserController(): UserController {
+  
+//   // Passo A: Fabrica o banco de dados em memória.
+//   const userRepository = new UserRepository();
+  
+//   // Passo B: Fabrica o serviço, injetando o banco de dados que acabou de ser feito.
+//   const userService = new UserService(userRepository);
+  
+//   // Passo C: Fabrica o controlador final, injetando o serviço pronto, e entrega (return) para quem chamou.
+//   return new UserController(userService);
+// }
+
+// // Usamos a nossa fábrica para gerar o controlador que controlará as rotas da API.
+// const userController = makeUserController();
+
+
+// // === MAPEAMENTO DE ROTAS ===
+// // Conecta os caminhos das URLs aos métodos específicos da nossa instância de controlador.
+// app.get('/users', userController.getUsers);       // Rota para listar todos os usuários
+// app.get('/users/:id', userController.getUserById); // Rota para buscar um usuário pelo ID
+// app.post('/users', userController.createUser);     // Rota para cadastrar um novo usuário
+
+
+// // === INICIALIZAÇÃO DO SERVIDOR ===
+// // Configura a porta 3000 e liga os motores da API para receber requisições da internet.
+// const PORT = 3000;
+// app.listen(PORT, () => {
+//   console.log(`🚀 API rodando com sucesso no endereço http://localhost:${PORT}`);
+// });
+

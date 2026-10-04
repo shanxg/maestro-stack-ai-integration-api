@@ -1,0 +1,52 @@
+openapi: 3.0.3
+info:
+  title: Projeto Maestro - API Escalável e Segura
+  description: Documentação dos endpoints de gerenciamento de usuários com suporte a filas assíncronas e paginação.
+  version: 1.0.0
+paths:
+  /users:
+    get:
+      summary: Lista usuários de forma paginada
+      description: Recupera fatias do array de usuários com suporte a Cache-Aside dinâmico no Redis.
+      parameters:
+        - name: limit
+          in: query
+          description: Quantidade máxima de registros retornados na página.
+          required: false
+          schema:
+            type: integer
+            default: 10
+        - name: offset
+          in: query
+          description: Quantidade de registros ignorados no início da busca.
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Operação executada com sucesso absoluto.
+        '500':
+          description: Falha de performance interna no servidor de dados.
+    post:
+      summary: Envia uma solicitação de cadastro para a fila
+      description: Recebe os dados brutos e enfileira no RabbitMQ de forma assíncrona.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+      responses:
+        '202':
+          description: Solicitação aceita com sucesso para processamento em lote na fila.
+        '400':
+          description: Requisição inválida por falta de campos mandatórios.

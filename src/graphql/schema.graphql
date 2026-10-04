@@ -1,0 +1,22 @@
+# 1. DEFINIÇÃO DO TIPO (MODELO): Molda a estrutura exata do objeto User no GraphQL.
+# O caractere '!' indica que o campo é obrigatório e nunca virá nulo (Non-Null).
+type User {
+  id: ID!
+  name: String!
+  email: String!
+}
+
+# 2. OPERAÇÕES DE LEITURA (QUERIES): Define os pontos de entrada para buscar dados.
+type Query {
+  # Retorna um array contendo usuários. O array e os itens internos não podem ser nulos.
+  users: [User!]!
+
+  # Busca um usuário específico exigindo o ID mandatório. Pode retornar um User ou nulo.
+  user(id: ID!): User
+}
+
+# 3. OPERAÇÕES DE ESCRITA (MUTATIONS): Define os pontos de entrada para modificar dados.
+type Mutation {
+  # Cria um usuário recebendo nome e e-mail obrigatórios e devolve o User montado de volta.
+  createUser(name: String!, email: String!): User!
+}
