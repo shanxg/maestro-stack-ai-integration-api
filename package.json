@@ -102,13 +102,15 @@
     "infra:build": "docker build -t my-api",
     "dev": "npm run infra:up && tsx --watch src/app.ts",
     "build": "tsc",
-    "test": "node --experimental-vm-modules --loader tsx/esm jest --config jest.config.ts"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --no-cache"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "devDependencies": {
+    "@swc/core": "^1.16.13",
+    "@swc/jest": "^0.2.39",
     "@types/amqplib": "^0.10.8",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.19",

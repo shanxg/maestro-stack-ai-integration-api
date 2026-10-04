@@ -12,11 +12,17 @@ const config: Config = {
 
   // C. MAPEAMENTO DE COMPILAÇÃO (TRANSFORM): Associa arquivos .ts ao motor do ts-jest
   // Configura o suporte a ECMAScript Modules para aceitar as importações estritas do TypeScript v7
-  transform: {
-    '^.+\\.tsx?$': [
-      'ts-jest',
+   transform: {
+    '^.+\\.(t|j)sx?$': [
+      '@swc/jest',
       {
-        useESM: true,
+        jsc: {
+          parser: {
+            syntax: 'typescript',
+            tsx: false,
+          },
+          target: 'esnext',
+        },
       },
     ],
   },
