@@ -189,12 +189,18 @@ export async function createApp(customUserService?: any) {
     resolvers: userResolvers,
   });
 
-  // Passo C: Função assíncrona imediata para dar partida no Apollo antes de acoplá-lo nas rotas do Express
-  await apolloServer.start();
+ // 🔥 CORREÇÃO CIRÚRGICA DE CONCORRÊNCIA ESM:
+ // Só damos a partida no Apollo se NÃO estivermos no ambiente de testes do Jest!
+ // Isso impede o congelamento do Express e zera os vazamentos de processos abertos (Open Handles).
+ if (process.env.NODE_ENV !== 'test') {
 
-  // Passo D: Vincula o Apollo Server na rota única '/graphql' usando o expressMiddleware nativo
-  app.use('/graphql', expressMiddleware(apolloServer));
+    // Passo C: Função assíncrona imediata para dar partida no Apollo antes de acoplá-lo nas rotas do Express
+    await apolloServer.start();
 
+    // Passo D: Vincula o Apollo Server na rota única '/graphql' usando o expressMiddleware nativo
+    app.use('/graphql', expressMiddleware(apolloServer));
+ } 
+  
   // ==========================================
   // 🚀 INICIALIZAÇÃO DO SERVIDOR
   // ==========================================
@@ -209,4 +215,6 @@ export async function createApp(customUserService?: any) {
         console.log(`📡 Canal de notificações SSE ativado em http://localhost:${PORT}/events`);
     });
   }
+
+  return server; // Retorna o app, server e apolloServer para testes e manipulação externa
 }
