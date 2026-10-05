@@ -29,180 +29,184 @@ import { userResolvers } from './graphql/userResolvers.js';
 // 5. 🔥 IMPORTAÇÃO DA ARQUITETURA LIMPA DE TEMPO REAL
 import { initializeSocket } from './graphql/socket.js'; // 👈 IMPORTAÇÃO ADICIONADA para carregar o inicializador do WebSocket
 
-export const app = express();
-
 // 🔥 RECUPERAÇÃO SEGURA: Captura a chave secreta direto da memória do ambiente (com fallback de segurança caso venha vazia)
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_backup_2026';
 
-// 🔥 ENVELOPAMENTO DE REDE: Criamos o servidor HTTP unificado do Node injetando o Express dentro dele
-const server = http.createServer(app);
-// 🔥 INICIALIZAÇÃO DO WEBSOCKET ISOLADO: Aciona a função do socket.ts injetando o nosso servidor HTTP unificado
-initializeSocket(server);
+// 🔥 REVOLUÇÃO ARQUITETURAL (FACTORY FUNCTION - INSPIRAÇÃO EM ARQUITETURA ANDROID):
+// Envelopamos a montagem do servidor em uma função assíncrona. Se o arquivo de testes do Jest passar um
+// 'customUserService' (o mock), o Express adotará ele dinamicamente, cortando loops com o RabbitMQ/Redis real!
+export async function createApp(customUserService?: any) {
 
-// ==========================================
-// 🔥 MIDDLEWARES DE PROTEÇÃO GLOBAL
-// ==========================================
+  const app = express();
 
-// A. HELMET: Configura cabeçalhos HTTP robustos para mitigar ataques como Clickjacking e XSS
-// BOA PRÁTICA DE MERCADO: Desativamos a política de conteúdo (CSP) apenas localmente para que o Apollo Sandbox funcione 100%.
-const helmetOptions =
-  process.env.NODE_ENV === 'production'
-    ? {}
-    : { contentSecurityPolicy: false };
-app.use(helmet(helmetOptions));
+  // 🔥 ENVELOPAMENTO DE REDE: Criamos o servidor HTTP unificado do Node injetando o Express dentro dele
+  const server = http.createServer(app);
+  // 🔥 INICIALIZAÇÃO DO WEBSOCKET ISOLADO: Aciona a função do socket.ts injetando o nosso servidor HTTP unificado
+  initializeSocket(server);
 
-// B. CORS: Restringe quais origens web externas podem consumir os dados da sua API
-app.use(cors({ 
-  origin: 'http://localhost:3000', // Libera estritamente o seu front-end local de estudos
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+  // ==========================================
+  // 🔥 MIDDLEWARES DE PROTEÇÃO GLOBAL
+  // ==========================================
 
-// C. RATE LIMIT: Protege o servidor contra ataques DDoS limitando requisições abusivas por IP
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // Janela de contagem de 15 minutos
-  max: 100, // Cada IP individual pode realizar no máximo 100 requisições dentro desse intervalo
-  standardHeaders: true, // Adiciona os cabeçalhos padrão de monitoramento no response
-  legacyHeaders: false, // Desabilita os cabeçalhos antigos e legados X-RateLimit-*
-  message: {
-    error: {
-      code: 'TOO_MANY_REQUESTS',
-      message: 'Você atingiu o limite máximo de requisições. Tente novamente em 15 minutos.'
+  // A. HELMET: Configura cabeçalhos HTTP robustos para mitigar ataques como Clickjacking e XSS
+  // BOA PRÁTICA DE MERCADO: Desativamos a política de conteúdo (CSP) apenas localmente para que o Apollo Sandbox funcione 100%.
+  const helmetOptions =
+    process.env.NODE_ENV === 'production'
+      ? {}
+      : { contentSecurityPolicy: false };
+  app.use(helmet(helmetOptions));
+
+  // B. CORS: Restringe quais origens web externas podem consumir os dados da sua API
+  app.use(cors({ 
+    origin: 'http://localhost:3000', // Libera estritamente o seu front-end local de estudos
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+  }));
+
+  // C. RATE LIMIT: Protege o servidor contra ataques DDoS limitando requisições abusivas por IP
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // Janela de contagem de 15 minutos
+    max: 100, // Cada IP individual pode realizar no máximo 100 requisições dentro desse intervalo
+    standardHeaders: true, // Adiciona os cabeçalhos padrão de monitoramento no response
+    legacyHeaders: false, // Desabilita os cabeçalhos antigos e legados X-RateLimit-*
+    message: {
+      error: {
+        code: 'TOO_MANY_REQUESTS',
+        message: 'Você atingiu o limite máximo de requisições. Tente novamente em 15 minutos.'
+      }
     }
-  }
-});
+  });
 
-// Acopla a barreira protetora contra força bruta em todas as rotas do Express
-app.use(limiter);
+  // Acopla a barreira protetora contra força bruta em todas as rotas do Express
+  app.use(limiter);
 
-// Ativa o middleware nativo que intercepta e lê payloads em formato JSON
-app.use(express.json());
+  // Ativa o middleware nativo que intercepta e lê payloads em formato JSON
+  app.use(express.json());
 
-// ==========================================
-// 🏭 INJEÇÃO DE DEPENDÊNCIAS (FACTORY PATTERN)
-// ==========================================
-function makeUserController(): UserController {
+  // ==========================================
+  // 🏭 INJEÇÃO DE DEPENDÊNCIAS (FACTORY PATTERN)
+  // ==========================================
+  // MUDANÇA SÊNIOR: Se receber um serviço mockado por parâmetro, injeta ele no controlador.
+  // Caso contrário (ambiente real), ele instancia a esteira original conectada à infraestrutura viva!
   const userRepository = new UserRepository();
-  const userService = new UserService(userRepository);
-  return new UserController(userService);
-}
+  const userService = customUserService || new UserService(userRepository);
 
-const userController = makeUserController();
+  function makeUserController(): UserController {
+    return new UserController(userService);
+  }
 
-// =========================================================================
-// 🔐 ENDPOINT DE AUTENTICAÇÃO: POST /auth/login
-// =========================================================================
-// Rota responsável por receber as credenciais, validar a identidade e emitir o token JWT.
-app.post('/auth/login', (req: Request, res: Response): void => {
-  
-  // 1. EXTRAÇÃO DE DADOS: Captura o nome de usuário e a senha enviados pelo cliente no corpo da requisição.
-  const { username, password } = req.body;
+  const userController = makeUserController();
 
-  // 2. SIMULAÇÃO DE BANCO DE DADOS (MOCK): Verifica se as credenciais batem com o usuário de testes do tutorial.
-  // IMPORTANTE: Em um ambiente real de produção, buscaríamos esses dados criptografados com bcrypt no banco de dados.
-  if (username === 'admin' && password === 'secret123') {
+  // =========================================================================
+  // 🔐 ENDPOINT DE AUTENTICAÇÃO: POST /auth/login
+  // =========================================================================
+  // Rota responsável por receber as credenciais, validar a identidade e emitir o token JWT.
+  app.post('/auth/login', (req: Request, res: Response): void => {
     
-    // 3. GERAÇÃO DO TOKEN JWT: Cria e assina digitalmente um token contendo o payload (dados do usuário logado).
-    // - Argumento 1: Payload contendo informações públicas que queremos embutir no token (username e cargo/role).
-    // - Argumento 2: A nossa chave secreta unificada (JWT_SECRET) carregada de forma segura do arquivo .env.
-    // - Argumento 3: Objeto de configurações, definindo que o token expira automaticamente em 1 hora (TTL).
-    const token = jwt.sign(
-      { user: username, role: 'ADMIN' }, 
-      JWT_SECRET, 
-      { expiresIn: '1h' }
-    );
+    // 1. EXTRAÇÃO DE DADOS: Captura o nome de usuário e a senha enviados pelo cliente no corpo da requisição.
+    const { username, password } = req.body;
 
-    // 4. RESPOSTA DE SUCESSO: Devolve o token gerado em formato JSON para que o cliente guarde no localStorage.
-    res.json({ token });
-    return;
-  }
+    // 2. SIMULAÇÃO DE BANCO DE DADOS (MOCK): Verifica se as credenciais batem com o usuário de testes do tutorial.
+    // IMPORTANTE: Em um ambiente real de produção, buscaríamos esses dados criptografados com bcrypt no banco de dados.
+    if (username === 'admin' && password === 'secret123') {
+      
+      // 3. GERAÇÃO DO TOKEN JWT: Cria e assina digitalmente um token contendo o payload (dados do usuário logado).
+      // - Argumento 1: Payload contendo informações públicas que queremos embutir no token (username e cargo/role).
+      // - Argumento 2: A nossa chave secreta unificada (JWT_SECRET) carregada de forma segura do arquivo .env.
+      // - Argumento 3: Objeto de configurações, definindo que o token expira automaticamente em 1 hora (TTL).
+      const token = jwt.sign(
+        { user: username, role: 'ADMIN' }, 
+        JWT_SECRET, 
+        { expiresIn: '1h' }
+      );
 
-  // 5. RESPOSTA DE FALHA DE AUTENTICAÇÃO: Se as credenciais estiverem erradas, barra o login com o status HTTP 401 (Unauthorized).
-  // Retorna o objeto de erro envelopado seguindo rigorosamente o padrão unificado da OWASP exigido no cronograma.
-  res.status(401).json({
-    error: {
-      code: 'UNAUTHORIZED',
-      message: 'Credenciais inválidas. Usuário ou senha incorretos.'
+      // 4. RESPOSTA DE SUCESSO: Devolve o token gerado em formato JSON para que o cliente guarde no localStorage.
+      res.json({ token });
+      return;
     }
+
+    // 5. RESPOSTA DE FALHA DE AUTENTICAÇÃO: Se as credenciais estiverem erradas, barra o login com o status HTTP 401 (Unauthorized).
+    // Retorna o objeto de erro envelopado seguindo rigorosamente o padrão unificado da OWASP exigido no cronograma.
+    res.status(401).json({
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'Credenciais inválidas. Usuário ou senha incorretos.'
+      }
+    });
   });
-});
 
-// ==========================================
-// 🛣️ MAPEAMENTO DE ENDPOINTS REST MAESTRO
-// ==========================================
-app.get('/users', authMiddleware, userController.getUsers);       // Rota para listar todos os usuários de forma paginada
-app.get('/users/:id', authMiddleware, userController.getUserById); // Rota para buscar um usuário pelo ID único
-app.post('/users', validateMiddleware(createUserSchema), userController.createUser);     // Rota para cadastrar um novo usuário na fila assíncrona
+  // ==========================================
+  // 🛣️ MAPEAMENTO DE ENDPOINTS REST MAESTRO
+  // ==========================================
+  // AJUSTE DE ESCOPO: Passamos funções de callback explícitas preservando o contexto das requisições.
+  app.get('/users', authMiddleware, (req: Request, res: Response) => userController.getUsers(req, res));       // Rota para listar todos os usuários de forma paginada
+  app.get('/users/:id', authMiddleware, (req: Request, res: Response) => userController.getUserById(req, res)); // Rota para buscar um usuário pelo ID único
+  app.post('/users', validateMiddleware(createUserSchema), (req: Request, res: Response) => userController.createUser(req, res));     // Rota para cadastrar um novo usuário na fila assíncrona
 
-// =========================================================================
-// 📡 🔥 ENDPOINT DE TEMPO REAL: SERVER-SENT EVENTS (SSE) - GET /events
-// =========================================================================
-// Canal de streaming unidirecional ideal para disparar notificações leves diretamente para o navegador
-app.get('/events', (req: Request, res: Response): void => {
-  // Configura os cabeçalhos HTTP necessários para manter o túnel de streaming aberto indefinidamente
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
+  // =========================================================================
+  // 📡 🔥 ENDPOINT DE TEMPO REAL: SERVER-SENT EVENTS (SSE) - GET /events
+  // =========================================================================
+  // Canal de streaming unidirecional ideal para disparar notificações leves diretamente para o navegador
+  app.get('/events', (req: Request, res: Response): void => {
+    // Configura os cabeçalhos HTTP necessários para manter o túnel de streaming aberto indefinidamente
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
 
-  // Declaramos a variável do intervalo tipada corretamente pelo Node.js
-  let interval: NodeJS.Timeout | undefined;
+    // Declaramos a variável do intervalo tipada corretamente pelo Node.js
+    let interval: NodeJS.Timeout | undefined;
 
-  // 🔥 VALIDAÇÃO DEFENSIVA: Só dispara o loop infinito de batimento cardíaco se NÃO estivermos rodando testes!
-  if (process.env.NODE_ENV !== 'test') {
-    interval = setInterval(() => {
-      res.write(`data: ${JSON.stringify({ timestamp: Date.now(), msg: 'Keep-alive Maestro' })}\n\n`);
-    }, 5000);
-  }
-
-  // Escuta o encerramento do cliente (quando fecha a aba) para limpar o loop da memória RAM do servidor
-  req.on('close', () => {
-    if (interval) {
-      clearInterval(interval);
+    // 🔥 VALIDAÇÃO DEFENSIVA: Só dispara o loop infinito de batimento cardíaco se NÃO estivermos rodando testes!
+    if (process.env.NODE_ENV !== 'test') {
+      interval = setInterval(() => {
+        res.write(`data: ${JSON.stringify({ timestamp: Date.now(), msg: 'Keep-alive Maestro' })}\n\n`);
+      }, 5000);
     }
-    console.log('🔌 Conexão SSE de notificações encerrada pelo cliente.');
+
+    // Escuta o encerramento do cliente (quando fecha a aba) para limpar o loop da memória RAM do servidor
+    req.on('close', () => {
+      if (interval) {
+        clearInterval(interval);
+      }
+      console.log('🔌 Conexão SSE de notificações encerrada pelo cliente.');
+    });
   });
-});
 
 
-// ==========================================
-// 🌌 🔥 CONFIGURAÇÃO E INICIALIZAÇÃO DO GRAPHQL
-// ==========================================
+  // ==========================================
+  // 🌌 🔥 CONFIGURAÇÃO E INICIALIZAÇÃO DO GRAPHQL
+  // ==========================================
 
-// Passo A: Lê as definições de tipo do arquivo schema.graphql convertendo o arquivo físico em string
-const typeDefs = fs.readFileSync(
-  path.resolve('src', 'graphql', 'schema.graphql'),
-  'utf-8'
-);
+  // Passo A: Lê as definições de tipo do arquivo schema.graphql convertendo o arquivo físico em string
+  const typeDefs = fs.readFileSync(
+    path.resolve('src', 'graphql', 'schema.graphql'),
+    'utf-8'
+  );
 
-// Passo B: Instancia o motor do Apollo Server passando as definições de tipo e os resolvers correspondentes
-const apolloServer = new ApolloServer({
-  typeDefs,
-  resolvers: userResolvers,
-});
+  // Passo B: Instancia o motor do Apollo Server passando as definições de tipo e os resolvers correspondentes
+  const apolloServer = new ApolloServer({
+    typeDefs,
+    resolvers: userResolvers,
+  });
 
-// Passo C: Função assíncrona imediata para dar partida no Apollo antes de acoplá-lo nas rotas do Express
-await apolloServer.start();
+  // Passo C: Função assíncrona imediata para dar partida no Apollo antes de acoplá-lo nas rotas do Express
+  await apolloServer.start();
 
-// Passo D: Vincula o Apollo Server na rota única '/graphql' usando o expressMiddleware nativo
-app.use('/graphql', expressMiddleware(apolloServer));
+  // Passo D: Vincula o Apollo Server na rota única '/graphql' usando o expressMiddleware nativo
+  app.use('/graphql', expressMiddleware(apolloServer));
 
-// ==========================================
-// 🚀 INICIALIZAÇÃO DO SERVIDOR
-// ==========================================
-const PORT = 3000;
-
-// 🔥 MUDANÇA CRUCIAL DE ARQUITETURA: Mudamos de app.listen para server.listen para ligar os canais WebSocket na porta!
-        // app.listen(PORT, () => {
-        // console.log(`🚀 API do Dia 4 rodando de forma segura em http://localhost:${PORT}`);
-        // });
-
-if (process.env.NODE_ENV === 'test') {
-  console.log(`⚠️ Modo de Testes Ativado: O servidor HTTP não será iniciado para evitar conflitos de porta.`);
-}else {
+  // ==========================================
+  // 🚀 INICIALIZAÇÃO DO SERVIDOR
+  // ==========================================
+  const PORT = 3000;
+  // 🔥 MUDANÇA CRUCIAL DE ARQUITETURA: Mudamos de app.listen para server.listen para ligar os canais WebSocket na porta!
+  if (process.env.NODE_ENV === 'test') {
+    console.log("⚠️ Modo de Testes Ativado: O servidor HTTP não será iniciado para evitar conflitos de porta.");
+  }else {
     server.listen(PORT, () => {
         console.log(`🚀 API REST, GraphQL & WebSockets rodando com segurança em http://localhost:${PORT}`);
         console.log(`🌌 Sandbox do GraphQL ativo em http://localhost:${PORT}/graphql`);
         console.log(`📡 Canal de notificações SSE ativado em http://localhost:${PORT}/events`);
     });
+  }
 }
-

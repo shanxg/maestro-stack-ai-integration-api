@@ -100,8 +100,9 @@
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "infra:build": "docker build -t my-api",
-    "dev": "npm run infra:up && tsx --watch src/app.ts",
+    "dev": "npm run infra:up && tsx --watch src/server.ts",
     "build": "tsc",
+    "start": "node dist/server.js",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --no-cache"
   },
   "keywords": [],
