@@ -29,7 +29,7 @@ import { userResolvers } from './graphql/userResolvers.js';
 // 5. 🔥 IMPORTAÇÃO DA ARQUITETURA LIMPA DE TEMPO REAL
 import { initializeSocket } from './graphql/socket.js'; // 👈 IMPORTAÇÃO ADICIONADA para carregar o inicializador do WebSocket
 
-const app = express();
+export const app = express();
 
 // 🔥 RECUPERAÇÃO SEGURA: Captura a chave secreta direto da memória do ambiente (com fallback de segurança caso venha vazia)
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_backup_2026';
@@ -144,14 +144,21 @@ app.get('/events', (req: Request, res: Response): void => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
-  // Dispara uma mensagem leve de keep-alive a cada 5 segundos contendo o carimbo de data/hora (timestamp)
-  const interval = setInterval(() => {
-    res.write(`data: ${JSON.stringify({ timestamp: Date.now(), msg: 'Keep-alive Maestro' })}\n\n`);
-  }, 5000);
+  // Declaramos a variável do intervalo tipada corretamente pelo Node.js
+  let interval: NodeJS.Timeout | undefined;
+
+  // 🔥 VALIDAÇÃO DEFENSIVA: Só dispara o loop infinito de batimento cardíaco se NÃO estivermos rodando testes!
+  if (process.env.NODE_ENV !== 'test') {
+    interval = setInterval(() => {
+      res.write(`data: ${JSON.stringify({ timestamp: Date.now(), msg: 'Keep-alive Maestro' })}\n\n`);
+    }, 5000);
+  }
 
   // Escuta o encerramento do cliente (quando fecha a aba) para limpar o loop da memória RAM do servidor
   req.on('close', () => {
-    clearInterval(interval);
+    if (interval) {
+      clearInterval(interval);
+    }
     console.log('🔌 Conexão SSE de notificações encerrada pelo cliente.');
   });
 });
@@ -189,8 +196,13 @@ const PORT = 3000;
         // console.log(`🚀 API do Dia 4 rodando de forma segura em http://localhost:${PORT}`);
         // });
 
-server.listen(PORT, () => {
-  console.log(`🚀 API REST, GraphQL & WebSockets rodando com segurança em http://localhost:${PORT}`);
-  console.log(`🌌 Sandbox do GraphQL ativo em http://localhost:${PORT}/graphql`);
-  console.log(`📡 Canal de notificações SSE ativado em http://localhost:${PORT}/events`);
-});
+if (process.env.NODE_ENV === 'test') {
+  console.log(`⚠️ Modo de Testes Ativado: O servidor HTTP não será iniciado para evitar conflitos de porta.`);
+}else {
+    server.listen(PORT, () => {
+        console.log(`🚀 API REST, GraphQL & WebSockets rodando com segurança em http://localhost:${PORT}`);
+        console.log(`🌌 Sandbox do GraphQL ativo em http://localhost:${PORT}/graphql`);
+        console.log(`📡 Canal de notificações SSE ativado em http://localhost:${PORT}/events`);
+    });
+}
+
