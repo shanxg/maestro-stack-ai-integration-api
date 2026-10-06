@@ -209,7 +209,8 @@ export async function createApp(customUserService?: any) {
   if (process.env.NODE_ENV === 'test') {
     console.log("⚠️ Modo de Testes Ativado: O servidor HTTP não será iniciado para evitar conflitos de porta.");
   }else {
-    server.listen(PORT, () => {
+    // 🌐 CORREÇÃO CIRÚRGICA: Adicionado "0.0.0.0" para que o Pod aceite conexões vindas de fora do contêiner!
+    server.listen(PORT, "0.0.0.0", () => {
         console.log(`🚀 API REST, GraphQL & WebSockets rodando com segurança em http://localhost:${PORT}`);
         console.log(`🌌 Sandbox do GraphQL ativo em http://localhost:${PORT}/graphql`);
         console.log(`📡 Canal de notificações SSE ativado em http://localhost:${PORT}/events`);

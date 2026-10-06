@@ -1,7 +1,8 @@
 import amqp from 'amqplib';
 
-// Conecta na porta padrão de dados do RabbitMQ no Docker (5672)
-const RABBIT_URL = 'amqp://localhost:5672';
+// 🔥 ATUALIZADO: Lê dinamicamente o HOST injetado pelo Kubernetes, usando localhost como backup local
+const RABBIT_HOST = process.env.RABBIT_HOST || 'localhost';
+const RABBIT_URL = `amqp://${RABBIT_HOST}:5672`;
 export const QUEUE_NAME = 'user_events';
 
 export async function getRabbitChannel(): Promise<amqp.Channel> {

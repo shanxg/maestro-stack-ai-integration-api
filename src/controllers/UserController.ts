@@ -7,7 +7,7 @@ import { getRabbitChannel, QUEUE_NAME } from '../queue/rabbit.js';
 // Biblioteca para conectar e interagir com o Redis
 import {Redis} from 'ioredis'; 
 const redis = new Redis({
-  host: 'localhost', // Endereço do servidor Redis
+  host: process.env.REDIS_HOST || 'localhost',  // Endereço do servidor Redis
   port: 6379,        // Porta padrão do Redis  
 });
 

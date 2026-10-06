@@ -66,3 +66,12 @@ spec:
               value: "3000"         # Define a porta do servidor HTTP interno
             - name: JWT_SECRET
               value: "maestro_secret_key_2026_super_secure_protection_token" # Chave unificada mapeada no seu .env
+              # 🔥 ADICIONADO: Ensina a API do Kubernetes a conversar com o Redis do seu Windows!
+            - name: REDIS_HOST
+              value: "host.docker.internal"
+            - name: RABBIT_HOST
+              value: "host.docker.internal"
+            - name: DB_HOST
+              value: "host.docker.internal"    # 🔥 ADICIONADO: Prevenção sênior para a futura conexão do Postgres!
+
+              
