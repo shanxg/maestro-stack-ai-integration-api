@@ -1,0 +1,68 @@
+# =========================================================================
+# 🌌 MANIFESTO KUBERNETES: DEPLOYMENT DA API MAESTRO
+# =========================================================================
+# O Deployment é o maestro dos Pods. Ele garante a saúde, a auto-recuperação
+# (self-healing) e dita quantas cópias (réplicas) do sistema estarão rodando.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maestro-api-deployment    # O nome único do gerenciador dentro do cluster
+  namespace: default              # O grupo lógico isolado (namespace padrão)
+  labels:
+    app: maestro-api              # Etiqueta organizacional para catalogar os recursos
+spec:
+  # 🏭 REQUISITO DO CRONOGRAMA: Mantém sempre 2 clones idênticos da API rodando em paralelo.
+  # Se um Pod falhar ou cair por estouro de memória, o Kubernetes levanta um novo em milissegundos!
+  replicas: 2
+  
+  # O seletor ensina o Deployment a descobrir quais Pods ele deve monitorar e gerenciar
+  selector:
+    matchLabels:
+      app: maestro-api            # Alvo estrito: gerencia Pods que tenham exatamente essa etiqueta
+  
+  # O molde (Template) dita as instruções de como fabricar cada um dos novos Pods
+  template:
+    metadata:
+      labels:
+        app: maestro-api          # Etiqueta inserida no casulo do contêiner para o seletor ler
+    spec:
+      containers:
+        - name: maestro-api-container   # O nome do contêiner rodando dentro do Pod
+          
+          # 🔥 ANCORAGEM CIRÚRGICA: Consome exatamente a imagem local que carregamos via 'kind load'
+          image: maestro-api:v1
+          
+          # BOA PRÁTICA SÊNIOR: Como a imagem está local no nó do Kind, dizemos para o Kubernetes
+          # NÃO tentar baixar da internet (Docker Hub), evitando falhas de 'ErrImagePull'.
+          imagePullPolicy: IfNotPresent
+
+          # =========================================================================
+          # 💎 PRÁTICA DE ALTO PADRÃO: RECURSOS E LIMITES DE COMPUTAÇÃO (RESOURCE QUOTAS)
+          # =========================================================================
+          # Remove os avisos do linter e blinda o cluster contra estouros de memória.
+          # Nota técnica: 100m (milicores) = 10% de 1 núcleo de CPU.
+          resources:
+            requests:
+              memory: "64Mi"        # Garante no mínimo 64 Megabytes de RAM reservados para inicializar
+              cpu: "100m"           # Garante no mínimo 10% de uma CPU para processar o loop assíncrono
+            limits:
+              memory: "256Mi"       # Teto máximo: Se a API vazar e bater 256MB de RAM, o Kubernetes reinicia o Pod
+              cpu: "500m"           # Teto máximo: Limita o contêiner a usar no máximo 50% de 1 núcleo de CPU
+          
+          # Mapeia qual porta interna do contêiner do Node.js está exposta para ouvir tráfego
+          ports:
+            - containerPort: 3000
+          
+          # =========================================================================
+          # 🔐 INJEÇÃO DE INVERSÃO DE CONTROLE (VARIÁVEIS DE AMBIENTE / FINOPS)
+          # =========================================================================
+          # Injeta os valores direto na memória RAM do contêiner (req.body / process.env).
+          # IMPORTANTE: Em produção na AWS, usaríamos Secrets ou ConfigMaps de forma isolada.
+          env:
+            - name: NODE_ENV
+              value: "production"   # Ativa o modo otimizado de produção da API e do Helmet
+            - name: PORT
+              value: "3000"         # Define a porta do servidor HTTP interno
+            - name: JWT_SECRET
+              value: "maestro_secret_key_2026_super_secure_protection_token" # Chave unificada mapeada no seu .env
