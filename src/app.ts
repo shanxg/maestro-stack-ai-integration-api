@@ -10,6 +10,9 @@ import http from 'node:http'; // 👈 IMPORTAÇÃO ADICIONADA: Módulo nativo do
 import { UserRepository } from './repositories/UserRepository.js';
 import { UserService } from './services/UserService.js';
 import { UserController } from './controllers/UserController.js';
+// 🔥 INTEGRAÇÃO DE INTELIGÊNCIA ARTIFICIAL
+import { AIService } from './services/AIService.js';
+import { AIController } from './controllers/AIController.js';
 
 // 2. IMPORTAÇÕES DOS PACOTES DE SEGURANÇA (OWASP TOP 10)
 import helmet from 'helmet';
@@ -142,6 +145,18 @@ export async function createApp(customUserService?: any) {
   app.get('/users', authMiddleware, (req: Request, res: Response) => userController.getUsers(req, res));       // Rota para listar todos os usuários de forma paginada
   app.get('/users/:id', authMiddleware, (req: Request, res: Response) => userController.getUserById(req, res)); // Rota para buscar um usuário pelo ID único
   app.post('/users', validateMiddleware(createUserSchema), (req: Request, res: Response) => userController.createUser(req, res));     // Rota para cadastrar um novo usuário na fila assíncrona
+
+  // ==========================================
+  // 🏭 INICIALIZAÇÃO DA INTELIGÊNCIA ARTIFICIAL (DIA 6)
+  // ==========================================
+  const aiService = new AIService();
+  const aiController = new AIController(aiService);
+
+  // 📝 CONDIÇÃO TESTADA: Rota POST /ai/chat protegida por Firewall JWT
+  // O tráfego bate primeiro no authMiddleware; se o token for inválido ou ausente, é barrado com 401.
+  // Se passar, o AIController valida o payload e despacha o prompt para o Llama 3 no disco D.
+  app.post('/ai/chat', authMiddleware, (req, res) => aiController.chat(req, res));
+
 
   // =========================================================================
   // 📡 🔥 ENDPOINT DE TEMPO REAL: SERVER-SENT EVENTS (SSE) - GET /events
