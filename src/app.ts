@@ -219,7 +219,7 @@ export async function createApp(customUserService?: any) {
   // ==========================================
   // 🚀 INICIALIZAÇÃO DO SERVIDOR
   // ==========================================
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
   // 🔥 MUDANÇA CRUCIAL DE ARQUITETURA: Mudamos de app.listen para server.listen para ligar os canais WebSocket na porta!
   if (process.env.NODE_ENV === 'test') {
     console.log("⚠️ Modo de Testes Ativado: O servidor HTTP não será iniciado para evitar conflitos de porta.");
