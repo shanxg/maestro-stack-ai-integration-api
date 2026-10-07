@@ -46,6 +46,8 @@
     "node_modules",
     "dist",
     "jest.config.ts",
-    "tests"
+    "tests",
+    "old.app-ts.txt",
+    "frontend"
   ] 
 }
