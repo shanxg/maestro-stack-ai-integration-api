@@ -1,6 +1,8 @@
 # Maestro Stack AI Integration API 🎼🧠
 
-An enterprise-grade, high-performance distributed architecture designed to demonstrate seamless integration between modern asynchronous back-end pipelines, reactive front-end interfaces, and localized private Artificial Intelligence agents. Developed by **Lucas Rivaldo**.
+Developed by **Lucas Rivaldo**.
+
+An enterprise-grade, high-performance distributed architecture designed to demonstrate seamless integration between modern asynchronous back-end pipelines, reactive front-end interfaces, and localized private Artificial Intelligence agents.
 
 ---
 
