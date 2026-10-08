@@ -1,0 +1,106 @@
+# Maestro Stack AI Integration API 🎼🧠
+
+An enterprise-grade, high-performance distributed architecture designed to demonstrate seamless integration between modern asynchronous back-end pipelines, reactive front-end interfaces, and localized private Artificial Intelligence agents. Developed by **Lucas Rivaldo**.
+
+---
+
+## 🏗️ Architectural Core & System Design
+
+The application follows the **12-Factor App** methodology and microservices isolation principles to deliver maximum resilience and horizontal scalability.
+
+### Technology Stack & Backing Services
+
+- **Back-end Runtime:** Node.js v24+ with TypeScript and Express.
+- **Database (Source of Truth):** PostgreSQL (isolated containerized instance).
+- **Caching & Session State:** Redis Cluster for sub-millisecond data fetching.
+- **Message Broker (Event-Driven Pipeline):** RabbitMQ for decoupled asynchronous tasks.
+- **Private AI Engine:** Ollama running Llama 3 locally via specialized OpenAI SDK routing hooks.
+- **Front-end Interface:** Next.js 16+ leveraging Turbopack, Tailwind CSS, and React 19 Client Components.
+
+---
+
+## ⚙️ Advanced Engineering Highlights
+
+### 1. Unified AI Abstraction & Polymorphism
+
+Thanks to interface abstraction, the back-end integrates the official `openai` NPM SDK but injects a custom `baseURL` pointing to the localized Ollama port (`11434/v1`). The code remains 100% cloud-compatible, meaning switching from the offline local **Llama 3** engine to a production enterprise cloud provider requires zero lines of code changes, satisfying strict **GDPR/LGPD data privacy compliance**.
+
+### 2. High-Performance Front-end Hydration (React 19 & Next.js)
+
+To mitigate the performance pitfalls of synchronous `setState` rendering cascades within React effects, the secure chat console subscribes to the browser storage layer using the advanced **`useSyncExternalStore`** API hook. This eliminates redundant rendering passes, ensures flawless state synchronization across context boundaries, and prevents client-side hydration mismatches caused by browser extensions or asynchronous UI paint cycles.
+
+### 3. Bulletproof JWT Firewall & OWASP Safeguards
+
+Every endpoint within the AI orchestration layer is guarded by a cryptographic JWT validation firewall. The stack implements strict **Rate Limiting** to shield backing services from Distributed Denial of Service (DDoS) attempts, integrates **Helmet** for HTTP header obfuscation, and applies **Zod schema runtime validation** to prevent Malformed Payloads and SQL/Command Injection vectors (addressing OWASP API Security Top 10 vulnerabilities).
+
+---
+
+## 🐳 Local Infrastructure Setup & Backing Services
+
+The environment is fully dockerized to ensure absolute environment parity between development and cluster orchestration topologies.
+
+### 📥 1. Dribbling Disk Space Constraints: Custom Ollama Pathing (Drive D:\)
+
+By default, the Windows Ollama daemon locks and downloads heavy LLM layers inside the primary OS partition (`C:\`), which can compromise system stability. To bypass this infrastructure constraint and direct the **4.7 GB Llama 3 model** strictly into a spacious secondary partition, execute the following PowerShell sequence as Administrator before initializing the daemon:
+
+```powershell
+# Force the global environment variable directly into the machine's registry
+[Environment]::SetEnvironmentVariable("OLLAMA_MODELS", "D:\OllamaModels", "Machine")
+
+# Close any background Ollama zombie processes near the Windows taskbar tray, then boot the server:
+ollama serve
+```
+
+Open a secondary terminal and download the localized brain:
+
+```bash
+ollama run llama3
+```
+
+_The daemon will automatically structure the model blobs under `D:\OllamaModels\`, keeping your primary drive entirely untouched and secure._
+
+### 🚀 2. Booting the Core Eco-system
+
+Ensure your Docker Desktop environment is active. From the project's root folder, run the automated infrastructure script to spawn the Postgres, Redis, and RabbitMQ containers:
+
+```bash
+# Spin up background backing services
+npm run infra:up
+
+# Install dependencies using peer parities overrides
+npm install --legacy-peer-deps
+
+# Spin up the Back-end compiler in development watch mode (Port 3000)
+npm run dev
+```
+
+### 🌐 3. Launching the Next.js Front-end
+
+Open a secondary terminal, migrate to the UI folder, and trigger the Turbopack engine:
+
+```bash
+cd frontend
+npm run dev
+```
+
+_The reactive client console will notice port 3000 is securely held by the Express REST API and will automatically map its visual endpoints onto `http://localhost:3001`._
+
+---
+
+## 📡 API Authentication Testing Vector
+
+To test the security handshake and chat orchestration via terminal loops, capture a valid session pass:
+
+```powershell
+# 1. Acquire an authenticated signature token
+curl.exe -i -X POST http://127.0.0 -H "Content-Type: application/json" -d "{\""username\"": \""admin\"", \""password\"": \""secret123\""}"
+
+# 2. Fire an authenticated prompt request into the local Llama 3 core (Replace token placeholder)
+curl.exe -i -X POST http://127.0.0 -H "Authorization: Bearer YOUR_TOKEN_HERE" -H "Content-Type: application/json" -d "{\""prompt\"": \""Hello Maestro, explain the benefits of distributed caching.\""}"
+```
+
+---
+
+## ⚖️ Architectural Trade-offs: CAP Theorem Dynamics
+
+The Maestro architecture deliberately prioritizes **Availability & Partition Tolerance (AP)** within its streaming communication layer. Rather than holding the critical HTTP request pipeline hostage to complex analytical writes, data signals are dispatched asynchronously into **RabbitMQ** event queues. The platform favors **Eventual Consistency**, allowing backing consumers to batch write telemetries and auditing data blocks without adding a single millisecond of overhead to the user experience.
