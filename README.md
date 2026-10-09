@@ -103,6 +103,20 @@ curl.exe -i -X POST http://127.0.0 -H "Authorization: Bearer YOUR_TOKEN_HERE" -H
 
 ---
 
+## ☁️ Architectural Evolution: Hybrid Cloud Foundations (Day 3 Legacy)
+
+The repository intentionally preserves the core files `socket-deprecated.ts`, `rabbit-deprecated.ts`, and `worker-deprecated.ts` inside the codebase. These elements serve as a pedagogical and architectural blueprint, showcasing the platform's initial topology, which was designed for high-availability cloud consumption under enterprise paradigms.
+
+### AWS Cloud Integration Vector:
+
+- **Asynchronous Message Ingestion:** The decoupled ingestion pipe originally targeted an **AWS MQ (Managed RabbitMQ)** cluster or standalone **Amazon SQS (Simple Queue Service)** instance, validating enterprise-grade message persistence and durable delivery guarantees across cloud network boundaries.
+- **Persistent Data Storage:** Cloud persistence layers were anchored using **Amazon RDS for PostgreSQL**, enforcing automated connection pooling, encrypted storage classes via **AWS KMS (Key Management Service)**, and multi-Availability Zone (Multi-AZ) failover strategies.
+- **Real-Time Push Topology:** Push telemetries were decoupled from standard HTTP pipelines using managed WebSockets or edge notification triggers, proving proficiency in stateful connection management under continuous network load.
+
+_These legacy assets remain untouched to demonstrate production-ready capabilities in migrating mission-critical applications between Hybrid Cloud (AWS) and fully sovereign localized (On-Premise) data privacy topologies._
+
+---
+
 ## ⚖️ Architectural Trade-offs: CAP Theorem Dynamics
 
 The Maestro architecture deliberately prioritizes **Availability & Partition Tolerance (AP)** within its streaming communication layer. Rather than holding the critical HTTP request pipeline hostage to complex analytical writes, data signals are dispatched asynchronously into **RabbitMQ** event queues. The platform favors **Eventual Consistency**, allowing backing consumers to batch write telemetries and auditing data blocks without adding a single millisecond of overhead to the user experience.

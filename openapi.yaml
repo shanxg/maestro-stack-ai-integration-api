@@ -50,3 +50,46 @@ paths:
           description: Solicitação aceita com sucesso para processamento em lote na fila.
         '400':
           description: Requisição inválida por falta de campos mandatórios.
+  /ai/chat:
+    post:
+      summary: Envia um prompt para o assistente virtual Maestro
+      description: Rota protegida por Firewall JWT que encaminha a pergunta do usuário para o processamento neural do modelo local Llama 3.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - prompt
+              properties:
+                prompt:
+                  type: string
+                  description: Texto da pergunta ou comando de negócios enviado à IA.
+      responses:
+        '200':
+          description: Resposta processada e retornada com sucesso pelo cérebro da IA.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  response:
+                    type: string
+                    description: Resposta textual estruturada pelo modelo local.
+        '400':
+          description: Requisição inválida por falta da chave "prompt" no payload.
+        '401':
+          description: Acesso negado por token JWT ausente, expirado ou inválido.
+        '500':
+          description: Falha na comunicação física com o serviço local do Ollama.
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Insira o token JWT adquirido no endpoint /auth/login para destravar o firewall de IA.      
