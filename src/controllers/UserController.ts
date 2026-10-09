@@ -1,71 +1,71 @@
-// 1. IMPORTAÇÕES: Traz os tipos de Requisição e Resposta do Express, e a camada de Serviço.
-// Usamos 'type' no Request/Response porque eles são apenas tipos estruturais do TypeScript.
+// 1. IMPORTS: Bring in Express request/response types and the service layer.
+// Use 'type' for Request/Response because they are TypeScript-only structural types.
 import { type Request, type Response } from 'express';
 import { UserService } from '../services/UserService.js';
 import { EventBrokerService } from '../services/EventBrokerService.js';
 
-// Biblioteca para conectar e interagir com o Redis
+// Redis client library
 import {Redis} from 'ioredis'; 
 const redis = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',  // Endereço do servidor Redis
-  port: 6379,        // Porta padrão do Redis  
+  host: process.env.REDIS_HOST || 'localhost',  // Redis server address
+  port: 6379,        // Default Redis port
 });
 
 
-// 2. A CLASSE CONTROLADORA: Esta camada é o "porteiro" da nossa API.
-// Ela é responsável apenas por receber os dados da internet, chamar o Serviço e devolver uma resposta HTTP.
+// 2. CONTROLLER CLASS: This layer is the API's gateway.
+// It receives requests, calls the service, and returns an HTTP response.
 export class UserController {
   
-  // INJEÇÃO DE DEPENDÊNCIA: O controlador não cria o serviço do zero.
-  // INVERSÃO DE CONTROLE (IoC): O construtor recebe as instâncias vivas injetadas da Factory principal.
-  // Quem chamar o UserController fica encarregado de entregar o UserService e o EventBrokerService prontos.
+  // DEPENDENCY INJECTION: The controller does not create the service itself.
+  // INVERSION OF CONTROL (IoC): The constructor receives live instances from the main factory.
+  // The caller provides ready-to-use UserService and EventBrokerService instances.
   constructor(
     private userService: UserService,
     private eventBrokerService: EventBrokerService
   ) {}
 
   /**
-   * 📡 ENDPOINT 1 (GET /users): Listagem de usuários com suporte a Cache-Aside no Redis.
-   * Acionada de forma segura para fatiar buscas na persistência do PostgreSQL.
+  * 📡 ENDPOINT 1 (GET /users): List users using the Redis Cache-Aside pattern.
+  * Safely paginate queries against PostgreSQL persistence.
    */
   getUsers = async (req: Request, res: Response): Promise<void> => {
     try {
-      // PAGINAÇÃO COMPORTAMENTAL: Captura os parâmetros contidos na Query String da URL da requisição.
-      // Se o desenvolvedor ou cliente omitir os valores, assume limit=10 e offset=0 por convenção corporativa.
+      // Read pagination parameters from the request URL query string.
+      // Default to limit=10 and offset=0 when values are omitted.
       const { limit = '10', offset = '0' } = req.query;
 
-      // PAGINAÇÃO COMPORTAMENTAL: Converte as strings extraídas da URL estritamente para números inteiros.
-      // A trava Math.max() impede buracos na paginação com números negativos inseridos maliciosamente.
+      // Convert URL values to integers.
+      // Math.max() prevents gaps caused by malicious negative pagination values.
       const limitNumber = Math.max(1, parseInt(limit as string, 10));
       const offsetNumber = Math.max(0, parseInt(offset as string, 10));
 
-      // CHAVE DINÂMICA DE ISOLAMENTO: Cada combinação de página ganha um bloco exclusivo indexado no Redis!
+      // Give each page combination its own Redis cache key.
       const cacheKey = `users:limit=${limitNumber}:offset=${offsetNumber}`;
 
-      // Passo A: Faz um "ping" síncrono no Redis usando a chave dinâmica para checar se o bloco de texto já existe.
+      // Step A: Check Redis for a cached result using the page-specific key.
       const cachedUsers = await redis.get(cacheKey);      
       
-      // Passo B: CONDIÇÃO DE CACHE HIT! Se o texto JSON existir, descompacta os dados e responde ao cliente na hora,
-      // economizando ciclos de processamento e conexões de I/O de disco contra o PostgreSQL!
+      // Step B: On a cache hit, parse the JSON and respond immediately,
+      // avoiding additional processing and PostgreSQL I/O.
       if (cachedUsers) {
         console.log(`⚡ [Redis] Cache Hit absoluto para a chave: ${cacheKey}`);
         res.status(200).json(JSON.parse(cachedUsers));
         return;
       }
       
-      console.log(`⚠️ [Redis] Cache Miss detectado. Perfurando rota até a camada do PostgreSQL...`);
+      console.log(`⚠️ [Redis] Cache miss. Querying the PostgreSQL layer...`);
 
-      // Passo C: CONDIÇÃO DE CACHE MISS! Avança até o serviço e puxa os registros originais e reais do banco de dados relacional.
+      // Step C: On a cache miss, get the records from the relational database through the service.
       const users = await this.userService.getAllUsers({ 
         limit: limitNumber, 
         offset: offsetNumber 
       });
       
-      // Passo D: Devolve o resultado novo em formato string compactado para a gaveta do Redis,
-      // configurando um TTL (Time-To-Live) de expiração explícita de 60 segundos para evitar obsolescência de dados.
+      // Step D: Store the result as JSON in Redis with a 60-second TTL
+      // to limit how long stale data can remain cached.
       await redis.set(cacheKey, JSON.stringify(users), 'EX', 60);
       
-      // Passo E: Entrega os dados limpos e consolidados diretamente para o navegador do cliente.
+      // Step E: Return the consolidated data to the client.
       res.status(200).json(users);
 
     } catch (error: any) {
@@ -81,15 +81,15 @@ export class UserController {
   };
 
   /**
-   * 📡 ENDPOINT 2 (GET /users/:id): Busca cirúrgica por identificador indexado.
-   * Varre a persistência do PostgreSQL em busca de um registro único.
+  * 📡 ENDPOINT 2 (GET /users/:id): Look up a record by its indexed identifier.
+  * Search PostgreSQL persistence for a single record.
    */
   getUserById = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
 
-      // VALIDAÇÃO DEFENSIVA DE RUNTIME: Se o ID vier em branco ou corrompido pela URL, barra imediatamente.
-      // Padrão OWASP: Retorna o objeto envelopado com código semântico legível para o cliente.
+      // Reject an ID that is blank or malformed in the URL.
+      // OWASP pattern: return an enveloped error with a client-readable code.
       if (!id || typeof id !== 'string' || id.trim() === '') {
          res.status(400).json({
           error: {
@@ -100,10 +100,10 @@ export class UserController {
         return;
       }
 
-      // Encaminha a busca para a camada do serviço que consome as regras relacionais do Postgres
+      // Forward the lookup to the service layer.
       const user = await this.userService.getUserById(id.trim());
       
-      // CONDIÇÃO DE INTERRUPÇÃO (NOT FOUND): Se o banco responder nulo (registro inexistente), emite o erro 404.
+      // Return 404 if the database has no matching record.
       if (!user) {
         res.status(404).json({ 
           error: {
@@ -114,7 +114,7 @@ export class UserController {
         return;
       }
       
-      // Sucesso total! Devolve o objeto User estruturado e tipado
+      // Return the structured, typed User object.
       res.status(200).json(user);
 
     } catch (error: any) {
@@ -130,15 +130,15 @@ export class UserController {
   };
 
   /**
-   * 📡 ENDPOINT 3 (POST /users): Envio assíncrono blindado para a fila.
-   * Recebe o payload, desvia os bytes para o RabbitMQ e limpa os caches antigos.
+  * 📡 ENDPOINT 3 (POST /users): Submit a request to the queue asynchronously.
+  * Accept the payload, send it to RabbitMQ, and clear stale cache entries.
    */
   createUser = async (req: Request, res: Response): Promise<void> => {
     try {
-      // Captura as chaves estruturadas validadas que atravessaram o middleware do Zod
+      // Read the structured keys validated by the Zod middleware.
       const { name, email } = req.body;
       
-      // 🛡️ VALIDAÇÃO DE ENTRADA EXIGIDA: Se faltar nome ou email, rejeita o processamento local
+      // 🛡️ REQUIRED INPUT VALIDATION: Reject the request if name or email is missing.
       if (!name || !email) {
         res.status(400).json({ 
           error: {
@@ -150,32 +150,32 @@ export class UserController {
       }
 
       // =========================================================================
-      // 📤 ESTEIRA ASSÍNCRONA ORIENTADA A EVENTOS (RABBITMQ)
+      // 📤 ASYNCHRONOUS EVENT PIPELINE (RABBITMQ)
       // =========================================================================
-      // Aciona o nosso EventBrokerService unificado para disparar o payload em formato
-      // de bytes binários direto para a fila do Docker, sem travar a thread de resposta HTTP!
+      // Use the unified EventBrokerService to publish the payload as binary data
+      // directly to the queue without blocking the HTTP response thread.
       const isQueued = await this.eventBrokerService.publishEvent('user_created', { name, email });
 
-      // CONDIÇÃO DE PROTEÇÃO DE EVENTOS: Se a fila estiver indisponível ou cair, estoura o erro local
+      // If the queue is unavailable, raise an error.
       if (!isQueued) {
         throw new Error('O broker de mensageria recusou o enfileiramento do evento.');
       }
 
       // =========================================================================
-      // 🧹 INVALIDAÇÃO AUTOMÁTICA DE CACHE (PURGE REGEX)
+      // 🧹 AUTOMATIC CACHE INVALIDATION (REGEX PURGE)
       // =========================================================================
-      // Captura e varre todas as chaves dinâmicas registradas com o prefixo "users:*" no Redis.
-      // Como um novo usuário entrará na esteira, limpamos o cache imediatamente para garantir
-      // que as próximas consultas leiam os dados novos do Postgres, evitando dados fantasmas (*Stale Data*).
+      // Find every Redis key with the "users:*" prefix.
+      // A new user is entering the pipeline, so clear the cache now to ensure
+      // future queries read fresh PostgreSQL data instead of stale entries.
       const targetedKeys = await redis.keys('users:*');
       if (targetedKeys.length > 0) {
         await redis.del(...targetedKeys);
         console.log(`🧹 [Redis] Invalidação estrita concluída. ${targetedKeys.length} chaves obsoletas foram expurgadas.`);
       }
 
-      // 🏁 RESPOSTA DE ACEITAÇÃO (STATUS 202 ACCEPTED):
-      // Indica ao front-end que a requisição é válida e foi aceita com sucesso total, 
-      // mas que o processamento físico no banco acontecerá em background pela fila.
+      // 🏁 ACCEPTED RESPONSE (HTTP 202):
+      // Tell the frontend that the request is valid and accepted,
+      // while database processing continues in the background through the queue.
       res.status(202).json({ 
         message: 'Solicitação de cadastro recebida com sucesso! Processando em lote assíncrono na fila de eventos...' 
       });

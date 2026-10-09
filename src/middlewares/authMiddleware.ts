@@ -1,9 +1,9 @@
-// 1. IMPORTAÇÕES: Traz os tipos de controle de ciclo do Express e a biblioteca JWT.
+// 1. IMPORTS: Bring in Express lifecycle types and the JWT library.
 import { type Request, type Response, type NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 
-// 2. EXTENSÃO DE INTERFACE GLOBAL: Avisa ao TypeScript que o objeto 'Request'
-// do Express agora ganha uma propriedade chamada '.user' para guardar os dados decodificados do token.
+// 2. GLOBAL INTERFACE EXTENSION: Tell TypeScript that Express's Request
+// object has a '.user' property for storing decoded token data.
 declare global {
   namespace Express {
     interface Request {
@@ -12,16 +12,16 @@ declare global {
   }
 }
 
-// 🔥 RECUPERAÇÃO SEGURA: Captura a chave secreta direto da memória do ambiente (com fallback de segurança caso venha vazia)
+// 🔥 SAFE SECRET RETRIEVAL: Read the secret from the environment, with a fallback if it is empty.
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_backup_2026';
 
-// 3. O MIDDLEWARE: Atua como um firewall interceptor antes que a requisição bata no seu Controller.
+// 3. MIDDLEWARE: Acts as a firewall before the request reaches the controller.
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
   
-  // Passo A: Captura o cabeçalho 'Authorization' enviado na requisição HTTP
+  // Step A: Read the 'Authorization' header from the HTTP request.
   const authHeader = req.headers.authorization;
   
-  // Passo B: Validação primária. Se o cabeçalho não existir, barra com o erro padronizado 401
+  // Step B: Reject the request with the standard 401 error if the header is missing.
   if (!authHeader) {
     return res.status(401).json({
       error: {
@@ -31,11 +31,11 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     });
   }
 
-  // Passo C: Separa a palavra 'Bearer' do hash real do token usando o caractere de espaço
+  // Step C: Split the 'Bearer' scheme from the token using the space character.
   const parts = authHeader.split(' ');
   const [scheme, token] = parts;
 
-  // 🔥 SALVAGUARDA PARA O MODO ESTRITO: Garante que as variáveis existem de fato antes de usá-las!
+  // 🔥 STRICT-MODE GUARD: Ensure both values exist before using them.
   if (!scheme || !token) {
     return res.status(401).json({
       error: {
@@ -45,7 +45,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     });
   }
 
-  // Passo D: Validação de estrutura. Confere se existem 2 partes e se o esquema começa com 'Bearer'
+  // Step D: Validate the format: require two parts and the 'Bearer' scheme.
   if (parts.length !== 2 || !/^Bearer$/i.test(scheme)) {
     return res.status(401).json({
       error: {
@@ -56,17 +56,17 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
   }
 
   try {
-    // Passo E: Executa a checagem matemática criptográfica da assinatura usando a nossa chave secreta
+    // Step E: Verify the signature cryptographically using the secret key.
     const payload = jwt.verify(token, JWT_SECRET);
     
-    // Passo F: Sucesso total! Injeta o payload decodificado dentro do objeto req.user
+    // Step F: Attach the decoded payload to req.user.
     req.user = payload;
     
-    // Passo G: Chama o next() para autorizar a requisição a seguir viagem para o Controller final
+    // Step G: Call next() to pass the request to the controller.
     return next();
     
   } catch (error: any) {
-    // Passo H: Se o token foi alterado por invasores ou expirou pelo tempo de TTL, barra na hora
+    // Step H: Immediately reject tokens that were altered or have expired.
     return res.status(401).json({
       error: {
         code: 'INVALID_TOKEN',

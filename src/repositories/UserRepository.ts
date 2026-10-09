@@ -1,33 +1,33 @@
-// 1. IMPORTAÇÕES: Traz o contrato (molde) que criamos e a estrutura de dados do Usuário.
+// 1. IMPORTS: Bring in the repository contract and User data structure.
 import { type IUserRepository } from "../interfaces/IUserRepository.js";
 import { type User } from "../models/User.js";
-import pg from 'pg'; // Usamos o driver oficial 'pg' para conexão física com o banco relacional
+import pg from 'pg'; // Use the official 'pg' driver to connect to the relational database.
 
 
-// 2. A CLASSE: O 'implements IUserRepository' avisa ao TypeScript que esta classe 
-// é OBRIGADA a programar e respeitar as 3 funções exigidas pelo contrato (findAll, findById, create).
+// 2. CLASS: 'implements IUserRepository' tells TypeScript that this class
+// must implement the three methods required by the contract (findAll, findById, create).
 export class UserRepository implements IUserRepository {
   private pool: pg.Pool;
   
   constructor() {
-    // 🔌 INVERSION OF CONTROL (IoC): Inicializa o pool de conexões lendo as credenciais do contêiner.
-    // Mapeia a porta interna 5432 dentro do Docker ou a porta externa 5433 que salvou o nosso ambiente!
+    // 🔌 INVERSION OF CONTROL (IoC): Initialize the connection pool using container credentials.
+    // Use Docker's internal port 5432 or the host port 5433 configured for this environment.
     this.pool = new pg.Pool({
       host: process.env.POSTGRES_HOST || 'localhost',
       user: process.env.POSTGRES_USER || 'postgres',
       password: process.env.POSTGRES_PASSWORD || 'secret',
       database: process.env.POSTGRES_DB || 'postgres',
       port: Number(process.env.POSTGRES_PORT) || 5433,
-      max: 10, // Limite máximo de conexões simultâneas no pool para evitar vazamento de memória
-      idleTimeoutMillis: 30000 // Fecha conexões inativas após 30 segundos para economizar hardware
+      max: 10, // Maximum concurrent pool connections to prevent memory leaks
+      idleTimeoutMillis: 30000 // Close idle connections after 30 seconds to conserve resources
     });
 
     this.initDatabase();
   }
 
   /**
-   * 🏗️ INICIALIZAÇÃO DE INFRAESTRUTURA (DDL):
-   * Cria a tabela física de usuários de forma automatizada no boot do servidor se ela não existir.
+  * 🏗️ INFRASTRUCTURE INITIALIZATION (DDL):
+  * Automatically create the users table at server startup if it does not exist.
    */
   private async initDatabase(): Promise<void> {
     const createTableQuery = `
@@ -46,59 +46,59 @@ export class UserRepository implements IUserRepository {
     }
   }
               
-  // // FUNÇÃO 1 (findAll Pagina): Executa o recorte lógico com base nas coordenadas numéricas recebidas.
+  // // FUNCTION 1 (paginated findAll): Select a logical slice using the supplied numeric coordinates.
   // async findAll(limit: number, offset: number): Promise<User[]> {
-  //   // .slice(offset, offset + limit) extrai o intervalo exato de dados pedidos da esteira.
-  //   // Exemplo: offset = 10, limit = 10 -> extrai os dados localizados da posição 10 até a 20.
+  //   // .slice(offset, offset + limit) extracts the exact requested range.
+  //   // Example: offset = 10, limit = 10 selects entries from position 10 through 20.
   //   return this.users.slice(offset, offset + limit);
   // }
 
   /**
-   * 🔍 FUNÇÃO LISTAR PAGINADA (findAll):
-   * Executa a busca SQL limitando o tamanho dos registros retornados e pulando registros passados.
+  * 🔍 PAGINATED LIST FUNCTION (findAll):
+  * Limit the number of returned records and skip earlier records in the SQL query.
    */
   async findAll(limit: number, offset: number): Promise<User[]> {
     const selectQuery = 'SELECT id, name, email FROM users ORDER BY created_at DESC LIMIT \$1 OFFSET \$2;';
     try {
       const result = await this.pool.query(selectQuery, [limit, offset]);
-      return result.rows; // Retorna o array de linhas nativas extraídas do banco relacional
+      return result.rows; // Return the rows retrieved from the relational database.
     } catch (error) {
       console.error('❌ Erro ao executar query findAll no PostgreSQL:', error);
       return [];
     }
   }
 
-  // // FUNÇÃO 2: Recebe um ID e usa o método '.find()' do JavaScript para procurar no array.
-  // // Se achar, devolve o usuário. Se não achar, o operador '|| null' garante que retorne nulo.
+  // // FUNCTION 2: Accept an ID and use JavaScript's '.find()' method to search the array.
+  // // Return the user if found, or null otherwise.
   // async findById(id: string): Promise<User | null> {
   //   return this.users.find((u) => u.id === id) || null;
   // }
 
   /**
-   * 🎯 FUNÇÃO BUSCAR POR ID (findById):
-   * Localiza um registro de forma segura filtrando por parâmetro indexado.
+  * 🎯 FIND BY ID FUNCTION (findById):
+  * Safely locate a record using an indexed parameter.
    */
   async findById(id: string): Promise<User | null> {
     const selectByIdQuery = 'SELECT id, name, email FROM users WHERE id = \$1;';
     try {
       const result = await this.pool.query(selectByIdQuery, [id]);
-      return result.rows[0] || null; // Devolve o usuário encontrado ou nulo se não existir
+      return result.rows[0] || null; // Return the matching user, or null if none exists.
     } catch (error) {
       console.error(`❌ Erro ao buscar usuário pelo ID ${id} no PostgreSQL:`, error);
       return null;
     }
   }
 
-  // // FUNÇÃO 3: Recebe um novo usuário pronto, joga ele para dentro do nosso array com o '.push()'
-  // // e depois devolve o próprio usuário para confirmar que ele foi salvo com sucesso.
+  // // FUNCTION 3: Accept a new user, add it to the array with '.push()',
+  // // and return it to confirm that it was saved successfully.
   // async create(user: User): Promise<User> {
   //   this.users.push(user);
   //   return user;
   // } 
   
   /**
-   * 📥 FUNÇÃO GRAVAR (create):
-   * Insere os dados definitivos gerados pelo serviço nas colunas correspondentes do Postgres.
+  * 📥 WRITE FUNCTION (create):
+  * Insert the data generated by the service into the corresponding PostgreSQL columns.
    */
   async create(user: User): Promise<User> {
     const insertQuery = 'INSERT INTO users (id, name, email) VALUES (\$1, \$2, \$3) RETURNING id, name, email;';

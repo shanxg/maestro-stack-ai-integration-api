@@ -1,17 +1,17 @@
-// 1. IMPORTAÇÃO: Traz o tipo estrutural de configurações oficial do próprio Jest
+// 1. IMPORT: Bring in Jest's official configuration type.
 import type { Config } from 'jest';
 
-// 2. CONFIGURAÇÃO MATRIZ: Define o comportamento do motor de testes automatizados
+// 2. BASE CONFIGURATION: Define the behavior of the automated test runner.
 const config: Config = {
-  // A. PRESET: Diz ao Jest para utilizar o 'ts-jest' na variante ESM (Módulos Nativos do Node)
-  // Isso ensina o robô a compilar TypeScript em tempo de execução respeitando o formato de módulos do projeto!
+  // A. PRESET: Use 'ts-jest' with ESM (Node native modules).
+  // This configures TypeScript compilation at runtime using the project's module format.
   preset: 'ts-jest/presets/default-esm',
 
-  // B. AMBIENTE DE EXECUÇÃO: Define que os testes vão rodar simulando o ecossistema do Node.js
+  // B. RUNTIME ENVIRONMENT: Run tests in Node.js.
   testEnvironment: 'node',
 
-  // C. MAPEAMENTO DE COMPILAÇÃO (TRANSFORM): Associa arquivos .ts ao motor do ts-jest
-  // Configura o suporte a ECMAScript Modules para aceitar as importações estritas do TypeScript v7
+  // C. TRANSFORM: Map .ts files to the TypeScript transform.
+  // Configure ECMAScript Modules support for TypeScript imports.
    transform: {
     '^.+\\.(t|j)sx?$': [
       '@swc/jest',
@@ -27,21 +27,21 @@ const config: Config = {
     ],
   },
 
-  // D. RESOLUÇÃO DE EXTENSÕES NATIVAS (.js para .ts):
-  // Como no código importamos usando 'from "./UserService.js"', o Jest precisa dessa regra de expressão regular
-  // para entender que na hora de testar ele deve ler fisicamente o arquivo original finalizado em '.ts'!
+  // D. NATIVE EXTENSION RESOLUTION (.js to .ts):
+  // Source imports use paths such as 'from "./UserService.js"'. This regular expression
+  // tells Jest to resolve those imports to the original .ts files during tests.
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
 
-  // E. EXCLUSÃO DE PASTAS: Impede que o robô perca tempo varrendo as dependências instaladas ou a pasta de build
+  // E. DIRECTORY EXCLUSIONS: Skip installed dependencies and build output.
   testPathIgnorePatterns: ['/node_modules/', '/dist/'],
 
-  // F. RELATÓRIO DE COBERTURA (COVERAGE): Configura o Jest para auditar quais linhas de código foram testadas
+  // F. COVERAGE REPORT: Configure Jest to report which lines of code were tested.
   collectCoverage: true,
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov'],
 };
 
-// Exporta as diretivas de qualidade configuradas
+// Export the quality settings.
 export default config;

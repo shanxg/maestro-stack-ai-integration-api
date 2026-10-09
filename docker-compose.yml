@@ -1,22 +1,22 @@
 
 services:
-  # 1. Serviço do Banco de Dados Relacional
+  # 1. Relational database service
   postgres:
     image: postgres:latest
     container_name: pg_integrated
     environment:
       POSTGRES_PASSWORD: secret
     ports:
-      - "5433:5432" # 👈 Mantemos a porta externa 5433 para não bater com seu Postgres do Windows
+      - "5433:5432" # 👈 Keep host port 5433 to avoid conflicting with PostgreSQL on Windows
 
-  # 2. Serviço de Cache em Memória
+  # 2. In-memory cache service
   redis:
     image: redis:latest
     container_name: redis_integrated
     ports:
       - "6379:6379"
 
-  # 3. Serviço de Mensageria
+  # 3. Messaging service
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbit_integrated

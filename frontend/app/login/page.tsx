@@ -1,41 +1,41 @@
-'use client'; // 🌐 DIRETIVA DE CLIENTE: Obriga o Next.js App Router a tratar este arquivo no ecossistema do navegador.
-              // É obrigatório para conseguirmos usar estados (useState), efeitos (useEffect) e ler eventos de cliques.
+'use client'; // 🌐 CLIENT DIRECTIVE: Makes the Next.js App Router treat this file as browser code.
+              // Required to use state (useState), effects (useEffect), and click events.
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation'; // Roteador oficial moderno da arquitetura App Router do Next.js.
+import { useRouter } from 'next/navigation'; // Official router for the modern Next.js App Router.
 
 export default function LoginPage() {
   // ==========================================
-  // 🎭 GERENCIAMENTO DE ESTADO (REACT HOOKS)
+  // 🎭 STATE MANAGEMENT (REACT HOOKS)
   // ==========================================
-  // O useState vincula os inputs da tela à memória do React. Quando o usuário digita, o estado atualiza em tempo real.
-  const [username, setUsername] = useState(''); // Guarda o texto digitado na caixa de "Usuário"
-  const [password, setPassword] = useState(''); // Guarda o texto digitado na caixa de "Senha"
-  const [error, setError] = useState('');       // Armazena mensagens de falha para exibir alertas visuais na tela
-  const [loading, setLoading] = useState(false); // Atua como um interruptor lógico (booleano) para travar o botão durante a requisição
+  // useState binds the screen inputs to React state, which updates as the user types.
+  const [username, setUsername] = useState(''); // Stores the text entered in the username field
+  const [password, setPassword] = useState(''); // Stores the text entered in the password field
+  const [error, setError] = useState('');       // Stores errors to display as alerts
+  const [loading, setLoading] = useState(false); // Disables the button while the request is in progress
 
-  const router = useRouter(); // Instancia a ferramenta de navegação para mudar de tela após o sucesso
+  const router = useRouter(); // Create the navigation helper used after login succeeds
 
   /**
-   * 📡 GATILHO DE AUTENTICAÇÃO ( handleLogin )
-   * Função assíncrona disparada imediatamente quando o usuário clica no botão de submit do formulário.
+  * 📡 AUTHENTICATION HANDLER (handleLogin)
+  * Runs when the user clicks the form's submit button.
    */
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault(); // 🛑 INTERRUPÇÃO PADRÃO: Impede o navegador de recarregar a página inteira (comportamento nativo do HTML).
-    setError('');       // Reseta qualquer mensagem de erro de tentativas anteriores
-    setLoading(true);   // Ativa o estado de carregamento para desabilitar cliques repetidos no botão
+    e.preventDefault(); // 🛑 Prevent the browser's default full-page reload.
+    setError('');       // Clear any error from a previous attempt
+    setLoading(true);   // Disable repeated clicks while loading
 
     try {
-      // 🛡️ VALIDAÇÃO DEFENSIVA ANTES DO DISPARO:
-      // O método .trim() remove espaços vazios acidentais nas pontas do texto.
-      // Se algum campo estiver em branco, estoura um erro local sem gastar processamento de rede.
+      // 🛡️ VALIDATE INPUT BEFORE SENDING:
+      // .trim() removes accidental whitespace around the text.
+      // If either field is blank, raise a local error without making a network request.
       if (!username.trim() || !password.trim()) {
         throw new Error('Por favor, preencha todos os campos do formulário para prosseguir.');
       }
 
-      // 🌐 PONTE DE COMUNICAÇÃO HTTP FORÇADA EXTERNA:
-      // Invocamos o construtor nativo new URL() para obrigar o Next.js a quebrar as rotas relativas
-      // e despachar os bytes estritamente para fora, batendo na porta do Express de verdade!
+      // 🌐 FORCE AN EXTERNAL HTTP REQUEST:
+      // Use the native URL constructor to bypass Next.js relative routing
+      // and send the request directly to the Express server.
       const targetUrl = new URL('http://127.0.0.1:3000/auth/login');
 
       const res = await fetch(targetUrl.href, {
@@ -49,30 +49,28 @@ export default function LoginPage() {
         }),
       });
 
-      // Transforma o fluxo de bytes retornado pela API em um objeto JSON manipulável
+      // Convert the API response body into a JSON object
       const data = await res.json();
 
-      // ❌ CONDIÇÃO DE REJEIÇÃO DA API:
-      // Se a resposta HTTP vier com status de erro (400 Bad Request, 401 Unauthorized etc),
-      // a propriedade 'res.ok' será false. Capturamos o texto do erro configurado no back-end.
+      // ❌ HANDLE API ERRORS:
+      // For an HTTP error status (400 Bad Request, 401 Unauthorized, etc.),
+      // res.ok is false. Read the error message returned by the backend.
       if (!res.ok) {
         throw new Error(data.error?.message || 'Falha na validação do acesso. Verifique suas credenciais.');
       }
 
       // =========================================================================
-      // 🔐 MARCO CONSOLIDADO: ARMAZENAMENTO SEGURO DO TOKEN JWT
+      // 🔐 STORE THE JWT
       // =========================================================================
-      // Com as credenciais validadas (Status 200 OK), capturamos a assinatura digital do token
-      // e salvamos na gaveta permanente do navegador (localStorage). Isso manterá a sessão ativa
-      // e servirá como o passaporte de segurança para bater nas rotas protegidas da IA posterior.
+      // After credentials are validated (HTTP 200), store the signed token in localStorage.
+      // It keeps the session active and authorizes later requests to protected AI routes.
       localStorage.setItem('token', data.token);
 
-      // 🔀 DIRECIONAMENTO SEGURO:
-      // Empurra o usuário autenticado para a rota do painel do Chat Inteligente.
+      // 🔀 Redirect the authenticated user to the chat dashboard.
       router.push('/chat');
 
     } catch (err: unknown) {
-      // Bloco Catch: Intercepta qualquer falha de validação local ou queda física do servidor  
+      // Catch local validation errors and server connection failures.
       console.error('❌ Falha capturada na esteira de controle de login:', err);
 
       setError(
@@ -81,33 +79,33 @@ export default function LoginPage() {
           : 'Erro crítico de comunicação com o servidor de autenticação.'
       );
     } finally {
-      // O bloco finally roda obrigatoriamente independente de sucesso ou falha, desligando o loading do botão
+      // Always clear the loading state, whether the request succeeds or fails.
       setLoading(false);
     }
   };
 
   return (
-    // 🎨 ESTRUTURA VISUAL ESTILIZADA COM CLASSES UTILITÁRIAS DO TAILWIND CSS
-    // min-h-screen: Garante o fundo preto ocupando 100% da altura da janela do monitor
-    // bg-gray-950: Define a cor de fundo padrão ultra-escura (padrão de interfaces modernas)
+    // 🎨 VISUAL LAYOUT STYLED WITH TAILWIND CSS UTILITY CLASSES
+    // min-h-screen: Make the background fill the full viewport height
+    // bg-gray-950: Set the default very dark background
     <main className="min-h-screen flex items-center justify-center bg-gray-950 px-4">
       
-      {/* CARD CENTRALIZADO DO FORMULÁRIO */}
+      {/* CENTERED FORM CARD */}
       <div className="max-w-md w-full bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl">
         <h1 className="text-3xl font-bold text-center text-white mb-2 tracking-tight">Projeto Maestro</h1>
         <p className="text-sm text-center text-gray-400 mb-8">Portal de orquestração e gerenciamento de Inteligência Artificial</p>
 
-        {/* ALERTA DE ERRO CONDICIONAL (Só renderiza na tela se o estado 'error' possuir texto) */}
+        {/* CONDITIONAL ERROR ALERT (render only when error contains text) */}
         {error && (
           <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm p-4 rounded-xl mb-6 transition-all">
             {error}
           </div>
         )}
 
-        {/* FORMULÁRIO DE ENTRADA */}
+        {/* LOGIN FORM */}
         <form onSubmit={handleLogin} className="space-y-6">
           
-          {/* CAIXA DE ENTRADA: USUÁRIO */}
+          {/* USERNAME INPUT */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
               Identificador (Username)
@@ -115,13 +113,13 @@ export default function LoginPage() {
             <input
               type="text"
               value={username}
-              onChange={(e) => setUsername(e.target.value)} // Atualiza o estado react a cada letra digitada
+              onChange={(e) => setUsername(e.target.value)} // Update React state as each character is typed
               placeholder="Ex: admin"
               className="w-full bg-gray-950 border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors placeholder-gray-600"
             />
           </div>
 
-          {/* CAIXA DE ENTRADA: SENHA */}
+          {/* PASSWORD INPUT */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
               Chave de Acesso (Password)
@@ -135,8 +133,8 @@ export default function LoginPage() {
             />
           </div>
 
-          {/* BOTÃO MESTRE DE SUBMIT */}
-          {/* disabled={loading}: Se a requisição estiver rodando, congela o botão impedindo duplo clique */}
+          {/* SUBMIT BUTTON */}
+          {/* disabled={loading}: Prevent double submissions while the request is in progress */}
           <button
             type="submit"
             disabled={loading}

@@ -9,18 +9,18 @@ interface Message {
 }
 
 // =========================================================================
-// 📡 ESCUTADOR EXTERNO (SUBSCRIBE TO STORAGE)
+// 📡 EXTERNAL LISTENER (SUBSCRIBE TO STORAGE)
 // =========================================================================
-// Envia um aviso para o React se o localStorage sofrer alterações em outras abas
+// Notify React if localStorage changes in another tab
 const subscribeToToken = (callback: () => void) => {
   window.addEventListener('storage', callback);
   return () => window.removeEventListener('storage', callback);
 };
 
-// Captura a foto (snapshot) atual do token direto do ecossistema do navegador
+// Capture the current token snapshot directly from the browser
 const getTokenSnapshot = (): string | null => localStorage.getItem('token');
 
-// Configuração para o Servidor (SSR): Como o servidor não tem localStorage, inicia como undefined
+// Server configuration (SSR): localStorage is unavailable, so initialize as undefined
 const getServerTokenSnapshot = (): undefined => undefined;
 
 export default function ChatPage() {
@@ -28,20 +28,20 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // =========================================================================
-  // 💎 CONEXÃO COM O COFRE EXTERNO (useSyncExternalStore)
+  // 💎 CONNECT TO THE EXTERNAL STORE (useSyncExternalStore)
   // =========================================================================
-  // Lê o token de forma reativa e limpa, eliminando a necessidade de setStates síncronos!
+  // Read the token reactively without synchronous state updates
   const token = useSyncExternalStore(
     subscribeToToken,
     getTokenSnapshot,
     getServerTokenSnapshot
   );
 
-  // Estados derivados calculados na hora da renderização (Prática recomendada pelo React!)
+  // Derive state during rendering, as recommended by React
   const isAuthenticated = token !== null && token !== undefined;
   const isCheckingAuth = token === undefined;
 
-  // Inicializa o histórico de mensagens direto como estado inicial, sem passar pelo useEffect
+  // Initialize message history directly, without going through useEffect
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -54,16 +54,16 @@ export default function ChatPage() {
   const [error, setError] = useState('');
 
   /**
-   * 🛡️ GUARDA DE EXPULSÃO (Efeito de Navegação)
-   * Executa apenas quando o token mudar de estado. Se o token sumir, despacha o usuário para o login.
+  * 🛡️ AUTH REDIRECT (Navigation effect)
+  * Runs when the token changes. If the token disappears, redirect the user to login.
    */
   useEffect(() => {
     if (!isAuthenticated && !isCheckingAuth) {
-      router.replace('/login'); // Usa replace para apagar a página do chat do histórico de voltar do navegador
+      router.replace('/login'); // Use replace to remove the chat page from browser history
     }
   }, [router, isAuthenticated, isCheckingAuth]);
 
-  // Mantém a rolagem sempre ancorada na última mensagem
+  // Keep the scroll position anchored to the latest message
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -83,7 +83,7 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, { role: 'user', content: userPrompt }]);
 
     try {
-      // 🔐 Injeta a URL absoluta forçando o IP local direto para quebrar as amarras do Turbopack
+      // 🔐 Use an absolute URL to target localhost directly and bypass Turbopack's relative routing
       const targetUrl = new URL('http://127.0.0.1:3000/ai/chat');
 
       const res = await fetch(targetUrl.href, {
@@ -103,7 +103,7 @@ export default function ChatPage() {
 
       setMessages((prev) => [...prev, { role: 'assistant', content: data.response }]);
 
-    } catch (err: unknown) { // Sua solução sênior mantida intacta!
+    } catch (err: unknown) { // Keep the existing type-safe error handling
       console.error('❌ Falha na esteira de transmissão do chat:', err);
       setError(
         err instanceof Error 
@@ -117,11 +117,11 @@ export default function ChatPage() {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
-    // Como removemos do localStorage, o useSyncExternalStore captura a mudança e o useEffect nos joga para o /login
-    window.dispatchEvent(new Event('storage')); // Força o disparo do evento na mesma aba
+    // useSyncExternalStore detects the removal and the effect redirects to /login
+    window.dispatchEvent(new Event('storage')); // Dispatch the event in the current tab
   };
 
-  // 🧱 Renderização de contingência durante o boot inicial no Next.js
+  // 🧱 Fallback rendering during the initial Next.js startup
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-500 text-sm tracking-wide">
@@ -130,7 +130,7 @@ export default function ChatPage() {
     );
   }
 
-  // Se o token for nulo (não autenticado), bloqueia o HTML enquanto o redirecionamento acontece
+  // If the token is null, render no HTML while the redirect runs
   if (!isAuthenticated) return null;
 
   return (
