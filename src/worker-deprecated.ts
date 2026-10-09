@@ -1,12 +1,19 @@
+/**
+ * @deprecated OBSOLETO: O arquivo src/worker.ts foi descontinuado.
+ * A lógica do consumidor assíncrono que continha o loop `channel.consume` 
+ * foi embutida no método privado `startAsynchronousConsumerWorker()` 
+ * dentro deste serviço, rodando de forma unificada no boot do servidor principal.
+ */
+
 // 1. IMPORTAÇÕES: Trazemos as ferramentas de conexão da nossa fila, o repositório em memória
 // e o serviço que gerencia as regras de criação de usuários.
-import { getRabbitChannel, QUEUE_NAME } from './queue/rabbit.js';
+import { getRabbitChannel, QUEUE_NAME } from './queue/rabbit-deprecated.js';
 import { UserRepository } from './repositories/UserRepository.js';
 import { UserService } from './services/UserService.js';
 
 // 🔥 ARQUITETURA LIMPA: Importa o 'io' diretamente do nosso arquivo de configuração isolado!
 // Colocamos o sufixo '.js' porque estamos usando os Módulos Nativos (ESM) do Node no projeto.
-import { io } from './graphql/socket.js';
+import { io } from './graphql/socket-deprecated.js';
 
 // 2. FUNÇÃO INICIALIZADORA DO MOTOR DO WORKER:
 async function startWorker() {

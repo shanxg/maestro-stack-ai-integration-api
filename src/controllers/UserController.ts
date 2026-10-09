@@ -2,7 +2,7 @@
 // Usamos 'type' no Request/Response porque eles são apenas tipos estruturais do TypeScript.
 import { type Request, type Response } from 'express';
 import { UserService } from '../services/UserService.js';
-import { getRabbitChannel, QUEUE_NAME } from '../queue/rabbit.js';
+import { EventBrokerService } from '../services/EventBrokerService.js';
 
 // Biblioteca para conectar e interagir com o Redis
 import {Redis} from 'ioredis'; 
@@ -17,159 +17,178 @@ const redis = new Redis({
 export class UserController {
   
   // INJEÇÃO DE DEPENDÊNCIA: O controlador não cria o serviço do zero.
-  // Ele recebe o 'UserService' já prontinho e configurado através do seu construtor.
-  constructor(private userService: UserService) {}
+  // INVERSÃO DE CONTROLE (IoC): O construtor recebe as instâncias vivas injetadas da Factory principal.
+  // Quem chamar o UserController fica encarregado de entregar o UserService e o EventBrokerService prontos.
+  constructor(
+    private userService: UserService,
+    private eventBrokerService: EventBrokerService
+  ) {}
 
-  // <OLD>
-  // FUNÇÃO 1 (Listar): Acionada quando alguém acessa a rota GET /users.
-  // Ela pede a lista para o serviço e responde ao cliente enviando um JSON com todos os usuários.
-
-        // getUsers = async (req: Request, res: Response): Promise<void> => {
-        //   const users = await this.userService.getAllUsers();
-        //   res.json(users);
-        // };
-  // </OLD>      
-
-
-  // FUNÇÃO 1 (Listar): Método ENDPOINT usando CACHE com Redis. 
-  // Acionada quando alguém acessa a rota GET /users.
+  /**
+   * 📡 ENDPOINT 1 (GET /users): Listagem de usuários com suporte a Cache-Aside no Redis.
+   * Acionada de forma segura para fatiar buscas na persistência do PostgreSQL.
+   */
   getUsers = async (req: Request, res: Response): Promise<void> => {
     try {
-      // PAGINAÇÃO: 1. Captura os parâmetros da URL. Se não forem informados, assume limit=10 e offset=0
+      // PAGINAÇÃO COMPORTAMENTAL: Captura os parâmetros contidos na Query String da URL da requisição.
+      // Se o desenvolvedor ou cliente omitir os valores, assume limit=10 e offset=0 por convenção corporativa.
       const { limit = '10', offset = '0' } = req.query;
 
-      // PAGINAÇÃO: 2. Converte as strings da URL obrigatoriamente para números inteiros
+      // PAGINAÇÃO COMPORTAMENTAL: Converte as strings extraídas da URL estritamente para números inteiros.
+      // A trava Math.max() impede buracos na paginação com números negativos inseridos maliciosamente.
       const limitNumber = Math.max(1, parseInt(limit as string, 10));
       const offsetNumber = Math.max(0, parseInt(offset as string, 10));
 
-      // CHAVE DINÂMICA: Cada combinação de página ganha um espaço exclusivo no Redis!
+      // CHAVE DINÂMICA DE ISOLAMENTO: Cada combinação de página ganha um bloco exclusivo indexado no Redis!
       const cacheKey = `users:limit=${limitNumber}:offset=${offsetNumber}`;
 
-      // Passo A: Faz um "ping" no Redis usando a chave dinâmica para ver se o bloco de texto já existe lá dentro
+      // Passo A: Faz um "ping" síncrono no Redis usando a chave dinâmica para checar se o bloco de texto já existe.
       const cachedUsers = await redis.get(cacheKey);      
       
-      // Passo B: Cache Encontrado (Cache Hit)! Converte a string JSON de volta para objeto e responde imediatamente
+      // Passo B: CONDIÇÃO DE CACHE HIT! Se o texto JSON existir, descompacta os dados e responde ao cliente na hora,
+      // economizando ciclos de processamento e conexões de I/O de disco contra o PostgreSQL!
       if (cachedUsers) {
-        res.json(JSON.parse(cachedUsers));
+        console.log(`⚡ [Redis] Cache Hit absoluto para a chave: ${cacheKey}`);
+        res.status(200).json(JSON.parse(cachedUsers));
         return;
       }
       
-      // Passo C: Cache Não Encontrado (Cache Miss)! Avança mais fundo para as camadas do motor de serviço
-      // PAGINAÇÃO: 3. Solicita os dados para a camada de serviço passando as regras de paginação
+      console.log(`⚠️ [Redis] Cache Miss detectado. Perfurando rota até a camada do PostgreSQL...`);
+
+      // Passo C: CONDIÇÃO DE CACHE MISS! Avança até o serviço e puxa os registros originais e reais do banco de dados relacional.
       const users = await this.userService.getAllUsers({ 
         limit: limitNumber, 
         offset: offsetNumber 
       });
       
-      // Passo D: Guarda o bloco especifico de usuarios atualizado de volta no Redis 
-      // com um tempo de expiração explícito de 60 segundos (TTL)
+      // Passo D: Devolve o resultado novo em formato string compactado para a gaveta do Redis,
+      // configurando um TTL (Time-To-Live) de expiração explícita de 60 segundos para evitar obsolescência de dados.
       await redis.set(cacheKey, JSON.stringify(users), 'EX', 60);
       
-      // Passo E: Entrega os dados diretamente para o navegador do cliente
-      res.json(users);
+      // Passo E: Entrega os dados limpos e consolidados diretamente para o navegador do cliente.
+      res.status(200).json(users);
+
     } catch (error: any) {
-      // Passo F: Bloco de salvaguarda em tempo de execução para capturar quedas de rede com formato de erro padronizado
+      console.error('❌ Falha crítica de processamento no método getUsers:', error);
        res.status(500).json({
         error: {
           code: 'INTERNAL_SERVER_ERROR',
-          message: 'Internal server performance failure',
+          message: 'Falha operacional de performance interna no servidor de dados.',
           details: error.message
         }
       });
     }
   };
 
-  // FUNÇÃO 2 (Buscar por ID): Acionada quando alguém acessa GET /users/:id.
+  /**
+   * 📡 ENDPOINT 2 (GET /users/:id): Busca cirúrgica por identificador indexado.
+   * Varre a persistência do PostgreSQL em busca de um registro único.
+   */
   getUserById = async (req: Request, res: Response): Promise<void> => {
-    // Pega o ID enviado na URL da requisição (ex: /users/7z8x9w2)
-    const { id } = req.params;
-
-    // VALIDAÇÃO DE SEGURANÇA: Se o ID não foi enviado ou não for um texto válido,
-    // o controlador barra a requisição na hora com o erro 400 (Bad Request) e interrompe com 'return'.
-    if (!id || typeof id !== 'string') {
-       res.status(400).json({
-        error: {
-          code: 'BAD_REQUEST',
-          message: 'Invalid or missing user ID'
-        }
-      });
-      return;
-    }
-
-    // Se o ID passou na validação, chama o serviço para procurar o usuário.
-    const user = await this.userService.getUserById(id);
-    
-    // Se o serviço não encontrar o usuário (retornar null), responde com o famoso erro 404 (Not Found).
-    if (!user) {
-      res.status(404).json({ 
-        error: {
-          code: 'NOT_FOUND',
-          message: 'User not found'
-        }
-      });
-      return;
-    }
-    
-    // Se tudo deu certo, devolve o usuário encontrado em formato JSON.
-    res.json(user);
-  };
-
-  // FUNÇÃO 3 (Criar com Fila Assíncrona): Acionada quando alguém envia dados via POST /users.
-  createUser = async (req: Request, res: Response): Promise<void> => {
-    // Desestrutura e extrai o 'name' e o 'email' que o cliente enviou dentro do corpo da requisição (body).
-    const { name, email } = req.body;
-    
-    // VALIDAÇÃO: Se o cliente esqueceu de enviar o nome ou o email, barra com o erro 400.
-    if (!name || !email) {
-      res.status(400).json({ 
-        error: {
-          code: 'BAD_REQUEST',
-          message: 'Name and email are required'
-        }
-      });
-      return;
-    }
-
     try {
-      // 1. CONEXÃO COM A FILA: Pega o canal de comunicação ativo que configuramos para o RabbitMQ.
-      const channel = await getRabbitChannel();
+      const { id } = req.params;
 
-      // 2. MONTAGEM DO PACOTE (PAYLOAD): Cria o objeto JSON contendo a intenção ("create") e os dados enviados pelo cliente.
-      const payload = {
-        action: 'create',
-        data: { name, email }
-      };
-
-      // 3. ENVIO PARA A FILA: Transmite os dados para a fila convertidos em formato binário (Buffer.from).
-      // A opção 'persistent: true' diz para o RabbitMQ salvar o arquivo em disco para que ele não se perca se o Docker cair.
-      channel.sendToQueue(QUEUE_NAME, Buffer.from(JSON.stringify(payload)), {
-        persistent: true
-      });
-
-      // INVALIDAÇÃO AUTOMÁTICA DE CACHE:
-      // Deletamos todas as chave dinamicas com "users:" do Redis. Como um usuário novo vai entrar na fila para ser criado,
-      // limpamos o cache para garantir que o próximo GET busque a lista atualizada direto do serviço.
-      const keys = await redis.keys('users:*');
-      if (keys.length > 0) {
-        await redis.del(...keys);
+      // VALIDAÇÃO DEFENSIVA DE RUNTIME: Se o ID vier em branco ou corrompido pela URL, barra imediatamente.
+      // Padrão OWASP: Retorna o objeto envelopado com código semântico legível para o cliente.
+      if (!id || typeof id !== 'string' || id.trim() === '') {
+         res.status(400).json({
+          error: {
+            code: 'BAD_REQUEST',
+            message: 'O parâmetro de identificação do Usuário (ID) é mandatório e precisa ser válido.'
+          }
+        });
+        return;
       }
 
-      // 4. RESPOSTA DE ACEITAÇÃO (Status 202): Indica ao cliente que a requisição foi recebida com sucesso
-      // e aceita para processamento, mas será resolvida em segundo plano de forma assíncrona pela fila.
+      // Encaminha a busca para a camada do serviço que consome as regras relacionais do Postgres
+      const user = await this.userService.getUserById(id.trim());
+      
+      // CONDIÇÃO DE INTERRUPÇÃO (NOT FOUND): Se o banco responder nulo (registro inexistente), emite o erro 404.
+      if (!user) {
+        res.status(404).json({ 
+          error: {
+            code: 'NOT_FOUND',
+            message: 'O usuário solicitado não foi localizado na base de dados relacional.'
+          }
+        });
+        return;
+      }
+      
+      // Sucesso total! Devolve o objeto User estruturado e tipado
+      res.status(200).json(user);
+
+    } catch (error: any) {
+      console.error('❌ Falha crítica no método getUserById:', error);
+      res.status(500).json({
+        error: {
+          code: 'INTERNAL_SERVER_ERROR',
+          message: 'Erro interno ao processar a busca por identificador.',
+          details: error.message
+        }
+      });
+    }
+  };
+
+  /**
+   * 📡 ENDPOINT 3 (POST /users): Envio assíncrono blindado para a fila.
+   * Recebe o payload, desvia os bytes para o RabbitMQ e limpa os caches antigos.
+   */
+  createUser = async (req: Request, res: Response): Promise<void> => {
+    try {
+      // Captura as chaves estruturadas validadas que atravessaram o middleware do Zod
+      const { name, email } = req.body;
+      
+      // 🛡️ VALIDAÇÃO DE ENTRADA EXIGIDA: Se faltar nome ou email, rejeita o processamento local
+      if (!name || !email) {
+        res.status(400).json({ 
+          error: {
+            code: 'BAD_REQUEST',
+            message: 'Os campos nome e e-mail são obrigatórios para registrar uma intenção de cadastro.'
+          }
+        });
+        return;
+      }
+
+      // =========================================================================
+      // 📤 ESTEIRA ASSÍNCRONA ORIENTADA A EVENTOS (RABBITMQ)
+      // =========================================================================
+      // Aciona o nosso EventBrokerService unificado para disparar o payload em formato
+      // de bytes binários direto para a fila do Docker, sem travar a thread de resposta HTTP!
+      const isQueued = await this.eventBrokerService.publishEvent('user_created', { name, email });
+
+      // CONDIÇÃO DE PROTEÇÃO DE EVENTOS: Se a fila estiver indisponível ou cair, estoura o erro local
+      if (!isQueued) {
+        throw new Error('O broker de mensageria recusou o enfileiramento do evento.');
+      }
+
+      // =========================================================================
+      // 🧹 INVALIDAÇÃO AUTOMÁTICA DE CACHE (PURGE REGEX)
+      // =========================================================================
+      // Captura e varre todas as chaves dinâmicas registradas com o prefixo "users:*" no Redis.
+      // Como um novo usuário entrará na esteira, limpamos o cache imediatamente para garantir
+      // que as próximas consultas leiam os dados novos do Postgres, evitando dados fantasmas (*Stale Data*).
+      const targetedKeys = await redis.keys('users:*');
+      if (targetedKeys.length > 0) {
+        await redis.del(...targetedKeys);
+        console.log(`🧹 [Redis] Invalidação estrita concluída. ${targetedKeys.length} chaves obsoletas foram expurgadas.`);
+      }
+
+      // 🏁 RESPOSTA DE ACEITAÇÃO (STATUS 202 ACCEPTED):
+      // Indica ao front-end que a requisição é válida e foi aceita com sucesso total, 
+      // mas que o processamento físico no banco acontecerá em background pela fila.
       res.status(202).json({ 
-        message: 'Solicitação de cadastro recebida com sucesso! Processando na fila de eventos...' 
+        message: 'Solicitação de cadastro recebida com sucesso! Processando em lote assíncrono na fila de eventos...' 
       });
       
     } catch (error: any) {
-      // SALVAGUARDA: Se o servidor do RabbitMQ estiver desligado ou a rede falhar, captura o erro e responde com status 500.
+      console.error('❌ Falha crítica de barreira assíncrona no método createUser:', error);
       res.status(500).json({ 
         error: {
           code: 'INTERNAL_SERVER_ERROR',
-          message: 'Erro interno ao tentar enviar a solicitação para a fila.',
+          message: 'Erro interno de infraestrutura ao tentar despachar a intenção para a fila de eventos.',
           details: error.message
         }
       });
     }
   };
-
 }

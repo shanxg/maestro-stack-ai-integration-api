@@ -1,3 +1,10 @@
+/**
+ * @deprecated OBSOLETO: O arquivo src/queue/rabbit.ts (ou .js) foi descontinuado.
+ * Toda a fiação de inicialização do canal, validação de filas (`assertQueue`) 
+ * e persistência elástica foi absorvida com comentários didáticos por este novo serviço.
+ */
+
+
 import amqp from 'amqplib';
 
 // 🔥 ATUALIZADO: Lê dinamicamente o HOST injetado pelo Kubernetes, usando localhost como backup local

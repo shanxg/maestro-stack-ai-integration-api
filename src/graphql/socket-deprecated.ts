@@ -1,3 +1,10 @@
+/**
+ * @deprecated OBSOLETO: O arquivo src/graphql/socket.ts (ou .js) foi descontinuado.
+ * Ele gerenciava a inicialização do Socket.io do Dia 3, que foi 100% substituído 
+ * pelo túnel leve de streaming nativo do protocolo Server-Sent Events (SSE) na rota /events.
+ */
+
+
 // 1. IMPORTAÇÕES: Módulo nativo HTTP para os tipos e o motor do Socket.io
 import http from 'node:http';
 import { Server } from 'socket.io';
