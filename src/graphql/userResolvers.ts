@@ -1,30 +1,30 @@
-// 1. IMPORTAÇÕES: Traz a estrutura do UserService para podermos manipular as ações reais do sistema.
+// 1. IMPORTS: Bring in UserService to perform the system's operations.
 import { UserService } from '../services/UserService.js';
 import { UserRepository } from '../repositories/UserRepository.js';
 
-// 2. INICIALIZAÇÃO DA CAMADA DE INJEÇÃO: Instanciamos o serviço da mesma forma que fizemos no app.ts
+// 2. DEPENDENCY INITIALIZATION: Instantiate the service as in app.ts.
 const userRepository = new UserRepository();
 const userService = new UserService(userRepository);
 
-// 3. DEFINIÇÃO DOS RESOLVERS: Objeto que contém a implementação real das Queries e Mutations do schema.
+// 3. RESOLVER DEFINITIONS: Implement the schema's queries and mutations.
 export const userResolvers = {
   
-  // Bloco de leitura correspondente ao 'type Query' do arquivo .graphql
+  // Read operations corresponding to the GraphQL 'type Query' block.
   Query: {
-    // Retorna todos os usuários. Passamos limit fixo de 100 e offset 0 por padrão para simplificar no GraphQL.
+    // Return all users with a fixed limit of 100 and offset of 0 for simplicity.
     users: async (): Promise<any[]> => {
       return userService.getAllUsers({ limit: 100, offset: 0 });
     },
 
-    // Busca um usuário específico varrendo o argumento 'id' extraído da chamada GraphQL
+    // Find a user using the 'id' argument from the GraphQL call.
     user: async (_parent: any, args: { id: string }): Promise<any | null> => {
       return userService.getUserById(args.id);
     }
   },
 
-  // Bloco de modificação correspondente ao 'type Mutation' do arquivo .graphql
+  // Write operations corresponding to the GraphQL 'type Mutation' block.
   Mutation: {
-    // Cria um usuário acionando o método do serviço e devolve o objeto criado de volta
+    // Create a user through the service and return the created object.
     createUser: async (_parent: any, args: { name: string; email: string }): Promise<any> => {
       const { name, email } = args;
       return userService.createUser(name, email);

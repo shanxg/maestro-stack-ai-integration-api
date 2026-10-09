@@ -1,76 +1,76 @@
-// 🔥 REQUISITO MÁXIMO DE SEGURANÇA: Inicializa o dotenv na linha 1 para descarregar o arquivo .env para a memória da API
+// 🔥 SECURITY REQUIREMENT: Load dotenv on the first line to read .env into API memory.
 import 'dotenv/config';
 
-// 1. IMPORTAÇÕES DE INFRAESTRUTURA E ECOSSISTEMA EXPRESS
+// 1. INFRASTRUCTURE AND EXPRESS IMPORTS
 import express, { type Request, type Response } from 'express';
-import jwt from 'jsonwebtoken'; // Utilizado para assinar e emitir chaves de autenticação
-import fs from 'node:fs';       // Módulo nativo para ler arquivos físicos do disco rígido
-import path from 'node:path';   // Módulo nativo para resolver caminhos de pastas de forma segura
-import http from 'node:http';   // Módulo nativo do Node para gerenciar a malha de servidores de rede
+import jwt from 'jsonwebtoken'; // Sign and issue authentication tokens
+import fs from 'node:fs';       // Native module for reading files from disk
+import path from 'node:path';   // Native module for safely resolving directory paths
+import http from 'node:http';   // Node module for managing network servers
 
-// Camadas estruturais do domínio de Usuários
+// User domain layers
 import { UserRepository } from './repositories/UserRepository.js';
 import { UserService } from './services/UserService.js';
 import { UserController } from './controllers/UserController.js';
 
-// 🔥 UNIFICAÇÃO DE MENSAGERIA E TEMPO REAL (DIA 7)
-// Trazemos o novo cérebro unificado que gerencia as filas do RabbitMQ e as conexões de streaming SSE
+// 🔥 UNIFIED MESSAGING AND REAL-TIME SUPPORT (DAY 7)
+// Import the unified service that manages RabbitMQ queues and SSE streaming connections.
 import { EventBrokerService } from './services/EventBrokerService.js';
 
-// Camadas estruturais do domínio de Inteligência Artificial Local
+// Local AI domain layers
 import { AIService } from './services/AIService.js';
 import { AIController } from './controllers/AIController.js';
 
-// 2. IMPORTAÇÕES DOS PACOTES DE SEGURANÇA GLOBAL (OWASP TOP 10)
+// 2. GLOBAL SECURITY PACKAGE IMPORTS (OWASP TOP 10)
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 
-// 3. IMPORTAÇÕES DOS NOSSOS MIDDLEWARES E SCHEMAS DO ZOD
+// 3. MIDDLEWARE AND ZOD SCHEMA IMPORTS
 import { authMiddleware } from './middlewares/authMiddleware.js';
 import { validateMiddleware } from './middlewares/validateMiddleware.js';
 import { createUserSchema } from './schemas/userSchema.js';
 
-// 4. IMPORTAÇÕES DO BLOCO GRAPHQL (APOLLO SERVER)
+// 4. GRAPHQL (APOLLO SERVER) IMPORTS
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@as-integrations/express5';
 import { userResolvers } from './graphql/userResolvers.js';
 
-// Recuperação Segura: Captura o segredo do JWT direto do ambiente com fallback de contingência
+// Safely read the JWT secret from the environment, with a fallback value.
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_backup_2026';
 
 /**
- * 🏭 FACTORY FUNCTION DO ECOSSISTEMA ( createApp ):
- * Envelopa a montagem completa da API. Permite que o ambiente de testes do Jest injete
- * dublês de serviço (mocks) para rodar validações em milissegundos sem travar o terminal.
+ * 🏭 APPLICATION FACTORY (createApp):
+ * Assembles the API and lets Jest inject service mocks,
+ * so tests can run quickly without blocking on external services.
  */
 export async function createApp(customUserService?: any) {
 
   const app = express();
 
-  // Envelopamento de Rede: Criamos o servidor HTTP nativo acoplando as diretivas do Express
+  // Create a native HTTP server around the Express application.
   const server = http.createServer(app);
 
   // ==========================================
-  // 🛡️ MIDDLEWARES DE PROTEÇÃO DE REDE
+  // 🛡️ NETWORK PROTECTION MIDDLEWARE
   // ==========================================
 
-  // A. HELMET: Ajusta cabeçalhos HTTP rigorosos contra Clickjacking, Sniffing e vetores de XSS.
-  // Desativamos a política de conteúdo (CSP) localmente apenas para permitir a execução da Sandbox do Apollo.
+  // A. HELMET: Set strict HTTP headers to mitigate clickjacking, sniffing, and XSS.
+  // Disable CSP locally to allow the Apollo Sandbox to run.
   const helmetOptions = process.env.NODE_ENV === 'production' ? {} : { contentSecurityPolicy: false };
   app.use(helmet(helmetOptions));
 
-  // B. CORS: Restringe a origem das chamadas. Libera estritamente o tráfego vindo do seu front Next.js.
+  // B. CORS: Restrict request origins to traffic from the Next.js frontend.
   app.use(cors({ 
-    origin: ['http://localhost:3000', 'http://localhost:3001'], // Habilita suporte para as duas portas locais
+    origin: ['http://localhost:3000', 'http://localhost:3001'], // Support both local ports
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization']
   }));
 
-  // C. RATE LIMITER: Protege o barramento contra inundações forçadas por scripts maliciosos (DDoS).
+  // C. RATE LIMITER: Protect the API from malicious request floods (DDoS).
   const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // Janela de contagem de 15 minutos
-    max: 100,                 // Cada IP pode efetuar no máximo 100 requisições por janela
+    windowMs: 15 * 60 * 1000, // 15-minute counting window
+    max: 100,                 // Allow at most 100 requests per IP per window
     standardHeaders: true,
     legacyHeaders: false,
     message: {
@@ -82,34 +82,34 @@ export async function createApp(customUserService?: any) {
   });
   app.use(limiter);
 
-  // Ativa a interceptação e leitura nativa de payloads em formato JSON no corpo das rotas
+  // Enable native parsing of JSON request bodies.
   app.use(express.json());
 
   // ==========================================
-  // 🏭 INICIALIZAÇÃO E AMARRAÇÃO DOS SERVIÇOS (IoC)
+  // 🏭 SERVICE INITIALIZATION AND WIRING (IoC)
   // ==========================================
-  // Instanciamos o novo broker de mensageria centralizado do Dia 7
+  // Create the centralized messaging broker.
   const eventBrokerService = new EventBrokerService();
 
-  // Orquestramos a esteira de Usuários acoplando a persistência relacional real do PostgreSQL [66]
+  // Wire the user workflow to PostgreSQL persistence. [66]
   const userRepository = new UserRepository();
   const userService = customUserService || new UserService(userRepository);
   
-  // 🔥 ATUALIZADO: Injeta as duas dependências necessárias no construtor do UserController! [20]
+  // 🔥 Inject both dependencies required by UserController. [20]
   const userController = new UserController(userService, eventBrokerService);
 
   // ==========================================
-  // 🔐 ENDPOINT DE AUTENTICAÇÃO: POST /auth/login
+  // 🔐 AUTHENTICATION ENDPOINT: POST /auth/login
   // ==========================================
   app.post('/auth/login', (req: Request, res: Response): void => {
     const { username, password } = req.body;
 
-    // Simulação estável corporativa para emissão de chaves [60]
+    // Stable demo credentials for issuing tokens. [60]
     if (username === 'admin' && password === 'secret123') {
       const token = jwt.sign(
         { user: username, role: 'ADMIN' }, 
         JWT_SECRET, 
-        { expiresIn: '1h' } // TTL de 1 hora de validade ativa
+        { expiresIn: '1h' } // One-hour token lifetime
       );
       res.status(200).json({ token });
       return;
@@ -124,30 +124,30 @@ export async function createApp(customUserService?: any) {
   });
 
   // ==========================================
-  // 🗺️ MAPEAMENTO DE ENDPOINTS REST MAESTRO
+  // 🗺️ MAESTRO REST ENDPOINTS
   // ==========================================
   app.get('/users', authMiddleware, (req: Request, res: Response) => userController.getUsers(req, res));
   app.get('/users/:id', authMiddleware, (req: Request, res: Response) => userController.getUserById(req, res));
   app.post('/users', validateMiddleware(createUserSchema), (req: Request, res: Response) => userController.createUser(req, res));
 
   // ==========================================
-  // 🤖 ORQUESTRAÇÃO DE INTELIGÊNCIA ARTIFICIAL
+  // 🤖 AI ORCHESTRATION
   // ==========================================
   const aiService = new AIService();
   const aiController = new AIController(aiService);
   app.post('/ai/chat', authMiddleware, (req, res) => aiController.chat(req, res));
 
   // ==========================================
-  // 📡 🔥 ENDPOINT DE TEMPO REAL: SERVER-SENT EVENTS (SSE)
+  // 📡 🔥 REAL-TIME ENDPOINT: SERVER-SENT EVENTS (SSE)
   // ==========================================
-  // 🔥 ATUALIZADO: Rota acoplada diretamente ao registerSSEClient do nosso Broker!
-  // Transforma a conexão HTTP comum em um canal de transmissão reativo unificado à fila.
+  // 🔥 Route directly through the broker's registerSSEClient method.
+  // Turn a standard HTTP connection into a reactive stream connected to the queue.
   app.get('/events', (req: Request, res: Response) => {
     eventBrokerService.registerSSEClient(req, res);
   });
 
   // ==========================================
-  // 🌌 CONFIGURAÇÃO E INICIALIZAÇÃO DO GRAPHQL
+  // 🌌 GRAPHQL CONFIGURATION AND INITIALIZATION
   // ==========================================
   const typeDefs = fs.readFileSync(path.resolve('src', 'graphql', 'schema.graphql'), 'utf-8');
   const apolloServer = new ApolloServer({ typeDefs, resolvers: userResolvers });
@@ -158,14 +158,14 @@ export async function createApp(customUserService?: any) {
   } 
   
   // ==========================================
-  // 🚀 INICIALIZAÇÃO DO SERVIDOR HTTP UNIVERSAL
+  // 🚀 UNIVERSAL HTTP SERVER STARTUP
   // ==========================================
   const PORT = Number(process.env.PORT) || 3000;
   
   if (process.env.NODE_ENV === 'test') {
     console.log("⚠️ Modo de Testes Ativado: O servidor HTTP não será iniciado para evitar conflitos de porta.");
   } else {
-    // Escuta na interface universal 0.0.0.0 para aceitar os roteamentos elásticos do Kubernetes [70]
+    // Listen on 0.0.0.0 to accept Kubernetes traffic. [70]
     server.listen(PORT, "0.0.0.0", () => {
         console.log(`🚀 API REST, GraphQL & Notificações SSE rodando com segurança em http://localhost:${PORT}`);
         console.log(`🌌 Sandbox do GraphQL ativo em http://localhost:${PORT}/graphql`);

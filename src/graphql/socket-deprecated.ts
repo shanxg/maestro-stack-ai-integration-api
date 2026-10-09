@@ -1,18 +1,18 @@
 /**
- * @deprecated OBSOLETO: O arquivo src/graphql/socket.ts (ou .js) foi descontinuado.
- * Ele gerenciava a inicialização do Socket.io do Dia 3, que foi 100% substituído 
- * pelo túnel leve de streaming nativo do protocolo Server-Sent Events (SSE) na rota /events.
+ * @deprecated The file src/graphql/socket.ts (or .js) is obsolete.
+ * It managed the Day 3 Socket.io startup, which has been fully replaced
+ * by native Server-Sent Events (SSE) streaming on the /events route.
  */
 
 
-// 1. IMPORTAÇÕES: Módulo nativo HTTP para os tipos e o motor do Socket.io
+// 1. IMPORTS: Native HTTP module for types and the Socket.io engine.
 import http from 'node:http';
 import { Server } from 'socket.io';
 
-// 🔥 EXPORTAÇÃO COMPARTILHADA: Essa variável guardará a instância global do WebSocket
+// 🔥 SHARED EXPORT: This variable stores the global WebSocket instance.
 export let io: Server;
 
-// 2. FUNÇÃO DE ENGENHARIA: Ela será chamada uma única vez pelo app.ts para dar a partida no motor
+// 2. INITIALIZATION FUNCTION: app.ts calls this once to start the engine.
 export function initializeSocket(server: http.Server): Server {
   io = new Server(server, {
     cors: {
@@ -21,7 +21,7 @@ export function initializeSocket(server: http.Server): Server {
     }
   });
 
-  // Configura os ouvintes padrão de conexão em tempo real
+  // Configure the default real-time connection listeners.
   io.on('connection', (socket) => {
     console.log(`🔌 Novo cliente conectado via WebSocket! ID: ${socket.id}`);
     

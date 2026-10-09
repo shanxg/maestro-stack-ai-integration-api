@@ -1,16 +1,16 @@
-# Dependências instaladas (Pastas pesadas)
+# Installed dependencies (large directories)
 node_modules/
 dist/
 
-# Arquivos de configuração local e chaves secretas (FinOps & Segurança)
+# Local configuration files and secret keys (FinOps & security)
 .env
 .env.local
 
-# Arquivos de logs do sistema e cache do editor
+# System log files and editor cache
 npm-debug.log*
 .eslintcache
 .DS_Store
 .vscode/
 
-# Relatórios de Cobertura de Código (Jest/SWC)
+# Code coverage reports (Jest/SWC)
 coverage/

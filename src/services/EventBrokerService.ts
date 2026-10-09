@@ -6,40 +6,40 @@ export class EventBrokerService {
   private connection?: ChannelModel;
   private channel?: Channel;
   
-  // 👥 GAVETA DE CONEXÕES ATIVAS (TÚNEL SSE):
-  // Armazena temporariamente os objetos 'Response' do Express de todos os clientes logados na aplicação.
+  // 👥 ACTIVE CONNECTIONS (SSE TUNNEL):
+  // Temporarily store Express Response objects for all connected clients.
   private connectedClients: Response[] = [];
   
-  // Nome único da fila registrado no servidor central do RabbitMQ
+  // Unique queue name registered with the RabbitMQ server.
   private readonly queueName = 'user_events';
 
   constructor() {
-    // Dá a partida automática na fiação física de conexões com a infraestrutura do Docker
+    // Automatically establish connections to the Docker infrastructure.
     this.establishInfrastructureBridges();
   }
 
   /**
-   * 🔌 1. ESTABELECER PONTES DE INFRAESTRUTURA (establishInfrastructureBridges):
-   * Abre conexões TCP permanentes com o RabbitMQ aproveitando as variáveis elásticas de ambiente.
+  * 🔌 1. ESTABLISH INFRASTRUCTURE BRIDGES (establishInfrastructureBridges):
+  * Open persistent TCP connections to RabbitMQ using environment variables.
    */
   private async establishInfrastructureBridges(): Promise<void> {
     try {
-      // Captura o Host injetado dinamicamente ou assume 'localhost' se estiver rodando fora do cluster
+      // Read the injected host, or use 'localhost' when running outside the cluster.
       const rabbitHost = process.env.RABBIT_HOST || 'localhost';
       const rabbitUrl = `amqp://${rabbitHost}:5672`;
 
       console.log(`⏳ [RabbitMQ] Tentando perfurar conexão no endereço: ${rabbitUrl}`);
       
-      // Abre a conexão matriz e o canal lógico de tráfego de dados
+      // Open the main connection and logical data channel.
       this.connection = await amqp.connect(rabbitUrl);
       this.channel = await this.connection.createChannel();
 
-      // 🛡️ GARANTIA DE RESILIÊNCIA: Assegura que a fila exista no broker antes do envio de qualquer byte.
-      // durable: true -> Diz ao RabbitMQ para persistir a estrutura em disco para não perder dados se o contêiner cair!
+      // 🛡️ RESILIENCE: Ensure the queue exists before sending any data.
+      // durable: true tells RabbitMQ to persist the queue so data survives a container failure.
       await this.channel.assertQueue(this.queueName, { durable: true });
       console.log(`✅ [RabbitMQ] Fila operacional '${this.queueName}' sincronizada com sucesso.`);
 
-      // Dispara a escuta automática do consumidor em background assim que a fiação de rede estiver pronta
+      // Start the background consumer once the network connection is ready.
       this.startAsynchronousConsumerWorker();
 
     } catch (error: unknown) {
@@ -48,26 +48,26 @@ export class EventBrokerService {
   }
 
   /**
-   * 📤 2. PRODUTOR DE MENSAGENS (publishEvent):
-   * Recebe uma intenção/ação do controlador HTTP e publica na fila de forma assíncrona em milissegundos.
+  * 📤 2. MESSAGE PRODUCER (publishEvent):
+  * Accept an action from the HTTP controller and publish it to the queue asynchronously.
    */
   async publishEvent(action: string, data: object): Promise<boolean> {
     try {
-      // 🛡️ CONDIÇÃO VALIDADA: Se o canal estiver offline por oscilação física, aborta o disparo
+      // 🛡️ If the channel is offline, abort publishing.
       if (!this.channel) {
         console.warn('⚠️ [RabbitMQ] Tentativa de envio rejeitada: Canal de mensageria offline.');
         return false;
       }
 
-      // Envelopa a ação e os dados em um payload JSON padronizado
+      // Wrap the action and data in a standard JSON payload.
       const payload = { action, data };
 
-      // O RabbitMQ exige o tráfego em formato de Buffer de Bytes binários puros. 
-      // Converte o objeto do JS para String e injeta no construtor Buffer.from()
+      // RabbitMQ requires a buffer of raw bytes.
+      // Convert the JavaScript object to a string, then pass it to Buffer.from().
       const messageBuffer = Buffer.from(JSON.stringify(payload));
 
-      // Despacha o buffer de dados para a esteira do broker
-      // persistent: true -> Força o RabbitMQ a salvar os pacotes de dados no HD do contêiner
+      // Send the data buffer to the broker.
+      // persistent: true tells RabbitMQ to save messages to the container's disk.
       const isPublished = this.channel.sendToQueue(this.queueName, messageBuffer, { persistent: true });
       
       console.log(`📥 [RabbitMQ] Mensagem assíncrona registrada na fila. Ação: "${action}".`);
@@ -80,13 +80,13 @@ export class EventBrokerService {
   }
 
   /**
-   * 👷 3. WORKER CONSUMIDOR ASSÍNCRONO (startAsynchronousConsumerWorker):
-   * Roda em uma thread em background escutando a fila de forma ininterrupta. 
-   * Quando uma mensagem surge, processa os dados e despacha o alerta em tempo real via SSE.
+  * 👷 3. ASYNCHRONOUS CONSUMER WORKER (startAsynchronousConsumerWorker):
+  * Continuously listen to the queue in the background.
+  * When a message arrives, process it and send a real-time alert over SSE.
    */
   private async startAsynchronousConsumerWorker(): Promise<void> {
     try {
-      // 🛡️ VALIDAÇÃO DE CONDIÇÃO: Aguarda de forma recursiva caso o canal de rede atrase para ligar
+      // 🛡️ Retry if the network channel is not ready yet.
       if (!this.channel) {
         setTimeout(() => this.startAsynchronousConsumerWorker(), 1000);
         return;
@@ -94,28 +94,28 @@ export class EventBrokerService {
 
       console.log('👷 [Worker] Esteira de consumo ativada em background. Escutando mensagens...');
 
-      // Ativa o loop contínuo de leitura da fila
+      // Start continuously reading from the queue.
       await this.channel.consume(this.queueName, (message) => {
-        // Se a mensagem capturada vier nula por instabilidade de rede, ignora e avança
+        // Ignore null messages, which may result from network instability.
         if (!message) return;
 
         try {
-          // Decodifica os bytes binários brutos de volta para texto legível e reconverte em JSON
+          // Decode the raw bytes into readable text and parse them as JSON.
           const rawContent = message.content.toString();
           const parsedPayload = JSON.parse(rawContent);
 
           console.log(`📢 [Worker] Evento retirado da fila. Disparando transmissão em massa...`);
 
-          // 📡 PONTE EM TEMPO REAL DEFINITIVA: Despeja o payload diretamente nos navegadores via SSE!
+          // 📡 Broadcast the payload to browsers in real time over SSE.
           this.broadcastToSSEClients(parsedPayload.action, parsedPayload.data);
 
-          // 🤝 ACKNOWLEDGEMENT (ACK): Envia um carimbo de sucesso ao RabbitMQ.
-          // Isso autoriza o broker a apagar a mensagem da fila com segurança, sabendo que ela foi cumprida.
+          // 🤝 ACKNOWLEDGEMENT (ACK): Confirm successful processing to RabbitMQ.
+          // This allows the broker to safely remove the message from the queue.
           this.channel?.ack(message);
 
         } catch (error: unknown) {
           console.error('❌ [Worker] Falha operacional ao processar mensagem consumida:', error);
-          // Se o payload estiver corrompido, rejeita sem reinserir na fila para evitar loops infinitos de travamento
+          // Reject corrupted payloads without requeuing them to prevent infinite processing loops.
           this.channel?.nack(message, false, false);
         }
       });
@@ -126,26 +126,26 @@ export class EventBrokerService {
   }
 
   /**
-   * 📡 4. REGISTRO DE STREAMING (registerSSEClient):
-   * Intercepta a rota HTTP /events comum, injeta os cabeçalhos do protocolo Server-Sent Events
-   * e mantém a resposta aberta por tempo indeterminado transformando-a em um canal de Stream ativo.
+  * 📡 4. STREAM REGISTRATION (registerSSEClient):
+  * Handle the /events HTTP route, set Server-Sent Events headers,
+  * and keep the response open as an active stream.
    */
   registerSSEClient(req: Request | any, res: Response): void {
-    // Cabeçalhos mandatórios exigidos pelo W3C para habilitar streaming unidirecional de texto contínuo
+    // Required W3C headers for continuous one-way text streaming.
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*'); // Elimina bloqueios de CORS para o Next.js ler as notificações
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Allow Next.js to read notifications across origins.
 
-    // Descarrega o pulso elétrico inicial de batimento cardíaco para selar o aperto de mão com o front-end
+    // Send an initial heartbeat to establish the connection with the frontend.
     res.write('data: {"status": "CONNECTED_TO_MAESTRO_STREAM"}\n\n');
 
-    // Insere o canal ativo desse usuário na lista global de transmissão
+    // Add this active connection to the global broadcast list.
     this.connectedClients.push(res);
     console.log(`🔌 [SSE] Cliente acoplado ao túnel. Total de telas conectadas em tempo real: ${this.connectedClients.length}`);
 
-    // 🛡️ LIMPEZA DE MEMÓRIA (GARANTIA FINOPS): Se o usuário fechar a aba ou deslogar, o Express dispara o evento 'close'.
-    // Removemo-lo da lista para impedir vazamentos de memória RAM (*Memory Leaks*) no servidor.
+    // 🛡️ MEMORY CLEANUP: Express emits 'close' when the user closes the tab or logs out.
+    // Remove the connection from the list to prevent server memory leaks.
     res.on('close', () => {
       this.connectedClients = this.connectedClients.filter(client => client !== res);
       console.log(`❌ [SSE] Conexão abortada pelo navegador. Telas restantes na memória: ${this.connectedClients.length}`);
@@ -153,14 +153,14 @@ export class EventBrokerService {
   }
 
   /**
-   * 📢 5. TRANSMISSÃO EM MASSA (broadcastToSSEClients):
-   * Varre a lista de respostas abertas e injeta os dados do evento seguindo a sintaxe rigorosa do SSE.
+  * 📢 5. BROADCAST (broadcastToSSEClients):
+  * Send event data to every open response using the SSE syntax.
    */
   private broadcastToSSEClients(event: string, data: any): void {
-    // O protocolo SSE exige a sintaxe estrita: "event: nome\ndata: {json}\n\n" para ativar o escutador do navegador
+    // SSE requires this syntax to trigger the browser's event listener: "event: name\ndata: {json}\n\n".
     const formattedData = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
-    // Dispara o loop descarregando a string de texto em todos os soquetes ativos de rede simultaneamente
+    // Send the formatted text to every active network connection.
     this.connectedClients.forEach(client => {
       try {
         client.write(formattedData);

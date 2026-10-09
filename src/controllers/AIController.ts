@@ -1,22 +1,22 @@
-// 1. IMPORTAÇÕES DE ESCOPO: Puxamos as definições de tipo do Express e o serviço de IA
+// 1. IMPORTS: Bring in Express types and the AI service.
 import type { Request, Response } from 'express';
 import { AIService } from '../services/AIService.js';
 
 export class AIController {
-  // Injeção de Dependência: O controlador recebe a instância limpa do serviço de IA no construtor
+  // Dependency injection: the controller receives the AI service instance in its constructor.
   constructor(private aiService: AIService) {}
 
   /**
-   * 📡 MÉTODO POST /ai/chat:
-   * Captura o prompt enviado no corpo da requisição, valida a existência do payload
-   * e despacha para o processamento neural do modelo local.
+  * 📡 POST /ai/chat:
+  * Read and validate the prompt in the request body,
+  * then pass it to the local model for processing.
    */
   async chat(req: Request, res: Response): Promise<Response> {
     try {
       const { prompt } = req.body;
 
-      // 📝 CONDIÇÃO VALIDADA: Checa se o prompt existe no payload do JSON.
-      // Se o usuário esquecer de enviar a chave "prompt", barra imediatamente com status 400 (Bad Request).
+      // 📝 VALIDATION: Check that the prompt exists in the JSON payload.
+      // If the prompt field is missing, immediately return HTTP 400 (Bad Request).
       if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
         return res.status(400).json({
           error: {
@@ -26,10 +26,10 @@ export class AIController {
         });
       }
 
-      // Aciona a camada de serviço passando o texto purificado (sem espaços sobressalentes nas pontas)
+      // Pass trimmed text to the service layer.
       const aiResponse = await this.aiService.generateResponse(prompt.trim());
 
-      // Retorna o status 200 (OK) devolvendo a resposta processada pelo Llama 3
+      // Return the response processed by Llama 3 with HTTP 200 (OK).
       return res.status(200).json({
         response: aiResponse
       });
@@ -37,7 +37,7 @@ export class AIController {
     } catch (error) {
       console.error('❌ Erro capturado no método AIController.chat:', error);
       
-      // Retorna status 500 (Internal Server Error) caso a comunicação com o Ollama falte
+      // Return HTTP 500 (Internal Server Error) if communication with Ollama fails.
       return res.status(500).json({
         error: {
           code: 'INTERNAL_SERVER_ERROR',

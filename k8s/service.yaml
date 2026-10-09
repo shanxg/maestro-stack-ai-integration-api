@@ -1,38 +1,38 @@
 # =========================================================================
-# 📡 MANIFESTO KUBERNETES: SERVICE DA API MAESTRO
+# 📡 KUBERNETES MANIFEST: MAESTRO API SERVICE
 # =========================================================================
-# O Service funciona como o "porteiro" e balanceador de carga (Load Balancer) do cluster.
-# Como os Pods nascem e morrem com IPs dinâmicos, o Service cria um IP fixo e estável
-# para que o mundo externo consiga acessar a API sem interrupções.
+# The Service acts as the cluster's gateway and load balancer.
+# Since Pods have dynamic IPs, the Service provides a stable address
+# so external clients can reach the API without interruption.
 
 apiVersion: v1
 kind: Service
 metadata:
-  name: maestro-api-service      # O nome único do porteiro de rede no cluster
-  namespace: default             # Deve morar no mesmo namespace dos Pods para encontrá-los
+  name: maestro-api-service      # Unique network service name in the cluster
+  namespace: default             # Must share the Pods' namespace to find them
   labels:
-    app: maestro-api             # Etiqueta organizacional de catálogo
+    app: maestro-api             # Organizational catalog label
 spec:
-  # 🔀 TIPO DE EXPOSIÇÃO (NodePort): Perfeito para clusters de desenvolvimento locais.
-  # Ele abre uma porta alta real na máquina hospedeira do cluster, permitindo que o
-  # seu navegador de internet do Windows consiga conversar com os Pods de fora do Kubernetes!
+  # 🔀 EXPOSURE TYPE (NodePort): Suitable for local development clusters.
+  # It opens a high-numbered port on the cluster host, allowing
+  # a Windows browser to communicate with Pods from outside Kubernetes.
   type: NodePort
 
-  # O seletor diz ao Service exatamente para onde ele deve direcionar o tráfego recebido
+  # The selector tells the Service exactly where to route incoming traffic.
   selector:
-    app: maestro-api             # Alvo: captura e distribui as chamadas para os Pods com essa etiqueta
+    app: maestro-api             # Route requests to Pods with this label
 
   ports:
-    - name: http-rest            # Identificador do canal da nossa API REST e GraphQL
-      protocol: TCP              # Protocolo unificado de transmissão estável de pacotes
+    - name: http-rest            # Identifier for the REST and GraphQL API channel
+      protocol: TCP              # Reliable packet transmission protocol
       
-      # 🚪 PORTA DE ENTRADA DO SERVICE: A porta que os outros componentes internos usam para se falar
+      # 🚪 SERVICE PORT: Port used by other internal components to communicate
       port: 3000
       
-      # 🎯 PORTA DO CONTÊINER: A porta real que a nossa Factory do Node.js está ouvindo dentro do Pod
+      # 🎯 CONTAINER PORT: Port where the Node.js application listens inside the Pod
       targetPort: 3000
       
-      # 🌐 PORTA DO MUNDO EXTERNO (NodePort): A porta real que o Kubernetes vai abrir na sua máquina.
-      # Definimos a porta estrita '30100' (o Kubernetes aceita entre 30000 e 32767). 
-      # Você acessará a API digitando http://localhost:30100 no Windows!
+      # 🌐 EXTERNAL PORT (NodePort): Port Kubernetes opens on the host.
+      # Use the fixed port '30100' (Kubernetes accepts ports 30000 through 32767).
+      # Access the API at http://localhost:30100 on Windows.
       nodePort: 30100

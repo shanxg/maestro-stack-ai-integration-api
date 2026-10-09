@@ -1,9 +1,10 @@
-// 1. IMPORTAÇÃO DA FÁBRICA: Traz o inicializador modular do ecossistema Express
+// 1. FACTORY IMPORT: Brings the modular initializer of the Express ecosystem
+// that sets up the RESTful API and GraphQL, as well as connecting Redis and RabbitMQ.
 import { createApp } from './app.js';
 
-// 2. DISPARO ASSÍNCRONO DO MOTOR:
-// Executa a função de montagem sem passar nenhum parâmetro de mock.
-// Isso força a API a carregar a esteira real conectada ao RabbitMQ e Redis para uso local!
+// 2. ASYNCHRONOUS ENGINE TRIGGER:
+// Executes the assembly function without passing any mock parameter.
+// This forces the API to load the real conveyor belt connected to RabbitMQ and Redis for local use!
 async function bootstrap() {
   try {
     await createApp();
@@ -13,5 +14,5 @@ async function bootstrap() {
   }
 }
 
-// Inicializa a execução do servidor
+// Starts the server
 bootstrap();

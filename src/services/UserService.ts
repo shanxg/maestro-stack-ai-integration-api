@@ -1,36 +1,36 @@
-// 1. IMPORTAÇÕES: Traz o contrato do banco de dados (Interface) e a estrutura do Usuário.
+// 1. IMPORTS: Bring in the database contract (interface) and User structure.
 import { type IUserRepository } from '../interfaces/IUserRepository.js';
 import { type User } from '../models/User.js';
 
-// 2. A CLASSE DE SERVIÇO: É aqui que ficam as "regras de negócio" (o coração do sistema).
-// Ela não mexe no banco direto; ela pede para o repositório fazer isso por ela.
+// 2. SERVICE CLASS: Business rules live here, at the heart of the system.
+// It delegates database operations to the repository.
 export class UserService {
   
-  // INJEÇÃO DE DEPENDÊNCIA: O construtor NÃO cria o banco de dados sozinho (não faz 'new UserRepository()').
-  // Ele simplesmente avisa: "Quem me instanciar, precisa me entregar um repositório pronto que siga o molde IUserRepository".
+  // DEPENDENCY INJECTION: The constructor does not create the database or repository itself.
+  // The caller must provide a repository that implements IUserRepository.
   constructor(private userRepository: IUserRepository) {}
 
-  // FUNÇÃO 1: Apenas repassa o pedido para o repositório buscar todos os usuários e nos devolver.
-  // Aqui, adicionamos suporte à paginação, recebendo um objeto com 'limit' e 'offset'.
+  // FUNCTION 1: Forward the request to the repository to retrieve all users.
+  // Pagination is supported through the 'limit' and 'offset' options.
   async getAllUsers(options:{ limit: number; offset: number }): Promise<User[]> {    
-    // Desestrutura o objeto para capturar as duas variáveis numéricas
+    // Extract the two numeric values from the options object.
     const { limit, offset } = options;
   
-    // Repassa ambos os valores diretamente para o método do repositório
+    // Pass both values to the repository method.
     return this.userRepository.findAll(limit, offset);
   }
 
-  // FUNÇÃO 2: Recebe o ID vindo da rota e pede para o repositório procurar o usuário correspondente.
+  // FUNCTION 2: Ask the repository to find the user with the ID from the route.
   async getUserById(id: string): Promise<User | null> {
     return this.userRepository.findById(id);
   }
 
-  // FUNÇÃO 3: Aqui está a lógica de negócio! O serviço recebe os dados brutos (nome e email),
-  // gera um ID único e seguro usando matemática aleatória e monta o objeto 'User' completo.
-  // Depois, joga o usuário montado para o repositório salvar de verdade.
+  // FUNCTION 3: Apply the business rules: accept the raw name and email,
+  // generate a unique ID, and build the complete User object.
+  // Then ask the repository to persist it.
   async createUser(name: string, email: string): Promise<User> {
     const newUser: User = {
-      id: Math.random().toString(36).substring(2, 9), // Cria uma string de ID aleatória (ex: "7z8x9w2")
+      id: Math.random().toString(36).substring(2, 9), // Generate a random ID string (for example, "7z8x9w2")
       name,
       email
     };

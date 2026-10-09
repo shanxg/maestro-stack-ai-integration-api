@@ -1,29 +1,29 @@
-'use client'; // 🌐 DIRETIVA DE CLIENTE: Obrigatória para usar hooks de efeitos e navegação de tela.
+'use client'; // 🌐 CLIENT DIRECTIVE: Required for effects and navigation hooks.
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 /**
- * 🏠 PONTO DE ENTRADA DO DOMÍNIO ( HomePage - Rota / )
- * Como o nosso projeto exige controle de acesso, a rota raiz funciona apenas como um "guarda de trânsito",
- * encaminhando o tráfego do usuário diretamente para o fluxo de autenticação.
+ * 🏠 APPLICATION ENTRY POINT (HomePage - Route /)
+ * Since this project requires access control, the root route acts as a traffic guard,
+ * sending users directly to the authentication flow.
  */
 export default function HomePage() {
-  const router = useRouter(); // Instancia o roteador moderno do Next.js App Router
+  const router = useRouter(); // Create the modern Next.js App Router helper
 
   /**
-   * 🔀 REDIRECIONAMENTO ESTRATÉGICO AUTOMÁTICO
-   * Executa no milissegundo em que a pessoa digita "http://localhost:3001" no navegador.
+  * 🔀 AUTOMATIC REDIRECT
+  * Runs as soon as someone opens the site in a browser.
    */
   useEffect(() => {
-    // Usamos o método router.replace() em vez de .push() por boa prática de UX:
-    // Ele substitui a página atual no histórico do navegador. Assim, se o usuário tentar
-    // clicar no botão "Voltar" do navegador na tela de login, ele não fica preso em um loop infinito.
+    // Use router.replace() instead of .push() for a better user experience:
+    // It replaces the current history entry, so clicking Back on the login page
+    // does not trap the user in an infinite redirect loop.
     router.replace('/login');
   }, [router]);
 
   return (
-    // Interface de transição exibida por frações de segundos enquanto a navegação do Next.js é processada
+    // Briefly display this transition while Next.js processes navigation.
     <main className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-500 text-sm tracking-widest font-mono uppercase animate-pulse">
       Carregando ecossistema Maestro...
     </main>

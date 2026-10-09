@@ -1,18 +1,18 @@
-// 1. IMPORTAÇÃO: Traz a estrutura do "User" (ID, nome, email) lá da pasta de modelos.
-// Usamos 'type' porque no TypeScript interfaces puras desaparecem quando o código vira JavaScript.
+// 1. IMPORT: Bring in the User structure (ID, name, email) from the models directory.
+// Use 'type' because TypeScript interfaces do not appear in emitted JavaScript.
 import { type User } from "../models/User.js";
 
-// 2. O CONTRATO (INTERFACE): Define uma lista de regras obrigatórias.
-// Qualquer banco de dados que a gente criar no futuro terá que seguir esse molde 'IUserRepository'.
+// 2. CONTRACT (INTERFACE): Define the set of required rules.
+// Any future database implementation must follow the IUserRepository contract.
 export interface IUserRepository {
   
-  // FUNÇÃO 1: Promete buscar e devolver uma lista (Array []) com TODOS os usuários salvos,
-  // (PAGINAÇÃO) Exigindo explicitamente 'limit' e 'offset' para fatiar as buscas de dados.
+  // FUNCTION 1: Find and return an array of all saved users,
+  // with explicit 'limit' and 'offset' values for pagination.
   findAll(limit: number, offset: number): Promise<User[]>;
 
-  // FUNÇÃO 2: Recebe um ID de texto e promete devolver o Usuário encontrado OU 'null' (se ele não existir).
+  // FUNCTION 2: Accept a string ID and return the matching user or null if it does not exist.
   findById(id: string): Promise<User | null>;
 
-  // FUNÇÃO 3: Recebe os dados de um novo Usuário e promete devolver ele de volta após salvar no banco.
+  // FUNCTION 3: Accept a new user and return it after saving it to the database.
   create(user: User): Promise<User>;
 }

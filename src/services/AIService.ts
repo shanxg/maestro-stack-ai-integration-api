@@ -1,4 +1,4 @@
-// 1. IMPORTAÇÃO DO SDK: Puxamos o cliente oficial da OpenAI instalado no package.json
+// 1. SDK IMPORT: Bring in the official OpenAI client listed in package.json.
 import OpenAI from 'openai';
 
 export class AIService {
@@ -6,30 +6,30 @@ export class AIService {
   private modelName: string;
 
   constructor() {
-    // 🔐 INVERSION OF CONTROL (IoC): Inicializa o SDK lendo as chaves configuradas no arquivo .env.
-    // Graças à abstração de rotas, o SDK trata o Ollama local exatamente como se fosse o servidor oficial da OpenAI!
+    // 🔐 INVERSION OF CONTROL (IoC): Initialize the SDK with keys configured in .env.
+    // The routing abstraction lets the SDK treat local Ollama like the official OpenAI server.
     this.openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY || 'local-ollama-free-key-maestro',
       baseURL: process.env.OPENAI_BASE_URL || 'http://localhost:11434/v1',
     });
 
-    // Define o modelo exato que baixamos no computador
+    // Set the model downloaded on this machine.
     this.modelName = 'llama3';
   }
 
   /**
-   * 🧠 GERAÇÃO DE RESPOSTAS (CHAT COMPLETION):
-   * Recebe a pergunta em texto plano enviada pelo usuário, despacha para o motor do Llama 3
-   * e retorna a resposta textual interpretada de forma limpa.
+  * 🧠 GENERATE A RESPONSE (CHAT COMPLETION):
+  * Accept the user's plain-text question, send it to Llama 3,
+  * and return the resulting text.
    */
   async generateResponse(prompt: string): Promise<string> {
     try {
-      // Condição de Segurança: Bloqueia a execução antes de enviar o prompt se a string vier vazia
+      // Security check: reject an empty prompt before sending it.
       if (!prompt || prompt.trim() === '') {
         throw new Error('O prompt enviado para o cérebro da IA não pode estar vazio.');
       }
 
-      // Dispara a chamada assíncrona cruzando a ponte HTTP local do Ollama
+      // Make the asynchronous request through Ollama's local HTTP endpoint.
       const completion = await this.openai.chat.completions.create({
         model: this.modelName,
         messages: [
@@ -42,11 +42,11 @@ export class AIService {
             content: prompt 
           }
         ],
-        // Temperatura 0.2: Reduz a aleatoriedade da escrita (alucinação), focando em respostas técnicas e assertivas
+        // Temperature 0.2 reduces randomness and favors focused technical responses.
         temperature: 0.2, 
       });
 
-      // Extrai cirurgicamente o conteúdo em formato de texto da primeira opção retornada pelo modelo
+      // Extract the text from the first response choice returned by the model.
       return completion.choices[0]?.message?.content || 'Não foi possível processar uma resposta inteligível.';
     } catch (error) {
       console.error('❌ Erro crítico de comunicação na camada AIService:', error);
