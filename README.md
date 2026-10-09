@@ -35,6 +35,13 @@ To mitigate the performance pitfalls of synchronous `setState` rendering cascade
 
 Every endpoint within the AI orchestration layer is guarded by a cryptographic JWT validation firewall. The stack implements strict **Rate Limiting** to shield backing services from Distributed Denial of Service (DDoS) attempts, integrates **Helmet** for HTTP header obfuscation, and applies **Zod schema runtime validation** to prevent Malformed Payloads and SQL/Command Injection vectors (addressing OWASP API Security Top 10 vulnerabilities).
 
+### 4. Real-Time Reactive Pipeline: RabbitMQ & Server-Sent Events (SSE)
+To meet microservices decoupling standards, the user registration process operates entirely asynchronously through an event-driven architecture, avoiding bottlenecks in the primary thread:
+
+*   **The Producer (Express API):** When a client hits `POST /users`, the payload is instantly validated via Zod. Instead of opening a blocking I/O stream directly to the database, the `UserController` serializes the metadata and publishes a persistent event packet (`user_created`) to the RabbitMQ broker, immediately returning an **`HTTP 202 Accepted`** response to the client within milliseconds.
+*   **The Consumer (Background Worker):** An autonomous worker thread continuously polls the RabbitMQ `user_events` queue. Once an event is intercepted, it decodes the binary buffer, processes the domain logic, and safely persists the record into the **PostgreSQL** cluster.
+*   **The Stream (Server-Sent Events):** Upon successful database write, the worker hands the data to the `EventBrokerService`'s internal SSE bridge. The server loops through the active pool of connection channels (`GET /events`) and pushes the notification to all active browser interfaces via a memory-efficient, unidirectional text-event stream, causing the front-end to reactively paint the updated state without repetitive HTTP polling loops.
+
 ---
 
 ## 🐳 Local Infrastructure Setup & Backing Services
@@ -86,13 +93,6 @@ npm run dev
 ```
 
 _The reactive client console will notice port 3000 is securely held by the Express REST API and will automatically map its visual endpoints onto `http://localhost:3001`._
-
-### 4. Real-Time Reactive Pipeline: RabbitMQ & Server-Sent Events (SSE)
-To meet microservices decoupling standards, the user registration process operates entirely asynchronously through an event-driven architecture, avoiding bottlenecks in the primary thread:
-
-*   **The Producer (Express API):** When a client hits `POST /users`, the payload is instantly validated via Zod. Instead of opening a blocking I/O stream directly to the database, the `UserController` serializes the metadata and publishes a persistent event packet (`user_created`) to the RabbitMQ broker, immediately returning an **`HTTP 202 Accepted`** response to the client within milliseconds.
-*   **The Consumer (Background Worker):** An autonomous worker thread continuously polls the RabbitMQ `user_events` queue. Once an event is intercepted, it decodes the binary buffer, processes the domain logic, and safely persists the record into the **PostgreSQL** cluster.
-*   **The Stream (Server-Sent Events):** Upon successful database write, the worker hands the data to the `EventBrokerService`'s internal SSE bridge. The server loops through the active pool of connection channels (`GET /events`) and pushes the notification to all active browser interfaces via a memory-efficient, unidirectional text-event stream, causing the front-end to reactively paint the updated state without repetitive HTTP polling loops.
 
 ---
 
