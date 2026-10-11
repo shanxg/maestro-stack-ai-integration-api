@@ -60,17 +60,32 @@ spec:
           # IMPORTANT: In AWS production, use isolated Secrets or ConfigMaps.
           env:
             - name: NODE_ENV
-              value: "production"   # Enable optimized API and Helmet production modes
+              value: "production"
+            
             - name: PORT
-              value: "3000"         # Set the internal HTTP server port
-            - name: JWT_SECRET
-              value: "maestro_secret_key_2026_super_secure_protection_token" # Secret configured in .env
-              # 🔥 Allow the API in Kubernetes to connect to Redis on Windows
-            - name: REDIS_HOST
-              value: "host.docker.internal"
-            - name: RABBIT_HOST
-              value: "host.docker.internal"
-            - name: DB_HOST
-              value: "host.docker.internal"    # 🔥 Prepare for the future Postgres connection
+              value: "3000"
 
+            # APPSEC REMEDIATION - INJECTING FROM VAULT (CWE-798)
+            # Replaced hardcoded text value token with a secure reference linkage
+            # targeting our isolated Kubernetes Secret container mapping.
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: maestro-api-secret
+                  key: jwt-secret
+
+            # INFRASTRUCTURE REMEDIATION - PARITY MODULE SYNCHRONIZATION
+            # Aligned variable names to match exactly what the UserRepository pool reads.
+            # We map the cluster internal connection gateway coordinates.
+            - name: POSTGRES_HOST
+              value: "postgres-service" # Targets the database internal cluster DNS
+            
+            - name: POSTGRES_PORT
+              value: "5432" # Standard internal container port inside isolated K8s network meshes
+
+            - name: REDIS_HOST
+              value: "redis-service"
+
+            - name: RABBIT_HOST
+              value: "rabbitmq-service"
               
