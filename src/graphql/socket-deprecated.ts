@@ -23,10 +23,10 @@ export function initializeSocket(server: http.Server): Server {
 
   // Configure the default real-time connection listeners.
   io.on('connection', (socket) => {
-    console.log(`🔌 Novo cliente conectado via WebSocket! ID: ${socket.id}`);
+    console.log(`🔌 New client connected via WebSocket! ID: ${socket.id}`);
     
     socket.on('disconnect', () => {
-      console.log(`❌ Cliente desconectado do WebSocket: ${socket.id}`);
+      console.log(`❌ Client disconnected from WebSocket: ${socket.id}`);
     });
   });
 

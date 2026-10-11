@@ -18,7 +18,7 @@ import { io } from './graphql/socket-deprecated.js';
 // 2. INITIALIZER FUNCTION OF THE WORKER ENGINE:
 // The function 'startWorker' is responsible for starting the asynchronous consumer that listens to the RabbitMQ queue.
 async function startWorker() {
-  console.log('👷 Worker iniciado com sucesso! Escutando a fila de eventos...');
+  console.log('👷 Worker started successfully! Listening to the event queue...');
 
   
   try {
@@ -45,7 +45,7 @@ async function startWorker() {
           // The JSON sent by the Producer (API) contains the 'action' property that indicates which business rule the Worker should execute.
           // The 'data' property contains the user data that the Producer (API) sent for the Worker to process.
           const content = JSON.parse(message.content.toString());
-          console.log(`📥 Nova mensagem capturada da fila! Ação identificada: ${content.action}`);
+          console.log(`📥 New message received from the queue! Action: ${content.action}`);
   
           // Step E: Internal routing. Checks if the action sent by the Producer (API) is indeed 'create'.
           // If it is, the Worker will execute the business rule to create a new user in the database.
@@ -54,12 +54,12 @@ async function startWorker() {
             // The 'data' property is a JSON object that contains the user data sent by the Producer (API) to the Worker.
             const { name, email } = content.data;
 
-            console.log(`⏳ Processando dados em segundo plano para o e-mail: ${email}...`);
+            console.log(`⏳ Processing data in the background for email: ${email}...`);
         
             // STEP F (REAL PERSISTENCE): Triggers the business layer to process the rule,
             // generate the unique random ID, and save the user definitively in the database/memory.            
             const newUser = await userService.createUser(name, email);
-            console.log(`✅ Usuário cadastrado no banco com sucesso via Fila! Novo ID Gerado: ${newUser.id}`);
+            console.log(`✅ User successfully created in the database via the queue! New ID: ${newUser.id}`);
                          
             // 🔥 (REAL-TIME WEBSOCKET TRIGGER): Emits a global event called 'user_created'.
             // All connected browsers will receive this alert containing the new user's data!
@@ -75,7 +75,7 @@ async function startWorker() {
           channel.ack(message);
 
         } catch (error) {
-          console.error('❌ Falha crítica ao tentar processar a mensagem do Worker:', error);
+          console.error('❌ Critical failure while processing the worker message:', error);
           // REJECTION OF MESSAGE (Negative Acknowledgment / Nack):
           // If the JSON is broken or there is a serious code error, we notify RabbitMQ to reject it.
           // The parameters (false, false) tell RabbitMQ NOT to put the message back in the main queue,
@@ -86,7 +86,7 @@ async function startWorker() {
     });
 
   } catch (error) {
-    console.error('❌ Erro crítico ao tentar conectar e inicializar o motor do Worker:', error);
+    console.error('❌ Critical error while connecting to and initializing the worker engine:', error);
   }
 }
 // Initializes the immediate execution of our background listening process
