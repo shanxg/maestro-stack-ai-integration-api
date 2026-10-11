@@ -33,13 +33,16 @@ export default function LoginPage() {
         throw new Error('Por favor, preencha todos os campos do formulário para prosseguir.');
       }
 
-      // 🌐 FORCE AN EXTERNAL HTTP REQUEST:
-      // Use the native URL constructor to bypass Next.js relative routing
-      // and send the request directly to the Express server.
-      const targetUrl = new URL('http://127.0.0.1:3000/auth/login');
+      // =========================================================================
+      // 🔐 APPSEC REMEDIATION - DNS LOOPBACK ALIGNMENT
+      // =========================================================================
+      // Target 'localhost' explicitly to align with the backend CORS allowed origin matrix.
+      // This prevents the browser engine from dropping pre-flight requests due to Same-Origin Policy mismatches.
+      const targetUrl = new URL('http://localhost:3000/auth/login');
 
       const res = await fetch(targetUrl.href, {
         method: 'POST',
+        mode: 'cors', // Explicitly enable CORS mode for cross-origin requests
         headers: {
           'Content-Type': 'application/json',
         },
@@ -48,6 +51,7 @@ export default function LoginPage() {
           password: password.trim() 
         }),
       });
+
 
       // Convert the API response body into a JSON object
       const data = await res.json();
@@ -91,7 +95,7 @@ export default function LoginPage() {
     <main className="min-h-screen flex items-center justify-center bg-gray-950 px-4">
       
       {/* CENTERED FORM CARD */}
-      <div className="max-w-md w-full bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl">
+      <div className="max-w-md w-full bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl" suppressHydrationWarning>
         <h1 className="text-3xl font-bold text-center text-white mb-2 tracking-tight">Projeto Maestro</h1>
         <p className="text-sm text-center text-gray-400 mb-8">Portal de orquestração e gerenciamento de Inteligência Artificial</p>
 
@@ -144,6 +148,16 @@ export default function LoginPage() {
           </button>
           
         </form>
+        <div className="text-center pt-4 border-t border-gray-800/60 mt-4">
+          <span className="text-xs text-gray-500">Não possui uma chave de acesso? </span>
+          <button 
+            type="button" 
+            onClick={() => router.push('/register')} 
+            className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold transition-colors cursor-pointer focus:outline-none focus:underline inline-block px-1 py-0.5"
+          >
+            Criar Nova Conta
+          </button>
+        </div>
       </div>
     </main>
   );

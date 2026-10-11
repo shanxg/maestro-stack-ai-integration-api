@@ -42,8 +42,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       {/* children represents the active page (login, chat, etc.) */}
       {/* bg-gray-950 extends the high-contrast dark background across the inner layout */}
-      <body className="min-h-full flex flex-col bg-gray-950 text-white">
+      <body 
+        className="min-h-full flex flex-col bg-gray-950 text-white"
         suppressHydrationWarning
+        >
         {children}
       </body>
     </html>
