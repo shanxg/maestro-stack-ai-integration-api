@@ -49,7 +49,7 @@ export class AIService {
       // Extract the text from the first response choice returned by the model.
       return completion.choices[0]?.message?.content || 'Não foi possível processar uma resposta inteligível.';
     } catch (error) {
-      console.error('❌ Erro crítico de comunicação na camada AIService:', error);
+      console.error('❌ Critical communication error in the AIService layer:', error);
       throw new Error('Falha interna ao processar a requisição de Inteligência Artificial.');
     }
   }

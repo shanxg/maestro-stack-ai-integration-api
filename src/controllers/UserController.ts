@@ -4,17 +4,21 @@ import { type Request, type Response } from 'express';
 import { UserService } from '../services/UserService.js';
 import { EventBrokerService } from '../services/EventBrokerService.js';
 
+// Import industrial-grade security library for password hashing
+import bcrypt from 'bcrypt';
+
 // Redis client library
-import {Redis} from 'ioredis'; 
+import { Redis } from 'ioredis'; 
 const redis = new Redis({
   host: process.env.REDIS_HOST || 'localhost',  // Redis server address
   port: 6379,        // Default Redis port
 });
 
-
 // 2. CONTROLLER CLASS: This layer is the API's gateway.
 // It receives requests, calls the service, and returns an HTTP response.
 export class UserController {
+  // APPSEC CONFIGURATION: Define a robust workload cost factor (12 rounds balances CPU overhead and security)
+  private readonly SALT_ROUNDS = 12;
   
   // DEPENDENCY INJECTION: The controller does not create the service itself.
   // INVERSION OF CONTROL (IoC): The constructor receives live instances from the main factory.
@@ -48,7 +52,7 @@ export class UserController {
       // Step B: On a cache hit, parse the JSON and respond immediately,
       // avoiding additional processing and PostgreSQL I/O.
       if (cachedUsers) {
-        console.log(`⚡ [Redis] Cache Hit absoluto para a chave: ${cacheKey}`);
+        console.log(`⚡ [Redis] Cache hit for key: ${cacheKey}`);
         res.status(200).json(JSON.parse(cachedUsers));
         return;
       }
@@ -69,7 +73,7 @@ export class UserController {
       res.status(200).json(users);
 
     } catch (error: any) {
-      console.error('❌ Falha crítica de processamento no método getUsers:', error);
+      console.error('❌ Critical processing failure in getUsers:', error);
        res.status(500).json({
         error: {
           code: 'INTERNAL_SERVER_ERROR',
@@ -118,7 +122,7 @@ export class UserController {
       res.status(200).json(user);
 
     } catch (error: any) {
-      console.error('❌ Falha crítica no método getUserById:', error);
+      console.error('❌ Critical failure in getUserById:', error);
       res.status(500).json({
         error: {
           code: 'INTERNAL_SERVER_ERROR',
@@ -129,34 +133,47 @@ export class UserController {
     }
   };
 
-  /**
+   /**
   * 📡 ENDPOINT 3 (POST /users): Submit a request to the queue asynchronously.
-  * Accept the payload, send it to RabbitMQ, and clear stale cache entries.
+  * Accept the payload, calculate the cryptographic hash stream, and send it to RabbitMQ.
    */
   createUser = async (req: Request, res: Response): Promise<void> => {
     try {
-      // Read the structured keys validated by the Zod middleware.
-      const { name, email } = req.body;
+      // APPSEC REMEDIATION: Safely extract the secret password credential from the validated request body
+      const { name, email, password } = req.body;
       
-      // 🛡️ REQUIRED INPUT VALIDATION: Reject the request if name or email is missing.
-      if (!name || !email) {
+      // 🛡️ REQUIRED INPUT VALIDATION: Reject the request if any core credential parameter is missing.
+      if (!name || !email || !password) {
         res.status(400).json({ 
           error: {
             code: 'BAD_REQUEST',
-            message: 'Os campos nome e e-mail são obrigatórios para registrar uma intenção de cadastro.'
+            message: 'Os campos nome, e-mail e senha são obrigatórios para registrar uma intenção de cadastro.'
           }
         });
         return;
       }
 
       // =========================================================================
+      // 🔐 IMMEDIATE CRYPTOGRAPHIC SHIELDING (CWE-256 / OWASP TOP 10 API Security)
+      // =========================================================================
+      // We compute the cryptographic hash stream right at the edge application interface.
+      // This guarantees that cleartext password strings never transit or leak inside internal message brokers.
+      const secureSalt = await bcrypt.genSalt(this.SALT_ROUNDS);
+      const cryptographicPasswordHash = await bcrypt.hash(password, secureSalt);
+
+      // Construct a safe data container containing the stretched and hashed variable payload
+      const securedUserPayload = {
+        name,
+        email,
+        password: cryptographicPasswordHash
+      };
+
+      // =========================================================================
       // 📤 ASYNCHRONOUS EVENT PIPELINE (RABBITMQ)
       // =========================================================================
-      // Use the unified EventBrokerService to publish the payload as binary data
-      // directly to the queue without blocking the HTTP response thread.
-      const isQueued = await this.eventBrokerService.publishEvent('user_created', { name, email });
+      // Publish the protected data block containing the hashed payload into the queue structure
+      const isQueued = await this.eventBrokerService.publishEvent('user_created', securedUserPayload);
 
-      // If the queue is unavailable, raise an error.
       if (!isQueued) {
         throw new Error('O broker de mensageria recusou o enfileiramento do evento.');
       }
@@ -164,24 +181,18 @@ export class UserController {
       // =========================================================================
       // 🧹 AUTOMATIC CACHE INVALIDATION (REGEX PURGE)
       // =========================================================================
-      // Find every Redis key with the "users:*" prefix.
-      // A new user is entering the pipeline, so clear the cache now to ensure
-      // future queries read fresh PostgreSQL data instead of stale entries.
       const targetedKeys = await redis.keys('users:*');
       if (targetedKeys.length > 0) {
         await redis.del(...targetedKeys);
-        console.log(`🧹 [Redis] Invalidação estrita concluída. ${targetedKeys.length} chaves obsoletas foram expurgadas.`);
+        console.log(`🧹 [Redis] Strict invalidation complete. ${targetedKeys.length} stale keys were purged.`);
       }
 
-      // 🏁 ACCEPTED RESPONSE (HTTP 202):
-      // Tell the frontend that the request is valid and accepted,
-      // while database processing continues in the background through the queue.
       res.status(202).json({ 
         message: 'Solicitação de cadastro recebida com sucesso! Processando em lote assíncrono na fila de eventos...' 
       });
       
     } catch (error: any) {
-      console.error('❌ Falha crítica de barreira assíncrona no método createUser:', error);
+      console.error('❌ Critical asynchronous barrier failure in createUser:', error);
       res.status(500).json({ 
         error: {
           code: 'INTERNAL_SERVER_ERROR',

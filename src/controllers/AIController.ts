@@ -35,7 +35,7 @@ export class AIController {
       });
 
     } catch (error) {
-      console.error('❌ Erro capturado no método AIController.chat:', error);
+      console.error('❌ Error caught in AIController.chat:', error);
       
       // Return HTTP 500 (Internal Server Error) if communication with Ollama fails.
       return res.status(500).json({

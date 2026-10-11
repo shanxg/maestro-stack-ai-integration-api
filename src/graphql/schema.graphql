@@ -18,5 +18,5 @@ type Query {
 # 3. WRITE OPERATIONS (MUTATIONS): Define the entry points for modifying data.
 type Mutation {
   # Create a user from required name and email values, then return the created User.
-  createUser(name: String!, email: String!): User!
+  createUser(name: String!, email: String!, password: String!): User!
 }
