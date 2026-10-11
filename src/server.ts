@@ -9,7 +9,7 @@ async function bootstrap() {
   try {
     await createApp();
   } catch (error) {
-    console.error('❌ Erro crítico ao tentar dar a partida no servidor Maestro:', error);
+    console.error('❌ Critical error while starting the Maestro server:', error);
     process.exit(1);
   }
 }
