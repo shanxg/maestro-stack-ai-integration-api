@@ -26,7 +26,7 @@ export async function getRabbitChannel(): Promise<amqp.Channel> {
     
     return channel;
   } catch (error) {
-    console.error('❌ Falha ao conectar no RabbitMQ:', error);
+    console.error('❌ Failed to connect to RabbitMQ:', error);
     throw error;
   }
 }
