@@ -1,13 +1,20 @@
+# src/openapi.yaml
 openapi: 3.0.3
 info:
   title: Projeto Maestro - API Escalável e Segura
-  description: Documentação dos endpoints de gerenciamento de usuários com suporte a filas assíncronas e paginação.
+  description: >
+    Documentação técnica dos endpoints de gerenciamento de usuários com suporte 
+    a mensageria assíncrona no RabbitMQ, cache-aside no Redis e firewall criptográfico.
   version: 1.0.0
+
 paths:
-  /users:
+  # INFRASTRUCTURE REMEDIATION: Path corrected to reflect the real route prefix isolating REST from Apollo Server
+  /api/v1/users:
     get:
       summary: Lista usuários de forma paginada
       description: Recupera fatias do array de usuários com suporte a Cache-Aside dinâmico no Redis.
+      security:
+        - BearerAuth: [] # Protected endpoint by the firewall middleware
       parameters:
         - name: limit
           in: query
@@ -26,30 +33,28 @@ paths:
       responses:
         '200':
           description: Operação executada com sucesso absoluto.
+        '401':
+          description: Acesso negado devido a token JWT ausente ou inválido.
         '500':
           description: Falha de performance interna no servidor de dados.
+
     post:
-      summary: Envia uma solicitação de cadastro para a fila
-      description: Recebe os dados brutos e enfileira no RabbitMQ de forma assíncrona.
+      summary: Envia uma solicitação de cadastro para a fila de mensageria
+      description: Recebe os parâmetros de identificação, computa o hash Bcrypt na borda e enfileira no RabbitMQ de forma assíncrona.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required:
-                - name
-                - email
-              properties:
-                name:
-                  type: string
-                email:
-                  type: string
+              $ref: '#/components/schemas/UserRegistrationPayload'
       responses:
         '202':
-          description: Solicitação aceita com sucesso para processamento em lote na fila.
+          description: Solicitação aceita com sucesso para processamento em lote assíncrono na fila.
         '400':
-          description: Requisição inválida por falta de campos mandatórios.
+          description: Requisição inválida por quebra de contrato estrutural ou falta de parâmetros mandatórios.
+        '500':
+          description: Erro interno de infraestrutura ao tentar despachar a intenção para a fila de eventos.
+
   /ai/chat:
     post:
       summary: Envia um prompt para o assistente virtual Maestro
@@ -92,4 +97,29 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Insira o token JWT adquirido no endpoint /auth/login para destravar o firewall de IA.      
+      description: Insira o token JWT adquirido no endpoint /auth/login para destravar o firewall de IA.
+
+  schemas:
+    UserRegistrationPayload:
+      type: object
+      required:
+        - name
+        - email
+        - password # APPSEC REMEDIATION: Explicitly mapping password requirement parameter
+      properties:
+        name:
+          type: string
+          example: "Lucas Rivaldo"
+          minLength: 3
+          description: Nome completo do usuário requisitante.
+        email:
+          type: string
+          format: email
+          example: "lucas@exemplo.com"
+          description: Endereço de e-mail RFC-compliant usado como credencial de acesso.
+        password:
+          type: string
+          format: password
+          example: "********"
+          minLength: 8
+          description: Chave de acesso estrita (mínimo de 8 caracteres para satisfazer regras corporativas de segurança).
