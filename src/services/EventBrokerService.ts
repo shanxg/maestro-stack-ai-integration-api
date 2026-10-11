@@ -1,6 +1,7 @@
 import amqp from 'amqplib';
 import type { Channel, ChannelModel } from 'amqplib';
 import type { Response } from 'express';
+import { UserService } from './UserService.js'; // Ensure the user service is imported at the top layer
 
 export class EventBrokerService {
   private connection?: ChannelModel;
@@ -13,37 +14,50 @@ export class EventBrokerService {
   // Unique queue name registered with the RabbitMQ server.
   private readonly queueName = 'user_events';
 
-  constructor() {
+  constructor(private userService?: UserService) {
+    if (userService) {
+      this.userService = userService;
+    }
     // Automatically establish connections to the Docker infrastructure.
     this.establishInfrastructureBridges();
   }
 
   /**
-  * 🔌 1. ESTABLISH INFRASTRUCTURE BRIDGES (establishInfrastructureBridges):
-  * Open persistent TCP connections to RabbitMQ using environment variables.
+   * 🔌 1. ESTABLISH INFRASTRUCTURE BRIDGES (establishInfrastructureBridges):
+   * Open persistent TCP connections to RabbitMQ using environment variables.
+   * 
+   * ARCHITECTURAL REMEDIATION - ASYNCHRONOUS RETRY LOOP (CWE-770 / RESILIENCE):
+   * Implements a deterministic re-connection cycle to shield the application from crashes
+   * during cluster warm-up delays. If Erlang's opening handshake fails on early boot phases, 
+   * the connection engine catches the exception and schedules a new attempt every 5 seconds.
    */
   private async establishInfrastructureBridges(): Promise<void> {
-    try {
-      // Read the injected host, or use 'localhost' when running outside the cluster.
-      const rabbitHost = process.env.RABBIT_HOST || 'localhost';
-      const rabbitUrl = `amqp://${rabbitHost}:5672`;
+    // Read the injected host, or use 'localhost' when running outside the cluster.
+    const rabbitHost = process.env.RABBIT_HOST || 'localhost';
+    const rabbitUrl = `amqp://${rabbitHost}:5672`;
 
-      console.log(`⏳ [RabbitMQ] Tentando perfurar conexão no endereço: ${rabbitUrl}`);
-      
+    console.log(`⏳ [RabbitMQ] Attempting to establish a connection at: ${rabbitUrl}`);
+    
+    try {
       // Open the main connection and logical data channel.
       this.connection = await amqp.connect(rabbitUrl);
       this.channel = await this.connection.createChannel();
 
       // 🛡️ RESILIENCE: Ensure the queue exists before sending any data.
-      // durable: true tells RabbitMQ to persist the queue so data survives a container failure.
       await this.channel.assertQueue(this.queueName, { durable: true });
-      console.log(`✅ [RabbitMQ] Fila operacional '${this.queueName}' sincronizada com sucesso.`);
+      console.log(`✅ [RabbitMQ] Queue '${this.queueName}' is operational and synchronized successfully.`);
 
       // Start the background consumer once the network connection is ready.
       this.startAsynchronousConsumerWorker();
 
     } catch (error: unknown) {
-      console.error('❌ [RabbitMQ] Falha crítica de conexão na inicialização do Broker:', error);
+      console.error('❌ [RabbitMQ] Connection attempt failed. Broker might still be warming up.');
+      console.log('⏳ [RabbitMQ] Scheduling a new network handshake attempt in 5 seconds...');
+      
+      // Schedule a recurring micro-task loop to recover the connection channel automatically
+      setTimeout(() => {
+        this.establishInfrastructureBridges();
+      }, 5000);
     }
   }
 
@@ -55,7 +69,7 @@ export class EventBrokerService {
     try {
       // 🛡️ If the channel is offline, abort publishing.
       if (!this.channel) {
-        console.warn('⚠️ [RabbitMQ] Tentativa de envio rejeitada: Canal de mensageria offline.');
+        console.warn('⚠️ [RabbitMQ] Send attempt rejected: Messaging channel is offline.');
         return false;
       }
 
@@ -70,11 +84,11 @@ export class EventBrokerService {
       // persistent: true tells RabbitMQ to save messages to the container's disk.
       const isPublished = this.channel.sendToQueue(this.queueName, messageBuffer, { persistent: true });
       
-      console.log(`📥 [RabbitMQ] Mensagem assíncrona registrada na fila. Ação: "${action}".`);
+      console.log(`📥 [RabbitMQ] Asynchronous message added to the queue. Action: "${action}".`);
       return isPublished;
 
     } catch (error: unknown) {
-      console.error('❌ [RabbitMQ] Falha ao tentar injetar bytes no broker de mensageria:', error);
+      console.error('❌ [RabbitMQ] Failed to send bytes to the message broker:', error);
       return false;
     }
   }
@@ -82,46 +96,61 @@ export class EventBrokerService {
   /**
   * 👷 3. ASYNCHRONOUS CONSUMER WORKER (startAsynchronousConsumerWorker):
   * Continuously listen to the queue in the background.
-  * When a message arrives, process it and send a real-time alert over SSE.
+  * When a message arrives, parse it, execute asymmetric writing to PostgreSQL and trigger SSE alerts.
    */
   private async startAsynchronousConsumerWorker(): Promise<void> {
     try {
-      // 🛡️ Retry if the network channel is not ready yet.
       if (!this.channel) {
         setTimeout(() => this.startAsynchronousConsumerWorker(), 1000);
         return;
       }
 
-      console.log('👷 [Worker] Esteira de consumo ativada em background. Escutando mensagens...');
+      console.log('👷 [Worker] Background consumer started. Listening for messages...');
 
-      // Start continuously reading from the queue.
-      await this.channel.consume(this.queueName, (message) => {
-        // Ignore null messages, which may result from network instability.
+      await this.channel.consume(this.queueName, async (message) => {
         if (!message) return;
 
         try {
-          // Decode the raw bytes into readable text and parse them as JSON.
           const rawContent = message.content.toString();
           const parsedPayload = JSON.parse(rawContent);
 
-          console.log(`📢 [Worker] Evento retirado da fila. Disparando transmissão em massa...`);
+          console.log(`📢 [Worker] Event retrieved from the queue. Processing data pipeline...`);
 
-          // 📡 Broadcast the payload to browsers in real time over SSE.
-          this.broadcastToSSEClients(parsedPayload.action, parsedPayload.data);
+          // =========================================================================
+          // ⚙️ ASYNCHRONOUS SERVICE LAYER PERSISTENCE INGESTION
+          // =========================================================================
+          // Extrapolate the safe cryptographically protected credentials block sent from the controller boundary
+          if (parsedPayload.action === 'user_created') {
+            const { name, email, password } = parsedPayload.data;
+            
+            // APPSEC REMEDIATION - EVENT CONSUMPTION INGESTION ACTIVATION
+            // Invoke the domain service instance directly by cascading the hashed password token downstream.
+            // Our updated UserService layer will notice the hash signature and prevent double-hashing natively.
+            if (this.userService) {
+              console.log(`📥 [Worker] Intercepted 'user_created' event from queue. Persistent entity write initiated for: ${email}`);
+              await this.userService.createUser(name, email, password);
+              console.log(`💾 [Worker] Event transaction successfully resolved and persisted inside PostgreSQL cluster.`);
+            } else {
+              console.warn('⚠️ [Worker] Execution blocked: UserService container reference is unmapped inside the broker instance.');
+            }
+          }
 
-          // 🤝 ACKNOWLEDGEMENT (ACK): Confirm successful processing to RabbitMQ.
-          // This allows the broker to safely remove the message from the queue.
+          // Broadcast to SSE clients (Sanitizing out the hash from the public real-time stream channel!)
+          this.broadcastToSSEClients(parsedPayload.action, parsedPayload.action === 'user_created' 
+            ? { name: parsedPayload.data.name, email: parsedPayload.data.email } 
+            : parsedPayload.data
+          );
+
           this.channel?.ack(message);
 
         } catch (error: unknown) {
-          console.error('❌ [Worker] Falha operacional ao processar mensagem consumida:', error);
-          // Reject corrupted payloads without requeuing them to prevent infinite processing loops.
-          this.channel?.nack(message, false, false);
+          console.error('❌ [Worker] Operational failure while processing consumed message:', error);
+          this.channel?.nack(message, false, false); // Drop corrupted packets to block poisoning loops
         }
       });
 
     } catch (error: unknown) {
-      console.error('❌ [Worker] Erro crítico no loop de consumo assíncrono:', error);
+      console.error('❌ [Worker] Critical error in the asynchronous consumption loop:', error);
     }
   }
 
@@ -142,13 +171,13 @@ export class EventBrokerService {
 
     // Add this active connection to the global broadcast list.
     this.connectedClients.push(res);
-    console.log(`🔌 [SSE] Cliente acoplado ao túnel. Total de telas conectadas em tempo real: ${this.connectedClients.length}`);
+    console.log(`🔌 [SSE] Client connected to the stream. Total real-time connections: ${this.connectedClients.length}`);
 
     // 🛡️ MEMORY CLEANUP: Express emits 'close' when the user closes the tab or logs out.
     // Remove the connection from the list to prevent server memory leaks.
     res.on('close', () => {
       this.connectedClients = this.connectedClients.filter(client => client !== res);
-      console.log(`❌ [SSE] Conexão abortada pelo navegador. Telas restantes na memória: ${this.connectedClients.length}`);
+      console.log(`❌ [SSE] Connection closed by the browser. Remaining connections: ${this.connectedClients.length}`);
     });
   }
 
@@ -165,7 +194,7 @@ export class EventBrokerService {
       try {
         client.write(formattedData);
       } catch (error: unknown) {
-        console.error('⚠️ [SSE] Falha ao injetar dados em canal corrompido:', error);
+        console.error('⚠️ [SSE] Failed to send data to a broken channel:', error);
       }
     });
   }

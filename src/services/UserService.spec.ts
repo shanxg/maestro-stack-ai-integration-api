@@ -33,9 +33,10 @@ describe('UserService (Testes Unitários)', () => {
 
     const name = 'Lucas Teste';
     const email = 'lucas@teste.com';
+    const password = 'cryptographic_password_string_123'; // APPSEC REMEDIATION: Inject mock credential token
 
-    // Call the real service method with the input data.
-    const result = await userService.createUser(name, email);
+    // Call the real service method with the input data vector.
+    const result = await userService.createUser(name, email, password);
 
     // ASSERTIONS: Verify the expected values.
     expect(result).toHaveProperty('id'); // Confirm that an ID was generated
