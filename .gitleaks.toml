@@ -1,0 +1,17 @@
+title = "Gitleaks config for maestro-stack-ai-integration-api"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholders didáticos e arquivos de exemplo"
+paths = [
+  '''README\.md$''',
+  '''\.env\.example$''',
+  '''secret\.yaml\.example$''',
+]
+regexes = [
+  '''YOUR_TOKEN_HERE''',
+  '''<token>''',
+  '''REPLACE_ME''',
+]

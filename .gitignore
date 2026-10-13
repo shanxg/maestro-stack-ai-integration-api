@@ -5,6 +5,7 @@ dist/
 # Local configuration files and secret keys (FinOps & security)
 .env
 .env.local
+k8s/secret.yaml
 
 # System log files and editor cache
 npm-debug.log*
@@ -14,3 +15,24 @@ npm-debug.log*
 
 # Code coverage reports (Jest/SWC)
 coverage/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Segredos
+.env
+.env.*
+!.env.example
+
+# Planilhas (se optar pela opção A)
+*.xlsx
+
+# Sistema
+.DS_Store
+Thumbs.db
