@@ -12,8 +12,12 @@ declare global {
   }
 }
 
-// 🔥 SAFE SECRET RETRIEVAL: Read the secret from the environment, with a fallback if it is empty.
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_backup_2026';
+// 🔥 SAFE SECRET RETRIEVAL: Read the secret from the environment and fail closed if it is missing.
+// A hardcoded fallback would let anyone who reads the source forge valid tokens (CWE-798).
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET is not set');
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // 3. MIDDLEWARE: Acts as a firewall before the request reaches the controller.
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {

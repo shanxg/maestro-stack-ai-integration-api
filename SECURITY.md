@@ -59,16 +59,16 @@ Out of scope:
 
 ## Security controls in place
 
-| Layer                | Control                                                                                                                |
-| :------------------- | :--------------------------------------------------------------------------------------------------------------------- |
-| **Secrets**          | Local `.env` only (never committed). Gitleaks runs locally (pre-commit hook) and in CI on every push and pull request. |
-| **Authentication**   | JWT-based. Tokens are signed with a rotating secret loaded from environment.                                           |
-| **Input validation** | Zod schemas applied at the controller layer for REST and GraphQL.                                                      |
-| **Transport**        | Helmet for HTTP headers; rate limiting on sensitive endpoints.                                                         |
-| **LLM interaction**  | Input/output separation, output rendered through DOMPurify on the client.                                              |
-| **Dependencies**     | Dependabot alerts and automated update PRs.                                                                            |
-| **Container**        | Non-root user (see `Dockerfile`); pinned base image.                                                                   |
-| **Infrastructure**   | Kubernetes manifests do not carry secrets — `secret.yaml` is gitignored and only `secret.yaml.example` is committed.   |
+| Layer                | Control                                                                                                                                                                                                                                  |
+| :------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Secrets**          | Local `.env` only (never committed). Gitleaks runs locally (pre-commit hook) and in CI on every push and pull request. Only documentation placeholders are allowlisted, so `.env` and `k8s/secret.yaml` are blocked even if force-added. |
+| **Authentication**   | JWT-based. Tokens are signed with a secret loaded from the environment; the API refuses to start without it, and there is no hardcoded fallback.                                                                                         |
+| **Input validation** | Zod schemas on REST user creation and on the GraphQL `createUser` mutation; type checks on the AI chat endpoint.                                                                                                                         |
+| **HTTP hardening**   | Helmet security headers (CSP enforced in production). Rate limiting: 100 req/15 min global, 5 login attempts/5 min and 10 AI prompts/min per IP.                                                                                         |
+| **LLM interaction**  | System prompt and user input sent as separate messages; model output sanitized with DOMPurify before rendering.                                                                                                                          |
+| **Dependencies**     | Dependabot alerts and weekly version-update PRs (npm, GitHub Actions, Docker).                                                                                                                                                           |
+| **Container**        | Runs as the unprivileged `node` user; Node 24 LTS base image; dependencies installed from the lockfile (`npm ci`). An allowlist `.dockerignore` keeps `.env`, `node_modules` and `frontend/` out of the build context.                   |
+| **Infrastructure**   | Kubernetes manifests do not carry secrets — `secret.yaml` is gitignored and only `secret.yaml.example` is committed.                                                                                                                     |
 
 A full list of remediations performed on this codebase is kept in
 [`docs/security/remediation-log.md`](docs/security/remediation-log.md),
@@ -77,7 +77,7 @@ evidence for each entry.
 
 ## References
 
-- [OWASP Top 10 (2021)](https://owasp.org/Top10/)
+- [OWASP Top 10:2025](https://top10.owasp.org/2025/en/)
 - [OWASP API Security Top 10 (2023)](https://owasp.org/API-Security/editions/2023/en/0x11-t10/)
-- [OWASP Top 10 for LLM Applications](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
-- [CWE Top 25](https://cwe.mitre.org/top25/archive/2023/2023_top25_list.html)
+- [OWASP Top 10 for LLM Applications 2026](https://genai.owasp.org/resource/owasp-genai-llm-top-10-2026/)
+- [CWE Top 25 (2025)](https://cwe.mitre.org/top25/archive/2025/2025_cwe_top25.html)
