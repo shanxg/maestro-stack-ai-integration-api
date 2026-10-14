@@ -1,0 +1,11 @@
+# Python tooling for this repository (the API itself is Node.js).
+# Setup: python -m venv .venv, activate it, then: pip install -r requirements.txt
+
+# sync_backlog.py: reads the security backlog spreadsheet and syncs GitHub issues
+openpyxl==3.1.5
+python-dotenv==1.2.4
+requests==2.34.2
+
+# Developer tools
+pre-commit==4.7.0        # Gitleaks hook on every commit (run `pre-commit install` once)
+git-filter-repo==2.47.0  # purges leaked secrets from git history (see remediation log)
