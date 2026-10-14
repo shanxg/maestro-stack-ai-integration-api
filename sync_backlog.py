@@ -25,12 +25,13 @@ COL = {
     "CORRECAO":       6,
     "REFERENCIA":     7,
     "ALINHAMENTO":    8,
-    "ESFORCO":        9,
-    "IMPACTO":        10,
-    "STATUS":         11,
-    "EVIDENCIA":      12,
-    "ISSUE_NUMBER":   13,  
-    "ISSUE_URL":      14,  
+    "DECISAO":        9,
+    "ESFORCO":        10,
+    "IMPACTO":        11,
+    "STATUS":         12,
+    "EVIDENCIA":      13,
+    "ISSUE_NUMBER":   14,  
+    "ISSUE_URL":      15,  
 }
 
 HEADERS = {
@@ -69,7 +70,9 @@ def montar_corpo(row):
 - **Categoria:** {v("CATEGORIA")}
 
 ## 🔍 O que foi encontrado
-{v("MELHORIA")}
+- **Decisão:** {v("DECISAO")}
+- **Melhoria:** {v("MELHORIA")}
+
 
 **Onde:** `{v("ONDE")}`
 

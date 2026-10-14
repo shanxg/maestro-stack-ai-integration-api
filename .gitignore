@@ -41,5 +41,6 @@ Thumbs.db
 frontend/.next/
 .next/
 
-# Scripts locais de diagnóstico
+# Scripts locais de diagnï¿½stico
 diagnostico.py
+delete-issues.py
