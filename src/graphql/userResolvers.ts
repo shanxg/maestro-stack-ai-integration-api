@@ -1,4 +1,6 @@
+import { GraphQLError } from 'graphql';
 import { UserService } from '../services/UserService.js';
+import { createUserSchema } from '../schemas/userSchema.js';
 
 /**
  * ARCHITECTURAL REMEDIATION: CONTEXTUAL GRAPHQL AUTHORIZATION
@@ -33,7 +35,21 @@ export const createUserResolvers = (userService: UserService) => {
         if (!context.user) {
           throw new Error('FORBIDDEN: Legitimate authentication identity mapping required.');
         }
-        const { name, email, password } = args;
+        // Input validation: reuse the REST Zod schema so both entry points enforce the same rules.
+        const parsed = createUserSchema.shape.body.safeParse(args);
+        // If validation fails, throw a GraphQL error with details about the invalid input.
+        if (!parsed.success) {
+          throw new GraphQLError('VALIDATION_FAILURE: Invalid user input.', {
+            extensions: {
+              code: 'BAD_USER_INPUT',
+              details: parsed.error.issues.map((issue) => ({
+                field: issue.path.join('.'),
+                message: issue.message
+              }))
+            }
+          });
+        }
+        const { name, email, password } = parsed.data;
         return userService.createUser(name, email, password);
       }
     }
