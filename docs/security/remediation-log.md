@@ -229,8 +229,11 @@ The **README** contains a `curl` example with `Authorization: Bearer YOUR\_TOKEN
 ## 🚨 [CRED-01] Personal Access Token exposed in a chat channel
 
 **Date:** 2026-10-13
+
 **Detected by:** Author (immediate self-report)
+
 **Severity:** Critical
+
 **References:** CWE-522, OWASP A07:2021
 
 **Finding:**

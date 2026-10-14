@@ -214,7 +214,3 @@ _These legacy assets remain untouched to demonstrate production-ready capabiliti
 ## ⚖️ Architectural Trade-offs: CAP Theorem Dynamics
 
 The Maestro architecture deliberately prioritizes **Availability & Partition Tolerance (AP)** within its streaming communication layer. Rather than holding the critical HTTP request pipeline hostage to complex analytical writes, data signals are dispatched asynchronously into **RabbitMQ** event queues. The platform favors **Eventual Consistency**, allowing backing consumers to batch write telemetries and auditing data blocks without adding a single millisecond of overhead to the user experience.
-
-```
-
-```
