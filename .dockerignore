@@ -1,0 +1,10 @@
+# Deny by default: only what the Dockerfile needs is sent to the build.
+*
+
+# Dependency manifests (used by npm ci)
+!package.json
+!package-lock.json
+
+# TypeScript build: compiler config and source (includes src/graphql/schema.graphql)
+!tsconfig.json
+!src
