@@ -252,7 +252,7 @@ in a shared context instead of being added directly in the editor.
 **Remediation applied:**
 
 - Token revoked on GitHub immediately after detection.
-- New token generated with the minimum required scope (`repo`).
+- New token generated with the minimum required scope (`repo`). _(Superseded by [CRED-03]: `repo` was not the minimum; replaced by a fine-grained token.)_
 - New token stored only in the local `.env` file, which is listed in `.gitignore`.
 - `python-dotenv` integrated into `sync_backlog.py`, eliminating the need
   to export the variable in the shell (where it persists in PowerShell history).
@@ -303,7 +303,7 @@ Placeholder false positives (see [1.06]) were silenced by excluding whole files 
 
 **Evidence:**
 
-- `.gitleaks.toml` (commit pending).
+- Commit `479a9ff` — `.gitleaks.toml`; merged in PR #67.
 
 ---
 
@@ -337,7 +337,7 @@ The secret check lived only in `app.ts`; the middleware kept its own default val
 
 **Evidence:**
 
-- `src/middlewares/authMiddleware.ts` (commit pending).
+- Commit `7595ba4` — `src/middlewares/authMiddleware.ts`; merged in PR #67.
 
 ---
 
@@ -407,3 +407,39 @@ Validation was implemented as Express middleware on the REST route only; GraphQL
 **Evidence:**
 
 - Commit `dff3d15` — `src/graphql/userResolvers.ts`.
+
+---
+
+## 🟡 [CRED-03] `sync_backlog.py` token could write to every repository of the account
+
+**Date:** 2026-10-14
+
+**Detected by:** Author (review of CRED-01 against the principle of least privilege)
+
+**Severity:** Medium
+
+**References:** CWE-250
+
+**Finding:**
+
+The classic token created in CRED-01 for `sync_backlog.py` had the `repo` scope, which grants read and write access to every repository of the account, including private repositories and their Actions secrets. The script only needs to read and create issues in this repository.
+
+**Root cause:**
+
+Classic tokens only offer broad scopes, and CRED-01 assumed `repo` was the minimum.
+
+**Remediation applied:**
+
+- Classic token replaced by a fine-grained token limited to `shanxg/maestro-stack-ai-integration-api`, with only Issues: Read and write (plus the mandatory Metadata: Read-only) and an expiration date.
+- Old token revoked on GitHub and removed from `.env`.
+- Planned: reading the GitHub Projects board will use a separate classic token with only `read:project`, because fine-grained tokens are not documented for user-owned projects.
+
+**Regression test:**
+
+- With the new token, `sync_backlog.list_issues()` returns the 33 issues.
+- With the new token, `GET /repos/shanxg/maestro-stack-ai-integration-api/actions/secrets` returns `403 Resource not accessible by personal access token`, a call the `repo` scope allows.
+
+**Evidence:**
+
+- Old token: deleted (GitHub Settings → Developer settings → Tokens (classic)).
+- New token: stored only in the local `.env` file, which is gitignored.
