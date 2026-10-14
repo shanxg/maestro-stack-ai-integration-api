@@ -49,9 +49,9 @@
 > Formal identifiers that tie the entry to recognized standards. Never leave this blank when a reference exists; this is what distinguishes a professional report from an amateur one.
 >
 > - _CWE: `CWE-798` (hardcoded credentials), `CWE-79` (XSS), `CWE-89` (SQL injection)._
-> - _OWASP Top 10 (Web): `OWASP A02:2021`, `A07:2021`._
+> - _OWASP Top 10 (Web): `OWASP A04:2025`, `A07:2025`._
 > - _OWASP API Top 10: `API1:2023 (BOLA)`, `API2:2023 (Broken Authentication)`._
-> - _OWASP LLM Top 10: `LLM01 (Prompt Injection)`, `LLM10 (Unbounded Consumption)`._
+> - _OWASP LLM Top 10: `LLM01:2026 (Prompt Injection)`. Always include the edition year: IDs change between editions._
 > - _NIST / ISO: `NIST 800-53 IA-5`, `ISO 27001 A.9.4.3`._
 
 - **Finding:**
@@ -89,7 +89,7 @@
 
 > How to prove the issue will not recur. Without this, the entry is documentation only, not verified remediation.
 >
-> - Command run: _`gitleaks detect --source . --verbose`_.
+> - Command run: _`gitleaks git . --verbose --redact`_.
 > - Expected result: _`no leaks found`_.
 > - Test case added: _`tests/auth.spec.ts › 'rejects token when no secret is configured'`_.
 > - Verified behavior: _"commit is blocked by the pre-commit hook if a string matching `ghp_` is detected"\_.
@@ -122,11 +122,11 @@
 
 **Severity:** High
 
-**References:** CWE-798, OWASP A02:2021
+**References:** CWE-798, CWE-321, OWASP A07:2025, A04:2025
 
 **Finding:**
 
-The `k8s/secret.yaml` file was tracked in the public repository with the Base64-encoded JWT secret (`bWFlc3Ryb19zZWNyZXRfa2V5XzIwMjZfc3VwZXJfc2VjdXJl`), exposed in commit `7c18d84d` and earlier commits.
+The `k8s/secret.yaml` file was tracked in the public repository with the Base64-encoded JWT secret (value redacted; rotated), exposed in commit `7c18d84d` and earlier commits.
 
 **Root cause:**
 
@@ -138,15 +138,15 @@ The Kubernetes manifest was committed with the secret value directly in it, with
 
 - `k8s/secret.yaml` removed from version control and added to `.gitignore`.
 
-- Created `k8s/secret.yaml.example` with the `REPLACE\_ME` placeholder.
+- Created `k8s/secret.yaml.example` with the `REPLACE_ME` placeholder.
 
 - Repository history rewritten with `git filter-repo` to remove commit `7c18d84d`; force push applied (`de01357..ed58f20`).
 
-- Created `.gitleaks.toml` with an allowlist for placeholders and local files.
+- Created `.gitleaks.toml` with an allowlist for placeholders and local files. _(Superseded by [SCAN-01].)_
 
 **Regression test:**
 
-- `gitleaks detect --source . --verbose` returns `no leaks found`.
+- `gitleaks git . --verbose --redact` returns `no leaks found`.
 
 - Commit is blocked by the pre-commit hook if a secret is reintroduced.
 
@@ -154,7 +154,7 @@ The Kubernetes manifest was committed with the secret value directly in it, with
 
 - Commit `ed58f20` — file removal.
 
-- Commit `757f7e3` — `.gitignore` updated and `sync\_backlog.py` added.
+- Commit `757f7e3` — `.gitignore` updated and `sync_backlog.py` added.
 
 - Force push: `de01357..ed58f20 main -> main (forced update)`.
 
@@ -168,7 +168,7 @@ The Kubernetes manifest was committed with the secret value directly in it, with
 
 **Severity:** Medium
 
-**References:** OWASP A05:2021, CWE-540
+**References:** OWASP A01:2025, CWE-540
 
 **Finding:**
 
@@ -188,7 +188,7 @@ No pre-commit hook or secret-scanning pipeline was in place.
 
 **Regression test:**
 
-- Attempting to commit a file containing the string `ghp\_xxx` should fail in the hook.
+- Attempting to commit a file containing the string `ghp_xxx` should fail in the hook.
 
 **Evidence:**
 
@@ -196,7 +196,7 @@ No pre-commit hook or secret-scanning pipeline was in place.
 
 ---
 
-## 🔵 [1.06] `YOUR\_TOKEN\_HERE` placeholder in README (false positive)
+## 🔵 [1.06] `YOUR_TOKEN_HERE` placeholder in README (false positive)
 
 **Date:** 2026-10-13
 
@@ -208,7 +208,7 @@ No pre-commit hook or secret-scanning pipeline was in place.
 
 **Finding:**
 
-The **README** contains a `curl` example with `Authorization: Bearer YOUR\_TOKEN\_HERE`, which triggers the `curl-auth-header` rule.
+The **README** contains a `curl` example with `Authorization: Bearer YOUR_TOKEN_HERE`, which triggers the `curl-auth-header` rule.
 
 **Root cause:**
 
@@ -216,15 +216,17 @@ The **README** contains a `curl` example with `Authorization: Bearer YOUR\_TOKEN
 
 **Remediation applied:**
 
-- Allowlist added to `.gitleaks.toml` (`regexes` and `paths`).
+- Allowlist added to `.gitleaks.toml` (`regexes` and `paths`). _(Superseded by [SCAN-01]: the `paths` allowlist was removed.)_
 
 **Regression test:**
 
-- `gitleaks detect --source . --verbose` no longer reports the README.
+- `gitleaks git . --verbose --redact` no longer reports the README.
 
 **Evidence:**
 
-- `.gitleaks.toml`, `\[allowlist]` section.
+- `.gitleaks.toml`, `[allowlist]` section.
+
+---
 
 ## 🚨 [CRED-01] Personal Access Token exposed in a chat channel
 
@@ -234,7 +236,7 @@ The **README** contains a `curl` example with `Authorization: Bearer YOUR\_TOKEN
 
 **Severity:** Critical
 
-**References:** CWE-522, OWASP A07:2021
+**References:** CWE-522, OWASP A06:2025
 
 **Finding:**
 A GitHub Personal Access Token (prefix `ghp_xmVX...`) was accidentally pasted into a
@@ -260,7 +262,7 @@ in a shared context instead of being added directly in the editor.
 - `git check-ignore -v .env` confirms that the file is not tracked.
 - The Gitleaks pre-commit hook (`.pre-commit-config.yaml`) blocks commits
   containing strings in the `ghp_` format.
-- `gitleaks detect --source . --verbose` returns `no leaks found`.
+- `gitleaks git . --verbose --redact` returns `no leaks found`.
 
 **Evidence:**
 
@@ -268,3 +270,140 @@ in a shared context instead of being added directly in the editor.
 - New token: stored only in the local `.env` file, never committed.
 - Commit `757f7e3` — `sync_backlog.py` added.
 - Commit `2abc4fc` — `.gitleaks.toml` and `.pre-commit-config.yaml` added.
+
+---
+
+## 🟡 [SCAN-01] Gitleaks path allowlist skipped files that hold real secrets
+
+**Date:** 2026-10-14
+
+**Detected by:** Author (configuration review)
+
+**Severity:** Medium
+
+**References:** CWE-540, OWASP A01:2025
+
+**Finding:**
+
+`.gitleaks.toml` allowlisted by path `.env`, `k8s/secret.yaml`, `README.md`, `.env.example`, `secret.yaml.example` and `frontend/.next/`. A commit that force-added `.env` or `k8s/secret.yaml`, or pasted a real token into a README or example file, passed both the pre-commit hook and CI.
+
+**Root cause:**
+
+Placeholder false positives (see [1.06]) were silenced by excluding whole files instead of matching the placeholder values themselves.
+
+**Remediation applied:**
+
+- Removed the `paths` allowlist from `.gitleaks.toml`.
+- Placeholder regexes anchored (`^...$`) and matched against the extracted secret only (`regexTarget = "secret"`).
+
+**Regression test:**
+
+- In a throwaway clone, fake secrets were staged in `.env` and `k8s/secret.yaml` (`git add -f`), `README.md` and `k8s/secret.yaml.example`. With `gitleaks git --pre-commit --staged`, the old config reported 0 findings and the new config reported 6.
+- `gitleaks git . --verbose --redact` on the full history (39 commits) returns `no leaks found`.
+
+**Evidence:**
+
+- `.gitleaks.toml` (commit pending).
+
+---
+
+## 🟡 [CRED-02] Hardcoded fallback JWT secret in the authentication middleware
+
+**Date:** 2026-10-14
+
+**Detected by:** Author (review of `SECURITY.md` claims against the code). Not flagged by Gitleaks.
+
+**Severity:** Medium
+
+**References:** CWE-798, OWASP A07:2025
+
+**Finding:**
+
+`src/middlewares/authMiddleware.ts` (line 16) fell back to a hardcoded secret when `JWT_SECRET` was unset. `src/app.ts` already aborts startup without the variable, so the fallback was not reachable through the normal entry point. Any other code path that loaded the middleware without the variable would verify tokens with a secret published in the repository.
+
+**Root cause:**
+
+The secret check lived only in `app.ts`; the middleware kept its own default value instead of failing closed.
+
+**Remediation applied:**
+
+- Fallback removed; the middleware throws at load time if `JWT_SECRET` is missing.
+- The removed value remains in git history and must be treated as public. It must never be used as a real secret.
+
+**Regression test:**
+
+- Importing `authMiddleware.ts` without `JWT_SECRET` fails with `JWT_SECRET is not set`; with the variable set, it loads.
+- `npx tsc --noEmit` passes.
+
+**Evidence:**
+
+- `src/middlewares/authMiddleware.ts` (commit pending).
+
+---
+
+## 🟡 [CONT-01] API container ran as root on an end-of-life Node.js image
+
+**Date:** 2026-10-14
+
+**Detected by:** Author (review of `SECURITY.md` claims against the code)
+
+**Severity:** Medium
+
+**References:** CWE-250, CWE-1104, OWASP A03:2025
+
+**Finding:**
+
+The `Dockerfile` had no `USER` instruction, so the API ran as `root`, and both stages used `node:20-alpine`, which reached end of life on 2026-04-30. `SECURITY.md` claimed a non-root user and a pinned base image. There was also no `.dockerignore`, so the whole project directory, including `.env`, was sent to the build context and copied into the builder stage.
+
+**Root cause:**
+
+The container controls in `SECURITY.md` described the intended setup and were never checked against the `Dockerfile`.
+
+**Remediation applied:**
+
+- Base image updated to `node:24-alpine` (Active LTS) in both stages.
+- `npm install` replaced by `npm ci`, so dependencies come exactly from the lockfile.
+- `USER node` added to the runtime stage.
+- Allowlist `.dockerignore` added: only `package.json`, `package-lock.json`, `tsconfig.json` and `src/` reach the build context.
+
+**Regression test:**
+
+- `docker run --rm maestro-api:test sh -c "whoami && node --version"` prints `node` and `v24.x`.
+- `docker build --target builder` followed by `ls -A /app` lists only `dist`, `node_modules`, `package-lock.json`, `package.json`, `src` and `tsconfig.json`.
+
+**Evidence:**
+
+- Commit `984d903` — `Dockerfile` and `.dockerignore`.
+
+---
+
+## 🔵 [VAL-01] GraphQL `createUser` mutation skipped input validation
+
+**Date:** 2026-10-14
+
+**Detected by:** Author (review of `SECURITY.md` claims against the code)
+
+**Severity:** Low
+
+**References:** CWE-20, CWE-521, OWASP A05:2025, A07:2025
+
+**Finding:**
+
+The GraphQL `createUser` mutation passed its arguments straight to `UserService.createUser`. The REST route `POST /api/v1/users` validates the same fields with `createUserSchema` (name of at least 3 characters, valid email, password of at least 8 characters), so GraphQL was an alternate path around those rules, including the password length policy. The mutation requires an authenticated user.
+
+**Root cause:**
+
+Validation was implemented as Express middleware on the REST route only; GraphQL resolvers do not pass through that middleware.
+
+**Remediation applied:**
+
+- The resolver reuses `createUserSchema` (`safeParse` on the `body` shape), so both entry points enforce the same rules.
+- Invalid input returns a `GraphQLError` with code `BAD_USER_INPUT` and per-field details.
+
+**Regression test:**
+
+- Manual (scratch script, not yet an automated test): calling the resolver with name `Al`, email `bad` and password `123` returns `BAD_USER_INPUT` on `name`, `email` and `password`; valid input reaches the service.
+
+**Evidence:**
+
+- Commit `dff3d15` — `src/graphql/userResolvers.ts`.

@@ -3,18 +3,13 @@ title = "Gitleaks config for maestro-stack-ai-integration-api"
 [extend]
 useDefault = true
 
+# No path allowlist on purpose: files that hold real secrets (.env, k8s/secret.yaml)
+# are kept out by .gitignore, and must still be blocked if someone force-adds them.
 [allowlist]
-description = "Placeholders didáticos e arquivos locais não versionados"
-paths = [
-  '''README\.md$''',
-  '''\.env\.example$''',
-  '''secret\.yaml\.example$''',
-  '''^\.env$''',
-  '''^k8s/secret\.yaml$''',
-  '''^frontend/\.next/''',
-]
+description = "Documentation placeholders, matched against the extracted secret only"
+regexTarget = "secret"
 regexes = [
-  '''YOUR_TOKEN_HERE''',
-  '''<token>''',
-  '''REPLACE_ME''',
+  '''^YOUR_TOKEN_HERE$''',
+  '''^<token>$''',
+  '''^REPLACE_ME[A-Z_]*$''',
 ]
