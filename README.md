@@ -146,6 +146,57 @@ curl.exe -i -X POST http://127.0.0 -H "Authorization: Bearer YOUR_TOKEN_HERE" -H
 
 ---
 
+Você tem razão, o comando estava complicado demais. Aqui está o texto puro em markdown. Copie e cole no VSCode, logo antes da linha `## ☁️ Architectural Evolution: Hybrid Cloud Foundations` (linha 149).
+
+---
+
+## 🛠️ Developer Tooling: Backlog Synchronization Pipeline
+
+To keep the security remediation backlog auditable and version-controlled, the repository includes a Python tool that synchronizes a local Excel plan with the GitHub Issues API.
+
+### `sync_backlog.py`
+
+Reads the `Security Remediation Backlog` sheet from `security_plan_maestro_api.xlsx`, creates GitHub Issues for every row that does not yet have an issue number, writes the issue number and URL back into the spreadsheet, and pulls the current issue state from GitHub back into the local `Status` column.
+
+**Setup:**
+
+1. Create a `.env` file in the repository root with a GitHub Personal Access Token:
+   ```env
+   GITHUB_TOKEN=ghp_yourPersonalAccessTokenHere
+   ```
+
+The `.env` file is ignored by Git (see `.gitignore`).
+
+2. Install dependencies:
+
+   ```bash
+   pip install openpyxl requests python-dotenv
+   ```
+
+3. Add two columns to the `Plano de Melhorias` sheet: `Issue Number` (M) and `Issue URL` (N). Leave them empty.
+
+4. Run the sync:
+   ```bash
+   python sync_backlog.py
+   ```
+
+The script is idempotent: running it multiple times will not duplicate issues. It uses `python-dotenv` to load credentials, so no token is ever hardcoded or exported to the shell history.
+
+### Secret Scanning: Gitleaks + pre-commit
+
+The repository enforces secret scanning at two layers:
+
+- **Local:** a `pre-commit` hook runs Gitleaks on every `git commit` and blocks the commit if a secret is detected. Install it once with:
+  ```bash
+  pip install pre-commit
+  pre-commit install
+  ```
+- **Custom rules:** `.gitleaks.toml` extends the default ruleset with an allowlist for didactic placeholders (e.g. `YOUR_TOKEN_HERE`) and for local files that must never be committed (`.env`, `k8s/secret.yaml`, Next.js build cache).
+
+Every remediation performed on this repository is logged in [`docs/security/remediation-log.md`](docs/security/remediation-log.md), with root cause, fix, regression test, and evidence.
+
+---
+
 ## ☁️ Architectural Evolution: Hybrid Cloud Foundations
 
 The repository intentionally preserves the core files `socket-deprecated.ts`, `rabbit-deprecated.ts`, and `worker-deprecated.ts` inside the codebase. These elements serve as a pedagogical and architectural blueprint, showcasing the platform's initial topology, which was designed for high-availability cloud consumption under enterprise paradigms.
@@ -163,3 +214,7 @@ _These legacy assets remain untouched to demonstrate production-ready capabiliti
 ## ⚖️ Architectural Trade-offs: CAP Theorem Dynamics
 
 The Maestro architecture deliberately prioritizes **Availability & Partition Tolerance (AP)** within its streaming communication layer. Rather than holding the critical HTTP request pipeline hostage to complex analytical writes, data signals are dispatched asynchronously into **RabbitMQ** event queues. The platform favors **Eventual Consistency**, allowing backing consumers to batch write telemetries and auditing data blocks without adding a single millisecond of overhead to the user experience.
+
+```
+
+```
