@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import sys
 import requests
@@ -8,8 +11,8 @@ from openpyxl import load_workbook
 # ============================================================
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_REPO  = "shanxg/maestro-stack-ai-integration-api"   # usuario/repo
-EXCEL_FILE   = "plano_melhorias_maestro_api.xlsx"
-SHEET_NAME   = "Plano de Melhorias"
+EXCEL_FILE   = "security_plan_maestro_api.xlsx"
+SHEET_NAME   = "Security Remediation Backlog"
 HEADER_ROW   = 1  # Linha em que estão os cabeçalhos
 
 # Mapeamento de colunas (índices 1-based no openpyxl)
