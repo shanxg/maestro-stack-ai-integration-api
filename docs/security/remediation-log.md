@@ -645,3 +645,42 @@ The route had no input schema. The controller parsed the query string by hand an
 - Commit `1c61f92` — `src/config.ts`, `src/schemas/userSchema.ts`, `src/app.ts`, `src/controllers/UserController.ts`, `tests/userRoutes.spec.ts`.
 - Commit `65c7005` — `openapi.yaml`.
 - Issue #44.
+
+---
+
+## 🟡 [AUTH-01] Login response time revealed which accounts exist, and a non-text username crashed the route
+
+**Date:** 2026-10-15
+
+**Detected by:** Author (backlog item 1.07, issue #40; the crash was also documented as a known issue in `openapi.yaml` for issue #61)
+
+**Severity:** Medium
+
+**References:** CWE-208, CWE-1287, OWASP A07:2025
+
+**Finding:**
+
+`POST /auth/login` in `src/app.ts` returned the generic `401` at once when the e-mail had no account, and ran `bcrypt.compare` (cost 12) only when the account existed. The response body was the same in both cases, but the response time was not, so anyone could tell registered e-mails from unknown ones by timing the public login route. The handler also called `username.trim()` without checking the type: a numeric `username`, or a body that is not JSON, threw a `TypeError` and the route answered `500` instead of `400`.
+
+**Root cause:**
+
+The "unknown account" branch returned early to skip work, and the input was checked by hand for presence only, not for type.
+
+**Remediation applied:**
+
+- `loginSchema` in `src/schemas/authSchema.ts` (Zod) requires `username` as non-blank text (trimmed) and `password` as text with at least one non-space character (not trimmed, because registration stores the password unchanged).
+- The route runs `authBruteForceLimiter`, then `validateMiddleware(loginSchema)`, so malformed bodies get `400 VALIDATION_FAILURE` and still count toward the login rate limit. The handler reads the values with `loginSchema.shape.body.parse(req.body)`.
+- `createApp` computes a dummy bcrypt hash once, from a random value and with `settings.bcryptSaltRounds`. `bcrypt.compare` always runs: against the stored hash, or against the dummy hash when the account does not exist. The two `401` branches became one, so the body and the work done are the same for unknown e-mails and wrong passwords. The dummy hash cannot be used to log in, because the route still answers `401` when there is no account.
+- `openapi.yaml` documents the `400` response and the constant-cost comparison; the known-issue notes about issue #40 were removed.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › `POST /auth/login -> returns 400 when username or password is missing, blank or not text`: a numeric `username`, an array `password`, a blank `username` and an empty body must each get `400 VALIDATION_FAILURE`, and the user lookup must never run. Against the previous code it failed with `Expected: 400, Received: 500`.
+- `tests/userRoutes.spec.ts` › `POST /auth/login -> runs bcrypt with the configured cost when the e-mail is unknown`: a login with an unknown e-mail must answer `401` and call `bcrypt.compare` once, against a hash whose cost (`bcrypt.getRounds`) equals `settings.bcryptSaltRounds`. The test checks the work done instead of measuring time, so it is not flaky. Against the previous code it failed with `Expected number of calls: 1, Received number of calls: 0`.
+- `npx tsc --noEmit` passes; `npm test` passes (4 suites, 25 tests).
+
+**Evidence:**
+
+- Commit `2ab4006` — `src/schemas/authSchema.ts`, `src/app.ts`, `tests/userRoutes.spec.ts`.
+- Commit `67847da` — `openapi.yaml`.
+- Issue #40.
