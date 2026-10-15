@@ -26,16 +26,32 @@ spec:
       labels:
         app: maestro-api          # Label added to the Pod for selector matching
     spec:
+      # 🛡️ POD SECURITY CONTEXT: Run as the unprivileged 'node' user (UID/GID 1000 in the
+      # official Node.js image) and apply the container runtime's default seccomp filter.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault      
       containers:
         - name: maestro-api-container   # Container name within the Pod
           
           # 🔥 Use the exact local image loaded with 'kind load'
-          image: maestro-api:v1
-          
+          image: maestro-api:v1          
+
           # Since the image is local to the Kind node, tell Kubernetes
           # NOT to pull it from Docker Hub, avoiding 'ErrImagePull' failures.
           imagePullPolicy: IfNotPresent
-
+          
+          # 🛡️ CONTAINER SECURITY CONTEXT: No privilege escalation, no Linux capabilities,
+          # and a read-only filesystem (the API only reads dist/ and schema.graphql at runtime).
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      
           # =========================================================================
           # 💎 RESOURCE REQUESTS AND COMPUTE LIMITS
           # =========================================================================
