@@ -402,11 +402,13 @@ Validation was implemented as Express middleware on the REST route only; GraphQL
 
 **Regression test:**
 
-- Manual (scratch script, not yet an automated test): calling the resolver with name `Al`, email `bad` and password `123` returns `BAD_USER_INPUT` on `name`, `email` and `password`; valid input reaches the service.
+- Manual (scratch script, not yet an automated test): calling the resolver with name `Al`, email `bad` and password `123` returns `BAD_USER_INPUT` on `name`, `email` and `password`; valid input reaches the service. _(Superseded by the automated test below.)_
+- Automated: `tests/userResolvers.spec.ts` calls the resolver directly; invalid input must raise `BAD_USER_INPUT` on `name`, `email` and `password` without reaching `UserService`, and valid input must reach it unchanged.
 
 **Evidence:**
 
-- Commit `dff3d15` — `src/graphql/userResolvers.ts`.
+- Commit `dff3d15` — `src/graphql/userResolvers.ts`; merged in PR #67.
+- Commit `46aef35` — `tests/userResolvers.spec.ts` (automated regression test).
 
 ---
 
