@@ -265,6 +265,50 @@ describe('User routes (integration tests)', () => {
     expect(blocked.body.error.code).toBe('AUTH_FLOOD_DETECTED');
   });
 
+  // TEST 11: Verify GET /users rejects pagination that breaks the listUsersSchema rules.
+  // Condition: Non-numeric, fractional, zero, negative and above-the-cap values never reach the service.
+  it('GET /users -> returns 400 when limit or offset is not a whole number in range', async () => {
+    mockUserService.getAllUsers.mockClear();
+    const invalidQueries = [
+      { limit: 'abc' },
+      { limit: 2.5 },
+      { limit: 0 },
+      { limit: settings.pagination.maxLimit + 1 },
+      { offset: -1 }
+    ];
+
+    for (const query of invalidQueries) {
+      const response = await request(serverTarget)
+        .get('/users')
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .query(query);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('VALIDATION_FAILURE');
+      expect(response.body.error.details[0].field).toBe(`query.${Object.keys(query)[0]}`);
+    }
+    expect(mockUserService.getAllUsers).not.toHaveBeenCalled();
+  });
+
+  // TEST 12: Verify valid pagination reaches the service as numbers, with the defaults from src/config.ts.
+  // Condition: The cap itself is accepted, and a request without parameters gets the default page.
+  it('GET /users -> passes the cap and the default page to the service as numbers', async () => {
+    mockUserService.getAllUsers.mockClear();
+
+    const atCap = await request(serverTarget)
+      .get('/users')
+      .set('Authorization', `Bearer ${tokenAdmin}`)
+      .query({ limit: settings.pagination.maxLimit, offset: 20 });
+    const withoutQuery = await request(serverTarget)
+      .get('/users')
+      .set('Authorization', `Bearer ${tokenAdmin}`);
+
+    expect(atCap.status).toBe(200);
+    expect(withoutQuery.status).toBe(200);
+    expect(mockUserService.getAllUsers).toHaveBeenNthCalledWith(1, { limit: settings.pagination.maxLimit, offset: 20 });
+    expect(mockUserService.getAllUsers).toHaveBeenNthCalledWith(2, { limit: settings.pagination.defaultLimit, offset: 0 });
+  });
+
 });
 
 describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', () => {

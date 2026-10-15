@@ -72,24 +72,24 @@ paths:
       summary: List users with pagination
       description: >
         Retrieves slices of the user array with dynamic Cache-Aside support on Redis.
-        Known issue: a non-numeric limit or offset makes the database query fail, and the
-        endpoint answers 200 with an empty list instead of 400 (tracked in issue #44).
+        Invalid pagination values are rejected with 400 before the database is queried.
       parameters:
         - name: limit
           in: query
-          description: >
-            Maximum number of records returned in the page. Values below 1 become 1, and no
-            upper limit is enforced (tracked in issue #44).
+          description: Maximum number of records returned in the page.
           required: false
           schema:
             type: integer
+            minimum: 1
+            maximum: 100
             default: 10
         - name: offset
           in: query
-          description: Number of records skipped at the start of the query. Negative values become 0.
+          description: Number of records skipped at the start of the query.
           required: false
           schema:
             type: integer
+            minimum: 0
             default: 0
       responses:
         '200':
@@ -100,6 +100,19 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/User'
+        '400':
+          description: limit or offset is not a whole number in the allowed range. Each failing parameter is listed in error.details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: VALIDATION_FAILURE
+                  message: "Falha na validação dos dados de entrada."
+                  details:
+                    - field: query.limit
+                      message: "O limit deve ser no máximo 100."
         '401':
           description: Access denied because the JWT is missing or invalid.
         '429':

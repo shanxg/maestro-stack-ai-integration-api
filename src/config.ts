@@ -60,6 +60,8 @@ export const settings = {
   jwtExpiresIn: '1h',
   bcryptSaltRounds: 12,
   usersCacheTtlSeconds: 60,
+  // GET /users page size: the default when no limit is sent, and the largest accepted.
+  pagination: { defaultLimit: 10, maxLimit: 100 },
   rateLimits: {
     global: { windowMs: 15 * 60 * 1000, max: 100 }, // per client IP
     login: { windowMs: 5 * 60 * 1000, max: 5 },

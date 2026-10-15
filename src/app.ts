@@ -28,7 +28,7 @@ import rateLimit from 'express-rate-limit';
 // 3. MIDDLEWARE, ZOD SCHEMA AND CONFIG IMPORTS
 import { authMiddleware } from './middlewares/authMiddleware.js';
 import { validateMiddleware } from './middlewares/validateMiddleware.js';
-import { createUserSchema } from './schemas/userSchema.js';
+import { createUserSchema, listUsersSchema } from './schemas/userSchema.js';
 import { env, settings } from './config.js'; // Validated environment and fixed limits (also loads .env)
 
 // 4. GRAPHQL (APOLLO SERVER) IMPORTS
@@ -255,7 +255,7 @@ export async function createApp(customUserService?: any) {
   // ==========================================
   // 🗺️ MAESTRO REST ENDPOINTS
   // ==========================================
-  app.get('/users', authMiddleware, (req: Request, res: Response) => userController.getUsers(req, res));
+  app.get('/users', authMiddleware, validateMiddleware(listUsersSchema), (req: Request, res: Response) => userController.getUsers(req, res));
   app.get('/users/:id', authMiddleware, (req: Request, res: Response) => userController.getUserById(req, res));
   app.post('/api/v1/users', validateMiddleware(createUserSchema), (req: Request, res: Response) => userController.createUser(req, res));
 
