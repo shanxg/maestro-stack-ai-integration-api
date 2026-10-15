@@ -2,7 +2,8 @@
 services:
   # 1. Relational database service
   postgres:
-    image: postgres:latest
+    # Pin the major version: a new major cannot open the existing data directory.
+    image: postgres:18
     container_name: pg_integrated
     environment:
       POSTGRES_PASSWORD: secret
@@ -11,14 +12,14 @@ services:
 
   # 2. In-memory cache service
   redis:
-    image: redis:latest
+    image: redis:8
     container_name: redis_integrated
     ports:
       - "6379:6379"
 
   # 3. Messaging service
   rabbitmq:
-    image: rabbitmq:3-management
+    image: rabbitmq:3.13-management
     container_name: rabbit_integrated
     ports:
       - "5672:5672"
