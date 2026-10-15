@@ -7,31 +7,35 @@ import requests
 from openpyxl import load_workbook
 
 # ============================================================
-# CONFIGURAÇÕES
+# SETTINGS
 # ============================================================
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-GITHUB_REPO  = "shanxg/maestro-stack-ai-integration-api"   # usuario/repo
+GITHUB_PROJECT_TOKEN = os.getenv("GITHUB_PROJECT_TOKEN")  # classic token, read:project only
+GITHUB_REPO  = "shanxg/maestro-stack-ai-integration-api"   # owner/repo
 EXCEL_FILE   = "security_plan_maestro_api.xlsx"
 SHEET_NAME   = "Security Remediation Backlog"
-HEADER_ROW   = 1  # Linha em que estão os cabeçalhos
+HEADER_ROW   = 1  # Row that holds the column headers
+PROJECT_OWNER  = "shanxg"
+PROJECT_NUMBER = 2  # https://github.com/users/shanxg/projects/2
 
-# Mapeamento de colunas (índices 1-based no openpyxl)
+
+# Column map (1-based indexes, as used by openpyxl)
 COL = {
     "ID":             1,
-    "PRIORIDADE":     2,
-    "CATEGORIA":      3,
-    "MELHORIA":       4,
-    "ONDE":           5,
-    "CORRECAO":       6,
-    "REFERENCIA":     7,
-    "ALINHAMENTO":    8,
-    "DECISAO":        9,
-    "ESFORCO":        10,
-    "IMPACTO":        11,
+    "PRIORITY":       2,
+    "CATEGORY":       3,
+    "IMPROVEMENT":    4,
+    "LOCATION":       5,
+    "FIX":            6,
+    "REFERENCE":      7,
+    "ALIGNMENT":      8,
+    "DECISION":       9,
+    "EFFORT":         10,
+    "IMPACT":         11,
     "STATUS":         12,
-    "EVIDENCIA":      13,
-    "ISSUE_NUMBER":   14,  
-    "ISSUE_URL":      15,  
+    "EVIDENCE":       13,
+    "ISSUE_NUMBER":   14,
+    "ISSUE_URL":      15,
 }
 
 HEADERS = {
@@ -43,195 +47,201 @@ HEADERS = {
 # ============================================================
 # HELPERS
 # ============================================================
-def normalizar_label(texto):
-    """Transforma 'Front-end / sessão' em 'front-end-sessao'."""
-    if not texto:
+def normalize_label(text):
+    """Turns 'Front-end / session' into 'front-end-session'."""
+    if not text:
         return None
     import unicodedata
-    texto = unicodedata.normalize("NFKD", str(texto))
-    texto = texto.encode("ascii", "ignore").decode("ascii")
-    texto = texto.lower().replace(" ", "-").replace("/", "-")
-    return "-".join(filter(None, texto.split("-")))[:50]
+    text = unicodedata.normalize("NFKD", str(text))
+    text = text.encode("ascii", "ignore").decode("ascii")
+    text = text.lower().replace(" ", "-").replace("/", "-")
+    return "-".join(filter(None, text.split("-")))[:50]
 
-def montar_titulo(id_, melhoria):
-    """Ex: '[1.01] JWT guardado em localStorage, legível por qualquer XSS'."""
-    titulo = f"[{id_}] {melhoria or 'Sem título'}"
-    return titulo[:250]  # GitHub limita a 256 chars
+def build_title(id_, improvement):
+    """E.g. '[1.01] JWT stored in localStorage, readable by any XSS'."""
+    title = f"[{id_}] {improvement or 'Untitled'}"
+    return title[:250]  # GitHub caps titles at 256 characters
 
-def montar_corpo(row):
-    """Monta o corpo da issue em Markdown com todas as colunas relevantes."""
+def build_body(row):
+    """Builds the issue body in Markdown from the relevant columns."""
     def v(col_name):
         val = row[COL[col_name] - 1].value
         return str(val).strip() if val is not None else "—"
 
-    return f"""## 📌 Item do plano
+    return f"""## 📌 Plan item
 - **ID:** {v("ID")}
-- **Prioridade:** {v("PRIORIDADE")}
-- **Categoria:** {v("CATEGORIA")}
+- **Priority:** {v("PRIORITY")}
+- **Category:** {v("CATEGORY")}
 
-## 🔍 O que foi encontrado
-- **Decisão:** {v("DECISAO")}
-- **Melhoria:** {v("MELHORIA")}
+## 🔍 Finding
+- **Decision:** {v("DECISION")}
+- **Improvement:** {v("IMPROVEMENT")}
 
 
-**Onde:** `{v("ONDE")}`
+**Location:** `{v("LOCATION")}`
 
-## 🛠️ Correção proposta
-{v("CORRECAO")}
+## 🛠️ Proposed fix
+{v("FIX")}
 
-## 📚 Referência
-{v("REFERENCIA")}
+## 📚 Reference
+{v("REFERENCE")}
 
-## 🎯 Alinhamento com a vaga
-{v("ALINHAMENTO")}
+## 🎯 Role alignment
+{v("ALIGNMENT")}
 
-## ⚖️ Estimativas
-- **Esforço:** {v("ESFORCO")}
-- **Impacto:** {v("IMPACTO")}
+## ⚖️ Estimates
+- **Effort:** {v("EFFORT")}
+- **Impact:** {v("IMPACT")}
 
 ---
-_Issue criada automaticamente a partir da planilha `{EXCEL_FILE}`._
+_Issue created automatically from the `{EXCEL_FILE}` spreadsheet._
 """
 
-def montar_labels(row):
-    """Gera as labels da issue a partir da planilha."""
-    labels = ["backlog"]
-    prio   = row[COL["PRIORIDADE"] - 1].value
-    cat    = row[COL["CATEGORIA"] - 1].value
-    esf    = row[COL["ESFORCO"] - 1].value
-    imp    = row[COL["IMPACTO"] - 1].value
+def build_labels(row):
+    """Builds the issue labels from the spreadsheet."""
+    labels   = ["backlog"]
+    priority = row[COL["PRIORITY"] - 1].value
+    category = row[COL["CATEGORY"] - 1].value
+    effort   = row[COL["EFFORT"] - 1].value
+    impact   = row[COL["IMPACT"] - 1].value
 
-    if prio: labels.append(f"priority:{str(prio).lower()}")
-    if cat:  labels.append(normalizar_label(cat))
-    if esf:  labels.append(f"effort:{normalizar_label(esf)}")
-    if imp:  labels.append(f"impact:{normalizar_label(imp)}")
+    if priority: labels.append(f"priority:{str(priority).lower()}")
+    if category: labels.append(normalize_label(category))
+    if effort:   labels.append(f"effort:{normalize_label(effort)}")
+    if impact:   labels.append(f"impact:{normalize_label(impact)}")
     return labels
 
 # ============================================================
 # GITHUB API
 # ============================================================
-def criar_issue(titulo, corpo, labels):
+def create_issue(title, body, labels):
     url = f"https://api.github.com/repos/{GITHUB_REPO}/issues"
-    payload = {"title": titulo, "body": corpo, "labels": labels}
+    payload = {"title": title, "body": body, "labels": labels}
     r = requests.post(url, headers=HEADERS, json=payload, timeout=30)
     if r.status_code == 201:
         data = r.json()
         return data["number"], data["html_url"]
-    print(f"   ❌ Erro {r.status_code}: {r.text[:200]}")
+    print(f"   ❌ Error {r.status_code}: {r.text[:200]}")
     return None, None
 
-def listar_issues():
-    """Retorna {numero: {state, ...}} de todas as issues do repositório."""
-    issues = {}
-    page = 1
-    while True:
-        url = (f"https://api.github.com/repos/{GITHUB_REPO}/issues"
-               f"?state=all&per_page=100&page={page}")
-        r = requests.get(url, headers=HEADERS, timeout=30)
-        if r.status_code != 200:
-            print(f"❌ Erro ao listar issues: {r.status_code} {r.text[:200]}")
-            return {}
-        batch = r.json()
-        if not batch:
-            break
-        for it in batch:
-            # Ignora pull requests (a API mistura PRs e issues)
-            if "pull_request" in it:
-                continue
-            issues[it["number"]] = it
-        if len(batch) < 100:
-            break
-        page += 1
-    return issues
+PROJECT_STATUS_QUERY = """
+query($login: String!, $number: Int!, $field: String!) {
+    user(login: $login) {
+        projectV2(number: $number) {
+            items(first: 100) {
+                pageInfo { hasNextPage }
+                nodes {
+                    content{ ... on Issue {number}}
+                    fieldValueByName(name: $field) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
+                }
+            }
+        }
+    }
+}
+"""
+def list_project_statuses():
+    """Returns {issue_number: status} from the GitHub Projects board."""
+    payload = {
+        "query": PROJECT_STATUS_QUERY,
+        "variables": {"login": PROJECT_OWNER, "number": PROJECT_NUMBER, "field": "Status"},
+    }
+    headers = {"Authorization": f"Bearer {GITHUB_PROJECT_TOKEN}"}
+    r = requests.post("https://api.github.com/graphql", headers=headers, json=payload, timeout=30)
+    data = r.json() if r.status_code == 200 else {}
+    # GraphQL answers 200 even when the query fails, so the "errors" key must be checked too
+    if r.status_code != 200 or "errors" in data:
+        print(f"❌ Failed to read the project board: {r.status_code} {r.text[:200]}")
+        return {}
+
+    items = data["data"]["user"]["projectV2"]["items"]
+    if items["pageInfo"]["hasNextPage"]:
+        print("   ⚠️  The board has more than 100 items; only the first 100 were read.")
+
+    statuses = {}
+    for node in items["nodes"]:
+        number = (node["content"] or {}).get("number")         # PRs and drafts have no issue number
+        status = (node["fieldValueByName"] or {}).get("name")  # cards without a Status are skipped
+        if number and status:
+            statuses[number] = status
+    return statuses
 
 # ============================================================
-# SINCRONIZAÇÃO
+# SYNC
 # ============================================================
-def excel_para_github():
-    """Cria issues para linhas cujo Issue Number está vazio."""
-    print("\n🚀 [1/2] Excel → GitHub (criar issues novas)")
+def excel_to_github():
+    """Creates issues for rows whose Issue Number is empty."""
+    print("\n🚀 [1/2] Excel → GitHub (create new issues)")
     wb = load_workbook(EXCEL_FILE)
     ws = wb[SHEET_NAME]
 
-    criadas = 0
+    created = 0
     for r in range(HEADER_ROW + 1, ws.max_row + 1):
-        id_       = ws.cell(r, COL["ID"]).value
-        melhoria  = ws.cell(r, COL["MELHORIA"]).value
-        numero    = ws.cell(r, COL["ISSUE_NUMBER"]).value
-        url_col   = ws.cell(r, COL["ISSUE_URL"]).value
+        id_          = ws.cell(r, COL["ID"]).value
+        improvement  = ws.cell(r, COL["IMPROVEMENT"]).value
+        issue_number = ws.cell(r, COL["ISSUE_NUMBER"]).value
+        issue_url    = ws.cell(r, COL["ISSUE_URL"]).value
 
-        # Pula linhas vazias ou já sincronizadas
-        if not id_ or not melhoria:
+        # Skip empty rows and rows that are already synced
+        if not id_ or not improvement:
             continue
-        if numero and url_col:
+        if issue_number and issue_url:
             continue
 
-        row = [ws.cell(r, c) for c in range(1, ws.max_column + 1)]
-        titulo = montar_titulo(id_, melhoria)
-        corpo  = montar_corpo(row)
-        labels = montar_labels(row)
+        row    = [ws.cell(r, c) for c in range(1, ws.max_column + 1)]
+        title  = build_title(id_, improvement)
+        body   = build_body(row)
+        labels = build_labels(row)
 
-        print(f"   → Criando issue [{id_}]: {str(melhoria)[:60]}...")
-        num, url = criar_issue(titulo, corpo, labels)
+        print(f"   → Creating issue [{id_}]: {str(improvement)[:60]}...")
+        number, url = create_issue(title, body, labels)
 
-        if num:
-            ws.cell(r, COL["ISSUE_NUMBER"], num)
+        if number:
+            ws.cell(r, COL["ISSUE_NUMBER"], number)
             ws.cell(r, COL["ISSUE_URL"], url)
-            criadas += 1
+            created += 1
         else:
-            print(f"   ⚠️  Falha ao criar issue para ID {id_}")
+            print(f"   ⚠️  Failed to create the issue for ID {id_}")
 
-    if criadas:
+    if created:
         wb.save(EXCEL_FILE)
-        print(f"   ✅ {criadas} issue(s) criada(s). Planilha atualizada.")
+        print(f"   ✅ {created} issue(s) created. Spreadsheet updated.")
     else:
-        print("   ℹ️  Nenhuma issue nova para criar.")
+        print("   ℹ️  No new issues to create.")
     wb.close()
 
 
-def github_para_excel():
-    """Atualiza a coluna Status (K) com base no estado das issues no GitHub."""
-    print("\n🔄 [2/2] GitHub → Excel (sincronizar status)")
-    issues = listar_issues()
-    if not issues:
-        print("   ℹ️  Nenhuma issue encontrada no repositório.")
+def github_to_excel():
+    """Updates the Status column (L) from the GitHub Projects board."""
+    print("\n🔄 [2/2] GitHub Projects → Excel (sync status)")
+    statuses = list_project_statuses()
+    if not statuses:
+        print("   ℹ️  No status found on the project board.")
         return
 
     wb = load_workbook(EXCEL_FILE)
     ws = wb[SHEET_NAME]
-    atualizadas = 0
+    updated = 0
 
     for r in range(HEADER_ROW + 1, ws.max_row + 1):
-        numero = ws.cell(r, COL["ISSUE_NUMBER"]).value
-        if not numero:
+        number = ws.cell(r, COL["ISSUE_NUMBER"]).value
+        if not number:
             continue
         try:
-            numero = int(numero)
+            number = int(number)
         except (TypeError, ValueError):
             continue
 
-        if numero not in issues:
-            continue
+        # The board owns Status; rows whose issue is not on the board are left as they are
+        board_status = statuses.get(number)
+        if board_status and board_status != ws.cell(r, COL["STATUS"]).value:
+            ws.cell(r, COL["STATUS"], board_status)
+            updated += 1
 
-        gh_state   = issues[numero]["state"]          # "open" | "closed"
-        status_atual = ws.cell(r, COL["STATUS"]).value or "A fazer"
-
-        # Regra de sincronização:
-        # - Se a issue está fechada → "Concluído"
-        # - Se a issue está aberta e o status local era "Concluído" → volta para "A fazer"
-        # - Caso contrário → não mexe (respeita "Em andamento" e "A fazer" locais)
-        if gh_state == "closed" and status_atual != "Concluído":
-            ws.cell(r, COL["STATUS"], "Concluído")
-            atualizadas += 1
-        elif gh_state == "open" and status_atual == "Concluído":
-            ws.cell(r, COL["STATUS"], "A fazer")
-            atualizadas += 1
-
-    if atualizadas:
+    if updated:
         wb.save(EXCEL_FILE)
-        print(f"   ✅ {atualizadas} linha(s) com status atualizado.")
+        print(f"   ✅ {updated} row(s) with an updated status.")
     else:
-        print("   ℹ️  Nenhum status para atualizar.")
+        print("   ℹ️  No status to update.")
     wb.close()
 
 
@@ -239,21 +249,22 @@ def github_para_excel():
 # MAIN
 # ============================================================
 if __name__ == "__main__":
-    if not GITHUB_TOKEN:
-        print("❌ ERRO: variável de ambiente GITHUB_TOKEN não definida.")
-        print("   Linux/macOS : export GITHUB_TOKEN='ghp_...'")
-        print("   PowerShell  : $env:GITHUB_TOKEN='ghp_...'")
-        sys.exit(1)
+    for name, value in (("GITHUB_TOKEN", GITHUB_TOKEN), ("GITHUB_PROJECT_TOKEN", GITHUB_PROJECT_TOKEN)):
+        if not value:
+            print(f"❌ ERROR: {name} is not set.")
+            print("   Add it to the local .env file (gitignored). Avoid exporting it in the")
+            print("   shell: it stays in the shell history (see CRED-01 in the remediation log).")
+            sys.exit(1)
 
     if not os.path.exists(EXCEL_FILE):
-        print(f"❌ ERRO: arquivo '{EXCEL_FILE}' não encontrado na pasta atual.")
+        print(f"❌ ERROR: file '{EXCEL_FILE}' not found in the current folder.")
         sys.exit(1)
 
     print("=" * 60)
-    print(" SINCRONIZADOR — Maestro Stack AI Integration API")
+    print(" SYNC — Maestro Stack AI Integration API")
     print("=" * 60)
 
-    excel_para_github()
-    github_para_excel()
+    excel_to_github()
+    github_to_excel()
 
-    print("\n✨ Sincronização concluída.")
+    print("\n✨ Sync complete.")

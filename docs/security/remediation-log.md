@@ -434,17 +434,19 @@ Classic tokens only offer broad scopes, and CRED-01 assumed `repo` was the minim
 
 - Classic token replaced by a fine-grained token limited to `shanxg/maestro-stack-ai-integration-api`, with only Issues: Read and write (plus the mandatory Metadata: Read-only) and an expiration date.
 - Old token revoked on GitHub and removed from `.env`.
-- Planned: reading the GitHub Projects board will use a separate classic token with only `read:project`, because fine-grained tokens are not documented for user-owned projects.
+- Planned: reading the GitHub Projects board will use a separate classic token with only `read:project`, because fine-grained tokens are not documented for user-owned projects. _(Done 2026-10-15: `GITHUB_PROJECT_TOKEN`.)_
 
 **Regression test:**
 
 - With the new token, `sync_backlog.list_issues()` returns the 33 issues.
 - With the new token, `GET /repos/shanxg/maestro-stack-ai-integration-api/actions/secrets` returns `403 Resource not accessible by personal access token`, a call the `repo` scope allows.
+- 2026-10-15: with the board token, `GET /rate_limit` returns `X-OAuth-Scopes: read:project` (no other scope), and `list_project_statuses()` returns the 33 board cards.
 
 **Evidence:**
 
 - Old token: deleted (GitHub Settings → Developer settings → Tokens (classic)).
 - New token: stored only in the local `.env` file, which is gitignored.
+- Board token: classic, `read:project` only, stored only in the local `.env` file; used by `list_project_statuses()` in commit `7eb8081`.
 
 ---
 
