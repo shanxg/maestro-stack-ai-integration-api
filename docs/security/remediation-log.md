@@ -517,3 +517,49 @@ CONT-01 hardened the `Dockerfile` only; the compose file and the Kubernetes mani
 
 - Commit `6b811bb` — `docker-compose.yml`.
 - Commit `f9a18b3` — `k8s/deployment.yaml`.
+
+---
+
+## 🟡 [CRED-04] Hardcoded default PostgreSQL password and unvalidated environment configuration
+
+**Date:** 2026-10-15
+
+**Detected by:** Author (backlog item 1.04, issue #37)
+
+**Severity:** Medium
+
+**References:** CWE-259, CWE-1392, OWASP A07:2025
+
+**Finding:**
+
+`src/repositories/UserRepository.ts` connected with `POSTGRES_PASSWORD || 'secret'`, and `docker-compose.yml` created the local container with `POSTGRES_PASSWORD: secret`. `k8s/deployment.yaml` did not set `POSTGRES_PASSWORD`, so a cluster deployment would also connect with the value published in the repository. Six modules read `process.env` with their own fallbacks, so a missing or malformed variable (for example a non-numeric port) was not reported at startup. The JWT secret fallback had already been removed in CRED-02.
+
+**Root cause:**
+
+Each module read the environment on its own with a local default; no single place declared which variables are required or validated them at boot. CRED-02 fixed only the JWT secret.
+
+**Remediation applied:**
+
+- `src/config.ts` validates the environment with Zod when the API starts. `JWT_SECRET` (at least 32 characters, RFC 7518 section 3.2) and `POSTGRES_PASSWORD` are required, ports must be integers between 1 and 65535, and `OPENAI_BASE_URL` must be a URL. On failure it lists only the variable names and the broken rule, never the values. It also holds the fixed limits: rate limits, users cache TTL, bcrypt cost and token lifetime.
+- Every module reads `env` and `settings` from `src/config.ts`. No `process.env` remains in `src/` outside `config.ts` and the deprecated blueprint files.
+- `docker-compose.yml` reads `POSTGRES_PASSWORD` from `.env` and stops if it is unset. `k8s/deployment.yaml` injects it from the `maestro-api-secret` Secret (new `postgres-password` key). `.env.example` and `k8s/secret.yaml.example` document it as required.
+- Local environment: the `pg_integrated` password was rotated with `ALTER USER` to a random 48-character hex value, stored only in `.env`.
+- The value `secret` remains in git history and in any database created with it, so it must be treated as public.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › `POST /auth/login -> returns 429 after the configured number of attempts` reads the limit from `settings.rateLimits.login`; it fails when the login limiter is pointed at `settings.rateLimits.global`.
+- `tests/setupEnv.ts` supplies random test-only values, so the suite runs without a `.env`. In a clone without `.env` and without this file, the suites that load the application failed at import with `Invalid environment configuration`.
+- Loading `src/config.ts` without `POSTGRES_PASSWORD` stops with `POSTGRES_PASSWORD: Invalid input: expected string, received undefined`.
+- `docker compose --env-file <empty file> config` fails with `required variable POSTGRES_PASSWORD is missing a value`.
+- After `docker compose up -d` recreated `pg_integrated` on the same volume, a login with the `.env` password succeeded and a login with `secret` failed (`28P01 password authentication failed`). The API started with the real `.env`, validated the `users` table and answered `401` on `GET /users` without a token.
+- `npx tsc --noEmit` passes; `npm test` passes (3 suites, 20 tests).
+
+**Evidence:**
+
+- Commit `71f2547` — `src/config.ts`.
+- Commit `d05c05d` — `tests/setupEnv.ts`, `jest.config.ts`.
+- Commit `705c1ba` — modules read `src/config.ts`.
+- Commit `04aae5a` — login rate-limit test.
+- Commit `07c42a1` — `.env.example`, `docker-compose.yml`, `k8s/deployment.yaml`, `k8s/secret.yaml.example`.
+- Issue #37.
