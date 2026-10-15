@@ -1,46 +1,147 @@
-# src/openapi.yaml
+# openapi.yaml
 openapi: 3.0.3
 info:
-  title: Projeto Maestro - API Escalável e Segura
+  title: Project Maestro - Scalable and Secure API
   description: >
-    Documentação técnica dos endpoints de gerenciamento de usuários com suporte 
-    a mensageria assíncrona no RabbitMQ, cache-aside no Redis e firewall criptográfico.
+    REST, Server-Sent Events and GraphQL endpoints of the Maestro API: JWT login, user
+    registration through a RabbitMQ queue, user reads with a Redis cache-aside layer,
+    a chat endpoint backed by a local LLM (Ollama) and a real-time event stream.
   version: 1.0.0
 
+servers:
+  - url: http://localhost:3000
+    description: Local development (npm run dev)
+
+# Secure by default: every operation requires a JWT unless it overrides this with `security: []`.
+security:
+  - BearerAuth: []
+
 paths:
-  # INFRASTRUCTURE REMEDIATION: Path corrected to reflect the real route prefix isolating REST from Apollo Server
-  /api/v1/users:
+  /auth/login:
+    post:
+      summary: Exchange email and password for a JWT
+      description: >
+        Checks the credentials against the bcrypt hash stored in PostgreSQL and returns
+        a JWT that expires in 1 hour. Unknown emails and wrong passwords get the same 401
+        response body (CWE-204). Known issue: an unknown email skips the bcrypt comparison,
+        so the faster response still reveals which accounts exist (CWE-208, tracked in issue #40).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  format: email
+                  example: "lucas@example.com"
+                  description: Email address of the account (the frontend sends it in the username field).
+                password:
+                  type: string
+                  format: password
+                  example: "********"
+      responses:
+        '200':
+          description: Valid credentials; the JWT is in the response body.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: Signed JWT, valid for 1 hour, with the claims id, user, email and role.
+        '400':
+          description: The username or password field is missing or blank.
+        '401':
+          description: Invalid credentials. Unknown emails and wrong passwords get this same response.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: >
+            Internal failure while checking the credentials. Known issue: a username that is
+            not a string (for example, a number) also ends here instead of 400 (tracked in issue #40).
+
+  /users:
     get:
-      summary: Lista usuários de forma paginada
-      description: Recupera fatias do array de usuários com suporte a Cache-Aside dinâmico no Redis.
-      security:
-        - BearerAuth: [] # Protected endpoint by the firewall middleware
+      summary: List users with pagination
+      description: >
+        Retrieves slices of the user array with dynamic Cache-Aside support on Redis.
+        Known issue: a non-numeric limit or offset makes the database query fail, and the
+        endpoint answers 200 with an empty list instead of 400 (tracked in issue #44).
       parameters:
         - name: limit
           in: query
-          description: Quantidade máxima de registros retornados na página.
+          description: >
+            Maximum number of records returned in the page. Values below 1 become 1, and no
+            upper limit is enforced (tracked in issue #44).
           required: false
           schema:
             type: integer
             default: 10
         - name: offset
           in: query
-          description: Quantidade de registros ignorados no início da busca.
+          description: Number of records skipped at the start of the query. Negative values become 0.
           required: false
           schema:
             type: integer
             default: 0
       responses:
         '200':
-          description: Operação executada com sucesso absoluto.
+          description: Operation completed successfully.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
         '401':
-          description: Acesso negado devido a token JWT ausente ou inválido.
+          description: Access denied because the JWT is missing or invalid.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
-          description: Falha de performance interna no servidor de dados.
+          description: Internal failure in the data server.
 
+  /users/{id}:
+    get:
+      summary: Get a user by ID
+      description: Reads a single user from PostgreSQL. The password hash is never returned.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the user (a UUID generated when the user is created).
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: The ID is blank.
+        '401':
+          description: Access denied because the JWT is missing, expired or invalid.
+        '404':
+          description: No user exists with this ID.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: Internal failure while looking up the user.
+
+  /api/v1/users:
     post:
-      summary: Envia uma solicitação de cadastro para a fila de mensageria
-      description: Recebe os parâmetros de identificação, computa o hash Bcrypt na borda e enfileira no RabbitMQ de forma assíncrona.
+      summary: Submit a registration request to the messaging queue
+      description: Receives the identification parameters, computes the Bcrypt hash at the edge and enqueues the request on RabbitMQ asynchronously.
+      security: []
       requestBody:
         required: true
         content:
@@ -49,18 +150,32 @@ paths:
               $ref: '#/components/schemas/UserRegistrationPayload'
       responses:
         '202':
-          description: Solicitação aceita com sucesso para processamento em lote assíncrono na fila.
+          description: >
+            Request accepted for asynchronous batch processing in the queue. Known issue: the
+            response is the same when the email is already registered; the worker then drops
+            the message and the user is not created (tracked in issue #50).
         '400':
-          description: Requisição inválida por quebra de contrato estrutural ou falta de parâmetros mandatórios.
+          description: The body fails the Zod validation schema. Each failing field is listed in error.details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: VALIDATION_FAILURE
+                  message: "Falha na validação dos dados de entrada."
+                  details:
+                    - field: body.email
+                      message: "Insira um formato de e-mail válido (exemplo: usuario@email.com)."
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
-          description: Erro interno de infraestrutura ao tentar despachar a intenção para a fila de eventos.
+          description: Internal infrastructure error while dispatching the request to the event queue.
 
   /ai/chat:
     post:
-      summary: Envia um prompt para o assistente virtual Maestro
-      description: Rota protegida por Firewall JWT que encaminha a pergunta do usuário para o processamento neural do modelo local Llama 3.
-      security:
-        - BearerAuth: []
+      summary: Send a prompt to the Maestro virtual assistant
+      description: Route protected by the JWT firewall that forwards the user's question to the local Llama 3 model.
       requestBody:
         required: true
         content:
@@ -72,10 +187,10 @@ paths:
               properties:
                 prompt:
                   type: string
-                  description: Texto da pergunta ou comando de negócios enviado à IA.
+                  description: Business question or command sent to the AI.
       responses:
         '200':
-          description: Resposta processada e retornada com sucesso pelo cérebro da IA.
+          description: Response generated and returned successfully by the AI.
           content:
             application/json:
               schema:
@@ -83,13 +198,78 @@ paths:
                 properties:
                   response:
                     type: string
-                    description: Resposta textual estruturada pelo modelo local.
+                    description: Text response generated by the local model.
         '400':
-          description: Requisição inválida por falta da chave "prompt" no payload.
+          description: The prompt field is missing, blank or not a string (code VALIDATION_FAILURE).
         '401':
-          description: Acesso negado por token JWT ausente, expirado ou inválido.
+          description: Access denied because the JWT is missing, expired or invalid.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
-          description: Falha na comunicação física com o serviço local do Ollama.
+          description: Failure communicating with the local Ollama service.
+
+  /events:
+    get:
+      summary: Subscribe to real-time events (Server-Sent Events)
+      description: >
+        Opens a long-lived text/event-stream connection. The first message is
+        {"status": "CONNECTED_TO_MAESTRO_STREAM"}; after that, every event consumed from
+        RabbitMQ is pushed as an "event:" line with the action name and a "data:" line with JSON.
+        For user_created the data carries the new user's name and email, never the password hash.
+        Known issue: the stream has no authentication and sends Access-Control-Allow-Origin: *,
+        so anyone can read these events (tracked in issue #35).
+      security: []
+      responses:
+        '200':
+          description: Stream opened. The connection stays open until the client closes it.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              example: |
+                data: {"status": "CONNECTED_TO_MAESTRO_STREAM"}
+
+                event: user_created
+                data: {"name":"Lucas Rivaldo","email":"lucas@example.com"}
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+
+  /graphql:
+    post:
+      summary: Run a GraphQL query or mutation (Apollo Server)
+      description: >
+        Single endpoint of the GraphQL API. The schema is in src/graphql/schema.graphql and
+        exposes the queries users and user(id) and the mutation createUser(name, email, password).
+        Every operation requires a JWT. Requests must send Content-Type application/json,
+        otherwise Apollo's CSRF prevention blocks them with HTTP 400.
+        Known issue: a missing or invalid JWT returns HTTP 500 with the message
+        "Context creation failed: UNAUTHORIZED: ..." instead of 401 (tracked in issue #38).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - query
+              properties:
+                query:
+                  type: string
+                  example: "{ users { id name email } }"
+                operationName:
+                  type: string
+                variables:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: The operation ran. Errors thrown by resolvers come back in the errors array, still with HTTP 200.
+        '400':
+          description: Invalid GraphQL request (syntax or schema validation error), or a request blocked by CSRF prevention.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: Missing or invalid JWT (see the known issue above) or an internal failure.
 
 components:
   securitySchemes:
@@ -97,9 +277,82 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Insira o token JWT adquirido no endpoint /auth/login para destravar o firewall de IA.
+      description: Send the JWT returned by POST /auth/login in the Authorization header, as Bearer followed by the token.
+
+  responses:
+    TooManyRequests:
+      description: >
+        Rate limit exceeded. Every route shares a global limit of 100 requests per IP every
+        15 minutes (code TOO_MANY_REQUESTS). /auth/login also allows only 5 attempts per IP
+        every 5 minutes (code AUTH_FLOOD_DETECTED), and /ai/chat only 10 prompts per IP per
+        minute (code LLM_COMPUTE_LIMIT_EXCEEDED). The counters live in the memory of each API
+        instance, so replicas do not share them (tracked in issue #65).
+      headers:
+        Retry-After:
+          description: Seconds until the client can send requests again.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
 
   schemas:
+    User:
+      type: object
+      description: Public view of a user. The password hash is never included.
+      required:
+        - id
+        - name
+        - email
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Lucas Rivaldo"
+        email:
+          type: string
+          format: email
+          example: "lucas@example.com"
+
+    Error:
+      type: object
+      description: >
+        Error envelope shared by the REST routes. Clients should branch on error.code;
+        error.message is human-readable text, currently a mix of Portuguese and English.
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: TOO_MANY_REQUESTS
+            message:
+              type: string
+            details:
+              description: >
+                Extra context. Validation failures list each failing field, and a rejected JWT
+                carries the verification error. Some 500 responses put the internal error
+                message here (tracked in issue #39).
+              oneOf:
+                - type: string
+                - type: array
+                  items:
+                    type: object
+                    properties:
+                      field:
+                        type: string
+                        example: body.email
+                      message:
+                        type: string
+
     UserRegistrationPayload:
       type: object
       required:
@@ -111,15 +364,15 @@ components:
           type: string
           example: "Lucas Rivaldo"
           minLength: 3
-          description: Nome completo do usuário requisitante.
+          description: Full name of the requesting user.
         email:
           type: string
           format: email
-          example: "lucas@exemplo.com"
-          description: Endereço de e-mail RFC-compliant usado como credencial de acesso.
+          example: "lucas@example.com"
+          description: RFC-compliant email address used as the login credential.
         password:
           type: string
           format: password
           example: "********"
           minLength: 8
-          description: Chave de acesso estrita (mínimo de 8 caracteres para satisfazer regras corporativas de segurança).
+          description: Password (minimum of 8 characters to meet corporate security rules).
