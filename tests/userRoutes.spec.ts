@@ -309,6 +309,48 @@ describe('User routes (integration tests)', () => {
     expect(mockUserService.getAllUsers).toHaveBeenNthCalledWith(2, { limit: settings.pagination.defaultLimit, offset: 0 });
   });
 
+  // TEST 13: Verify the login rejects fields that are missing, blank or not text (CWE-1287).
+  // Condition: A fresh app (own limiter counters) gets four malformed bodies; none reaches the database.
+  it('POST /auth/login -> returns 400 when username or password is missing, blank or not text', async () => {
+    const freshServer = await createApp(mockUserService);
+    mockUserService.getUserByEmail.mockClear();
+    const invalidBodies = [
+      { username: 123, password: 'any-password' },
+      { username: ADMIN_EMAIL, password: ['any-password'] },
+      { username: '   ', password: 'any-password' },
+      {}
+    ];
+
+    for (const body of invalidBodies) {
+      const response = await request(freshServer).post('/auth/login').send(body);
+
+      expect(response.status).toBe(400);
+      expect(response.body.error.code).toBe('VALIDATION_FAILURE');
+    }
+    expect(mockUserService.getUserByEmail).not.toHaveBeenCalled();
+  });
+
+  // TEST 14: Verify an unknown e-mail still pays the bcrypt cost, so timing does not reveal accounts (CWE-208).
+  // Condition: The mock finds no account; bcrypt.compare must still run once, against a hash with the real cost.
+  it('POST /auth/login -> runs bcrypt with the configured cost when the e-mail is unknown', async () => {
+    const freshServer = await createApp(mockUserService);
+    const compareSpy = jest.spyOn(bcrypt, 'compare');
+
+    try {
+      const response = await request(freshServer)
+        .post('/auth/login')
+        .send({ username: 'nobody@maestro.test', password: 'any-password' });
+
+      expect(response.status).toBe(401);
+      expect(response.body.error.code).toBe('UNAUTHORIZED_ACCESS');
+      expect(compareSpy).toHaveBeenCalledTimes(1);
+      const comparedHash = compareSpy.mock.calls[0]?.[1] as string;
+      expect(bcrypt.getRounds(comparedHash)).toBe(settings.bcryptSaltRounds);
+    } finally {
+      compareSpy.mockRestore();
+    }
+  });
+
 });
 
 describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', () => {

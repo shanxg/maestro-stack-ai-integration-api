@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken'; // Sign and issue authentication tokens
 import fs from 'node:fs';       // Native module for reading files from disk
 import path from 'node:path';   // Native module for safely resolving directory paths
 import http from 'node:http';   // Node module for managing network servers
+import crypto from 'node:crypto'; // CSPRNG for the throwaway value behind the dummy login hash
 
 // User domain layers
 import { UserRepository } from './repositories/UserRepository.js';
@@ -29,6 +30,7 @@ import rateLimit from 'express-rate-limit';
 import { authMiddleware } from './middlewares/authMiddleware.js';
 import { validateMiddleware } from './middlewares/validateMiddleware.js';
 import { createUserSchema, listUsersSchema } from './schemas/userSchema.js';
+import { loginSchema } from './schemas/authSchema.js';
 import { env, settings } from './config.js'; // Validated environment and fixed limits (also loads .env)
 
 // 4. GRAPHQL (APOLLO SERVER) IMPORTS
@@ -170,6 +172,14 @@ export async function createApp(customUserService?: any) {
   // Step D: Inject structural dependencies into the Controller layer network gateway boundary.
   const userController = new UserController(userService, eventBrokerService);
 
+  // =========================================================================
+  // ⏱️ CONSTANT-TIME LOGIN GUARD (CWE-208)
+  // =========================================================================
+  // A bcrypt hash of a random throwaway value, computed once with the same cost as real
+  // password hashes. When the e-mail is unknown, the login compares against it, so the
+  // response takes as long as a wrong password and does not reveal which accounts exist.
+  const dummyPasswordHash = await bcrypt.hash(crypto.randomUUID(), settings.bcryptSaltRounds);
+
 
   // =========================================================================
   // 🔐 DYNAMIC AUTHENTICATION ENDPOINT: POST /auth/login
@@ -177,43 +187,24 @@ export async function createApp(customUserService?: any) {
   // APPSEC REMEDIATION - COMPLIANCE WITH CWE-256 / CWE-798 / OWASP TOP 10
   // Swapped hard-coded static validation for a secure adaptive Bcrypt verification 
   // loop checking real persistent user account records inside the PostgreSQL cluster.
-  app.post('/auth/login', authBruteForceLimiter, async (req: Request, res: Response): Promise<void> => {
+  app.post('/auth/login', authBruteForceLimiter, validateMiddleware(loginSchema), async (req: Request, res: Response): Promise<void> => {
     try {
-      const { username, password } = req.body;
-
-      // 🛡️ EDGE VALIDATION: Reject malformed payload elements prior to database I/O processing
-      if (!username || !password || username.trim() === '' || password.trim() === '') {
-        res.status(400).json({
-          error: {
-            code: 'BAD_REQUEST',
-            message: 'O e-mail (username) e a chave de acesso (password) são obrigatórios.'
-          }
-        });
-        return;
-      }
+      // validateMiddleware(loginSchema) has already answered 400 for a missing, blank or non-text
+      // field, so this parse only returns the values, with the e-mail already trimmed.
+      const { username, password } = loginSchema.shape.body.parse(req.body);
 
       console.log(`🔑 [Auth] Intercepting authentication token request for address: ${username}`);
 
       // Locate the account entity using the unique email record pointer mapping
-      const userRecord = await userService.getUserByEmail(username.trim());
+      const userRecord = await userService.getUserByEmail(username);
 
-      // SECURITY POLICY: If the account does not exist, return a generic 401 error payload.
-      // This strictly prevents User Enumeration vulnerabilities (CWE-204) where attackers 
-      // probe inputs to discover which e-mails exist in our application ecosystem.
-      if (!userRecord || !userRecord.password) {
-        res.status(401).json({
-          error: {
-            code: 'UNAUTHORIZED_ACCESS',
-            message: 'Credenciais inválidas. Verifique o usuário e a senha inseridos.'
-          }
-        });
-        return;
-      }
+      // CRYPTOGRAPHIC VERIFICATION: bcrypt always runs, against the dummy hash when the account
+      // does not exist, so unknown e-mails and wrong passwords take the same time (CWE-208).
+      const isPasswordValid = await bcrypt.compare(password, userRecord?.password ?? dummyPasswordHash);
 
-      // CRYPTOGRAPHIC VERIFICATION: Slow-stretched evaluation comparing plaintext string with password hash
-      const isPasswordValid = await bcrypt.compare(password, userRecord.password);
-
-      if (!isPasswordValid) {
+      // SECURITY POLICY: Unknown e-mails and wrong passwords get the same generic 401 response,
+      // so the response body does not reveal which accounts exist either (CWE-204).
+      if (!userRecord?.password || !isPasswordValid) {
         res.status(401).json({
           error: {
             code: 'UNAUTHORIZED_ACCESS',
