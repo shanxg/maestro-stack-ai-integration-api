@@ -207,7 +207,7 @@ The repository intentionally preserves the core files `socket-deprecated.ts`, `r
 - **Persistent Data Storage:** Cloud persistence layers were anchored using **Amazon RDS for PostgreSQL**, enforcing automated connection pooling, encrypted storage classes via **AWS KMS (Key Management Service)**, and multi-Availability Zone (Multi-AZ) failover strategies.
 - **Real-Time Push Topology:** Push telemetries were decoupled from standard HTTP pipelines using managed WebSockets or edge notification triggers, proving proficiency in stateful connection management under continuous network load.
 
-_These legacy assets remain untouched to demonstrate production-ready capabilities in migrating mission-critical applications between Hybrid Cloud (AWS) and fully sovereign localized (On-Premise) data privacy topologies._
+_These legacy assets are not wired into the running API. They follow the current message contract and security rules (JWT handshake, CORS allowlist, hashed passwords only), are covered by isolated tests in `tests/userRoutes.spec.ts`, and the worker runs on its own with `npx tsx src/worker-deprecated.ts`. They demonstrate production-ready capabilities in migrating mission-critical applications between Hybrid Cloud (AWS) and fully sovereign localized (On-Premise) data privacy topologies._
 
 ---
 
