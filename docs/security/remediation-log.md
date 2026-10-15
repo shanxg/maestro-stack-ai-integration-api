@@ -445,3 +445,38 @@ Classic tokens only offer broad scopes, and CRED-01 assumed `repo` was the minim
 
 - Old token: deleted (GitHub Settings → Developer settings → Tokens (classic)).
 - New token: stored only in the local `.env` file, which is gitignored.
+
+---
+
+## 🔵 [DEP-01] Vulnerable `handlebars` and `sprintf-js` in the development dependency tree
+
+**Date:** 2026-10-14
+
+**Detected by:** Dependabot alerts #2, #3, #4 and #5 (`package-lock.json`)
+
+**Severity:** Low (upstream advisories rate `handlebars` two Critical and one Medium, and `sprintf-js` Medium; both packages were development-only and never reached the runtime image)
+
+**References:** CWE-1395, OWASP A03:2025; GHSA-8r5x-fm3f-whwj (CVE-2026-106446), GHSA-p8wg-vrv2-v86f (CVE-2026-106445), GHSA-xw65-4hp5-5hc7 (CVE-2026-106444), GHSA-hp3w-g68c-fv3c (CVE-2026-97058)
+
+**Finding:**
+
+`package-lock.json` resolved `handlebars@4.7.9` (JavaScript injection advisories, fixed in 4.7.10) through `ts-jest`, and `sprintf-js@1.0.3` (denial of service through unbounded precision specifiers, no fixed release) through `jest` → `babel-plugin-istanbul` → `@istanbuljs/load-nyc-config` → `js-yaml@3` → `argparse@1`. Both were development dependencies: the runtime stage of the `Dockerfile` installs with `npm ci --omit=dev`, and no project code imports either package.
+
+**Root cause:**
+
+`ts-jest` stayed in `devDependencies` after the SWC transform replaced it, kept only for its ESM preset, and the coverage tooling still depends on the `js-yaml` 3 line. Dependency alerts were only enabled on 2026-10-14.
+
+**Remediation applied:**
+
+- `ts-jest` removed from `devDependencies`; `jest.config.ts` replaces its `default-esm` preset with `extensionsToTreatAsEsm: ['.ts']`. This removes `handlebars` from the tree.
+- An `overrides` entry in `package.json` resolves `js-yaml` to `^4.1.1` for `@istanbuljs/load-nyc-config`, which only calls `js-yaml.load()`. `js-yaml` 4 depends on `argparse` 2, which does not use `sprintf-js`, so the package leaves the tree. The override can be removed once `@istanbuljs/load-nyc-config` depends on `js-yaml` 4 itself.
+
+**Regression test:**
+
+- `npm ls handlebars sprintf-js` returns an empty tree.
+- `npm audit` reports `found 0 vulnerabilities`.
+- `npm test`, which collects coverage and therefore loads `@istanbuljs/load-nyc-config`, passes: 3 suites, 19 tests.
+
+**Evidence:**
+
+- Commit `9112edd` — `package.json`, `package-lock.json`, `jest.config.ts`.
