@@ -9,6 +9,15 @@ updates:
     directory: /frontend
     schedule:
       interval: weekly
+    ignore:
+      # typescript-eslint (loaded by eslint-config-next) refuses TypeScript 7:
+      # "typescript-eslint does not support TS 7.0". Revisit when it adds support.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # eslint-config-next 16 ships plugins (import, jsx-a11y, react) whose peer
+      # range stops at ESLint 9. Revisit when eslint-config-next supports ESLint 10.
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -19,6 +28,11 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Only even-numbered (LTS) Node.js majors are adopted, and by hand
+      # (see CONT-01 in docs/security/remediation-log.md).
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: pip
     directory: /
