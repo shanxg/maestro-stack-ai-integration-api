@@ -3,6 +3,7 @@
 import { type Request, type Response } from 'express';
 import { UserService } from '../services/UserService.js';
 import { EventBrokerService } from '../services/EventBrokerService.js';
+import { listUsersSchema } from '../schemas/userSchema.js';
 import { env, settings } from '../config.js';
 
 // Import industrial-grade security library for password hashing
@@ -35,14 +36,10 @@ export class UserController {
    */
   getUsers = async (req: Request, res: Response): Promise<void> => {
     try {
-      // Read pagination parameters from the request URL query string.
-      // Default to limit=10 and offset=0 when values are omitted.
-      const { limit = '10', offset = '0' } = req.query;
-
-      // Convert URL values to integers.
-      // Math.max() prevents gaps caused by malicious negative pagination values.
-      const limitNumber = Math.max(1, parseInt(limit as string, 10));
-      const offsetNumber = Math.max(0, parseInt(offset as string, 10));
+      // Read pagination from the query string. validateMiddleware(listUsersSchema) has already
+      // answered 400 for invalid values, so this parse only turns the text into numbers
+      // and fills in the defaults from src/config.ts.
+      const { limit: limitNumber, offset: offsetNumber } = listUsersSchema.shape.query.parse(req.query);
 
       // Give each page combination its own Redis cache key.
       const cacheKey = `users:limit=${limitNumber}:offset=${offsetNumber}`;
