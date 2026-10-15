@@ -25,10 +25,12 @@ import { AIController } from './controllers/AIController.js';
 import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import { Redis } from 'ioredis'; // Client for the shared rate-limit counters
 
 // 3. MIDDLEWARE, ZOD SCHEMA AND CONFIG IMPORTS
 import { authMiddleware } from './middlewares/authMiddleware.js';
 import { validateMiddleware } from './middlewares/validateMiddleware.js';
+import { RedisRateLimitStore } from './middlewares/redisRateLimitStore.js';
 import { createUserSchema, listUsersSchema } from './schemas/userSchema.js';
 import { loginSchema } from './schemas/authSchema.js';
 import { env, settings } from './config.js'; // Validated environment and fixed limits (also loads .env)
@@ -92,10 +94,25 @@ export async function createApp(customUserService?: any) {
     res.sendStatus(204);
   });
   
-  // C. RATE LIMITER: Protect the API from malicious request floods (DDoS).
+  // C. SHARED RATE-LIMIT COUNTERS (CWE-770): Kubernetes runs two API replicas, so the three
+  // limiters below keep their counters in Redis (src/middlewares/redisRateLimitStore.ts).
+  // Without an offline queue, commands fail at once while Redis is down, and the stores
+  // switch to per-process memory counters instead of holding requests until Redis returns.
+  const rateLimitRedis = new Redis({
+    host: env.REDIS_HOST,
+    port: env.REDIS_PORT,
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 1,
+  });
+  // ioredis prints every failed reconnection when nothing listens for 'error';
+  // the stores already log when Redis becomes unavailable and when it comes back.
+  rateLimitRedis.on('error', () => {});
+
+  // D. RATE LIMITER: Protect the API from malicious request floods (DDoS).
   const limiter = rateLimit({
     windowMs: settings.rateLimits.global.windowMs, // Window and cap live in src/config.ts
     max: settings.rateLimits.global.max,
+    store: new RedisRateLimitStore(rateLimitRedis, 'rl:global:'), // Shared by every replica
     standardHeaders: true,
     legacyHeaders: false,
     message: {
@@ -116,6 +133,7 @@ export async function createApp(customUserService?: any) {
   const authBruteForceLimiter = rateLimit({
     windowMs: settings.rateLimits.login.windowMs, // Window and cap live in src/config.ts
     max: settings.rateLimits.login.max,
+    store: new RedisRateLimitStore(rateLimitRedis, 'rl:login:'), // Shared by every replica
     standardHeaders: true,
     legacyHeaders: false,
     statusCode: 429,
@@ -136,6 +154,7 @@ export async function createApp(customUserService?: any) {
   const aiInferenceThrottler = rateLimit({
     windowMs: settings.rateLimits.aiChat.windowMs, // Window and cap live in src/config.ts
     max: settings.rateLimits.aiChat.max,
+    store: new RedisRateLimitStore(rateLimitRedis, 'rl:ai-chat:'), // Shared by every replica
     standardHeaders: true,
     legacyHeaders: false,
     statusCode: 429,
