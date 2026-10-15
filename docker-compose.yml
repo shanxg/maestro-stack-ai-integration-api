@@ -6,7 +6,8 @@ services:
     image: postgres:18
     container_name: pg_integrated
     environment:
-      POSTGRES_PASSWORD: secret
+      # Read from .env: no default password in the repository (CRED-04). Compose stops if it is unset.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
     ports:
       - "5433:5432" # 👈 Keep host port 5433 to avoid conflicting with PostgreSQL on Windows
 

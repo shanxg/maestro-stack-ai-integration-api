@@ -99,6 +99,13 @@ spec:
             - name: POSTGRES_PORT
               value: "5432" # Standard internal container port inside isolated K8s network meshes
 
+            # Required by src/config.ts: the API has no default database password (CRED-04).
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: maestro-api-secret
+                  key: postgres-password
+
             - name: REDIS_HOST
               value: "redis-service"
 
