@@ -156,14 +156,15 @@ To keep the security remediation backlog auditable, the repository includes a Py
 
 ### `sync_backlog.py`
 
-The script runs two steps:
+The script runs three steps:
 
-1. **Excel → GitHub Issues:** for every row of the `Security Remediation Backlog` sheet without an issue number, it creates an issue (title, body and labels built from the row) and writes the issue number and URL back into the sheet.
-2. **GitHub Projects → Excel:** it reads the `Status` field of every card on the project board ([shanxg #2](https://github.com/users/shanxg/projects/2)) through the GraphQL API and copies it into the sheet's `Status` column.
+1. **GitHub Issues → Excel:** every issue whose title starts with a backlog ID (for example `[2.11] ...`) and that is not in the `Security Remediation Backlog` sheet yet gets a new row at the bottom. The columns are read back from the issue body, which follows the same template the script uses to create issues; if the body does not follow it, only the ID and the title are filled in. The initial `Status` comes from the board. If a row with the same ID already exists without an issue number, the script links that row to the issue instead of adding a new one. Issues without an ID in the title are skipped.
+2. **Excel → GitHub Issues:** for every row without an issue number, it creates an issue (title, body and labels built from the row) and writes the issue number and URL back into the sheet. It runs after step 1, so a row that was just linked does not produce a duplicate issue.
+3. **GitHub Projects → Excel:** it reads the `Status` field of every card on the project board ([shanxg #2](https://github.com/users/shanxg/projects/2)) through the GraphQL API and copies it into the sheet's `Status` column.
 
 The board owns the status and the spreadsheet owns the content. The `Status` column uses the board's columns: `Backlog`, `Ready`, `In progress`, `In review`, `Done`. Rows whose issue is not on the board are left unchanged.
 
-**Spreadsheet layout:** `security_plan_maestro_api.xlsx` is a local file (gitignored). The script reads columns A (`ID`) and D (`Improvement / finding`) to build the issues, writes column L (`Status`), and stores the issue in columns N (`Issue Number`) and O (`Issue URL`).
+**Spreadsheet layout:** `security_plan_maestro_api.xlsx` is a local file (gitignored). The script reads columns A (`ID`) and D (`Improvement / finding`) to build the issues, writes column L (`Status`), and stores the issue in columns N (`Issue Number`) and O (`Issue URL`). Imported rows fill every column except M (`Evidence`), copy the format of the row above, and extend the ranges that ended at the previous last row (the `Status` and estimate dropdowns, the conditional formatting, the filter and the `Summary` formulas), so the new rows are counted.
 
 **Setup:**
 
@@ -176,7 +177,7 @@ The board owns the status and the spreadsheet owns the content. The `Status` col
    ```
 
 2. Copy `.env.example` to `.env` and fill in two tokens, each with the minimum access it needs (see CRED-03 in the remediation log):
-   - `GITHUB_TOKEN`: fine-grained token limited to this repository, with **Issues: Read and write**. Used to create issues.
+   - `GITHUB_TOKEN`: fine-grained token limited to this repository, with **Issues: Read and write**. Used to list and create issues.
    - `GITHUB_PROJECT_TOKEN`: classic token with only the **`read:project`** scope. Used to read the board (fine-grained tokens are not documented for user-owned projects).
 
    The `.env` file is ignored by Git. Tokens are loaded with `python-dotenv`, so they are never hardcoded or exported to the shell history.
@@ -186,7 +187,7 @@ The board owns the status and the spreadsheet owns the content. The `Status` col
    python sync_backlog.py
    ```
 
-The script checks both tokens before doing anything and is idempotent: rows that already have an issue are skipped, and the spreadsheet is only saved when a status actually changed.
+The script checks both tokens before doing anything and is idempotent: issues already in the sheet are not imported again, rows that already have an issue are skipped, and the spreadsheet is only saved when a step actually changed something.
 
 ### Secret Scanning: Gitleaks + pre-commit
 
