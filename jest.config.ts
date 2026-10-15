@@ -3,9 +3,11 @@ import type { Config } from 'jest';
 
 // 2. BASE CONFIGURATION: Define the behavior of the automated test runner.
 const config: Config = {
-  // A. PRESET: Use 'ts-jest' with ESM (Node native modules).
-  // This configures TypeScript compilation at runtime using the project's module format.
-  preset: 'ts-jest/presets/default-esm',
+  // A. ESM MODE: Treat .ts files as native ECMAScript Modules ("type": "module" in package.json).
+  // This replaces the old 'ts-jest/presets/default-esm' preset. ts-jest was never the active
+  // transformer (the SWC transform below overrides it) and it pulled in a vulnerable
+  // handlebars release, so it was removed (remediation log entry DEP-01).
+  extensionsToTreatAsEsm: ['.ts'],
 
   // B. RUNTIME ENVIRONMENT: Run tests in Node.js.
   testEnvironment: 'node',
