@@ -39,7 +39,11 @@ const config: Config = {
   // E. DIRECTORY EXCLUSIONS: Skip installed dependencies and build output.
   testPathIgnorePatterns: ['/node_modules/', '/dist/'],
 
-  // F. COVERAGE REPORT: Configure Jest to report which lines of code were tested.
+  // F. TEST ENVIRONMENT: Run tests/setupEnv.ts before every test file, ahead of its imports,
+  // so src/config.ts finds JWT_SECRET and POSTGRES_PASSWORD (see that file).
+  setupFiles: ['<rootDir>/tests/setupEnv.ts'],
+
+  // G. COVERAGE REPORT: Configure Jest to report which lines of code were tested.
   collectCoverage: true,
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov'],
