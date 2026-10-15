@@ -33,14 +33,21 @@ export class EventBrokerService {
    * the connection engine catches the exception and schedules a new attempt every 5 seconds.
    */
   private async establishInfrastructureBridges(): Promise<void> {
-    // Host and port come from src/config.ts (defaults there).
-    const rabbitUrl = `amqp://${env.RABBIT_HOST}:${env.RABBIT_PORT}`;
+    // Host, port and account come from src/config.ts. The logged address never carries the credentials.
+    const rabbitAddress = `amqp://${env.RABBIT_HOST}:${env.RABBIT_PORT}`;
 
-    console.log(`⏳ [RabbitMQ] Attempting to establish a connection at: ${rabbitUrl}`);
-    
+    console.log(`⏳ [RabbitMQ] Attempting to establish a connection at: ${rabbitAddress}`);
+
     try {
-      // Open the main connection and logical data channel.
-      this.connection = await amqp.connect(rabbitUrl);
+      // Open the main connection with the configured account (never the broker's default guest user).
+      // The options object avoids building a URL with the password in it.
+      this.connection = await amqp.connect({
+        protocol: 'amqp',
+        hostname: env.RABBIT_HOST,
+        port: env.RABBIT_PORT,
+        username: env.RABBIT_USER,
+        password: env.RABBIT_PASSWORD,
+      });
       this.channel = await this.connection.createChannel();
 
       // 🛡️ RESILIENCE: Ensure the queue exists before sending any data.
