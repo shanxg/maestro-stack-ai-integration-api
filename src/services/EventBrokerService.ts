@@ -2,6 +2,7 @@ import amqp from 'amqplib';
 import type { Channel, ChannelModel } from 'amqplib';
 import type { Response } from 'express';
 import { UserService } from './UserService.js'; // Ensure the user service is imported at the top layer
+import { env } from '../config.js';
 
 export class EventBrokerService {
   private connection?: ChannelModel;
@@ -32,9 +33,8 @@ export class EventBrokerService {
    * the connection engine catches the exception and schedules a new attempt every 5 seconds.
    */
   private async establishInfrastructureBridges(): Promise<void> {
-    // Read the injected host, or use 'localhost' when running outside the cluster.
-    const rabbitHost = process.env.RABBIT_HOST || 'localhost';
-    const rabbitUrl = `amqp://${rabbitHost}:5672`;
+    // Host and port come from src/config.ts (defaults there).
+    const rabbitUrl = `amqp://${env.RABBIT_HOST}:${env.RABBIT_PORT}`;
 
     console.log(`⏳ [RabbitMQ] Attempting to establish a connection at: ${rabbitUrl}`);
     

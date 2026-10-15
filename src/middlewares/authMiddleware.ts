@@ -1,6 +1,7 @@
-// 1. IMPORTS: Bring in Express lifecycle types and the JWT library.
+// 1. IMPORTS: Bring in Express lifecycle types, the JWT library and the validated config.
 import { type Request, type Response, type NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { env } from '../config.js';
 
 // 2. GLOBAL INTERFACE EXTENSION: Tell TypeScript that Express's Request
 // object has a '.user' property for storing decoded token data.
@@ -12,12 +13,9 @@ declare global {
   }
 }
 
-// 🔥 SAFE SECRET RETRIEVAL: Read the secret from the environment and fail closed if it is missing.
-// A hardcoded fallback would let anyone who reads the source forge valid tokens (CWE-798).
-if (!process.env.JWT_SECRET) {
-  throw new Error('JWT_SECRET is not set');
-}
-const JWT_SECRET = process.env.JWT_SECRET;
+// 🔥 SAFE SECRET RETRIEVAL: src/config.ts refuses to start without a valid JWT_SECRET,
+// so there is no hardcoded fallback that would let anyone forge tokens (CWE-798).
+const JWT_SECRET = env.JWT_SECRET;
 
 // 3. MIDDLEWARE: Acts as a firewall before the request reaches the controller.
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {

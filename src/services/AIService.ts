@@ -1,16 +1,17 @@
 // 1. SDK IMPORT: Bring in the official OpenAI client listed in package.json.
 import OpenAI from 'openai';
+import { env } from '../config.js';
 
 export class AIService {
   private openai: OpenAI;
   private modelName: string;
 
   constructor() {
-    // 🔐 INVERSION OF CONTROL (IoC): Initialize the SDK with keys configured in .env.
+    // 🔐 INVERSION OF CONTROL (IoC): Initialize the SDK with the key and URL validated in src/config.ts.
     // The routing abstraction lets the SDK treat local Ollama like the official OpenAI server.
     this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY || 'local-ollama-free-key-maestro',
-      baseURL: process.env.OPENAI_BASE_URL || 'http://localhost:11434/v1',
+      apiKey: env.OPENAI_API_KEY,
+      baseURL: env.OPENAI_BASE_URL,
     });
 
     // Set the model downloaded on this machine.

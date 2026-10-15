@@ -25,6 +25,7 @@ const envSchema = z.object({
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: port.default(6379),
   RABBIT_HOST: z.string().default('localhost'),
+  RABBIT_PORT: port.default(5672),
 
   // AI chat: the defaults point to a local Ollama server, which ignores the key.
   OPENAI_BASE_URL: z.url().default('http://localhost:11434/v1'),
