@@ -684,3 +684,36 @@ The "unknown account" branch returned early to skip work, and the input was chec
 - Commit `2ab4006` — `src/schemas/authSchema.ts`, `src/app.ts`, `tests/userRoutes.spec.ts`.
 - Commit `67847da` — `openapi.yaml`.
 - Issue #40.
+
+---
+
+## 🔵 [REDIR-01] Open redirect review: no redirect takes its target from user input (not applicable)
+
+**Date:** 2026-10-15
+
+**Detected by:** Author (backlog item 4.01, issue #64; open redirects are listed in the job posting this project supports)
+
+**Severity:** Informational
+
+**References:** CWE-601
+
+**Finding:**
+
+Review of every redirect in the API and the Next.js frontend. The frontend navigates only to fixed internal routes: `router.replace('/login')` in `app/page.tsx` and `app/chat/page.tsx`, `router.push('/chat')` and `router.push('/register')` in `app/login/page.tsx`, and `router.push('/login')` in `app/register/page.tsx`. No page reads `searchParams` or a `returnTo`/`next`/`callbackUrl` value, no link or `window.location` call takes a dynamic target, and there is no Next.js middleware or `redirects()` entry in `next.config.ts`. The API never calls `res.redirect` or sets a `Location` header. No redirect target comes from the request, so there is no open redirect today.
+
+**Root cause:**
+
+- Not applicable: the application has no redirect with a user-controlled destination.
+
+**Remediation applied:**
+
+- No code change. `SECURITY.md` now has a Redirects row that records the rule: navigation goes only to fixed internal routes, and a future `returnTo` must be checked against an allowlist of relative paths before it is used.
+
+**Regression test:**
+
+- None automated: the frontend has no test framework yet. The review above was done with `grep` over `frontend/app` and `src` for `router.push`, `router.replace`, `redirect(`, `window.location`, `searchParams`, `returnTo`, dynamic `href` values and `res.redirect`. If a `returnTo` is ever added, it needs a `safeRedirect()` helper with its own test (issue #64 proposal).
+
+**Evidence:**
+
+- Commit `03a4ab2` — `SECURITY.md` (Redirects row).
+- Issue #64.
