@@ -309,8 +309,9 @@ components:
         Rate limit exceeded. Every route shares a global limit of 100 requests per IP every
         15 minutes (code TOO_MANY_REQUESTS). /auth/login also allows only 5 attempts per IP
         every 5 minutes (code AUTH_FLOOD_DETECTED), and /ai/chat only 10 prompts per IP per
-        minute (code LLM_COMPUTE_LIMIT_EXCEEDED). The counters live in the memory of each API
-        instance, so replicas do not share them (tracked in issue #65).
+        minute (code LLM_COMPUTE_LIMIT_EXCEEDED). The counters are kept in Redis, so every API
+        replica counts the same hits. While Redis is unavailable, each replica falls back to its
+        own in-memory counters.
       headers:
         Retry-After:
           description: Seconds until the client can send requests again.
