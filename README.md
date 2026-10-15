@@ -152,46 +152,53 @@ Você tem razão, o comando estava complicado demais. Aqui está o texto puro em
 
 ## 🛠️ Developer Tooling: Backlog Synchronization Pipeline
 
-To keep the security remediation backlog auditable and version-controlled, the repository includes a Python tool that synchronizes a local Excel plan with the GitHub Issues API.
+To keep the security remediation backlog auditable, the repository includes a Python tool that keeps a local Excel plan, GitHub Issues and the GitHub Projects board in sync.
 
 ### `sync_backlog.py`
 
-Reads the `Security Remediation Backlog` sheet from `security_plan_maestro_api.xlsx`, creates GitHub Issues for every row that does not yet have an issue number, writes the issue number and URL back into the spreadsheet, and pulls the current issue state from GitHub back into the local `Status` column.
+The script runs two steps:
+
+1. **Excel → GitHub Issues:** for every row of the `Security Remediation Backlog` sheet without an issue number, it creates an issue (title, body and labels built from the row) and writes the issue number and URL back into the sheet.
+2. **GitHub Projects → Excel:** it reads the `Status` field of every card on the project board ([shanxg #2](https://github.com/users/shanxg/projects/2)) through the GraphQL API and copies it into the sheet's `Status` column.
+
+The board owns the status and the spreadsheet owns the content. The `Status` column uses the board's columns: `Backlog`, `Ready`, `In progress`, `In review`, `Done`. Rows whose issue is not on the board are left unchanged.
+
+**Spreadsheet layout:** `security_plan_maestro_api.xlsx` is a local file (gitignored). The script reads columns A (`ID`) and D (`Improvement / finding`) to build the issues, writes column L (`Status`), and stores the issue in columns N (`Issue Number`) and O (`Issue URL`).
 
 **Setup:**
 
-1. Create a `.env` file in the repository root with a GitHub Personal Access Token:
-   ```env
-   GITHUB_TOKEN=ghp_yourPersonalAccessTokenHere
-   ```
-
-The `.env` file is ignored by Git (see `.gitignore`).
-
-2. Install dependencies:
+1. Create a virtual environment and install the pinned dependencies:
 
    ```bash
-   pip install openpyxl requests python-dotenv
+   python -m venv .venv
+   .venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
+   pip install -r requirements.txt
    ```
 
-3. Add two columns to the `Plano de Melhorias` sheet: `Issue Number` (M) and `Issue URL` (N). Leave them empty.
+2. Copy `.env.example` to `.env` and fill in two tokens, each with the minimum access it needs (see CRED-03 in the remediation log):
+   - `GITHUB_TOKEN`: fine-grained token limited to this repository, with **Issues: Read and write**. Used to create issues.
+   - `GITHUB_PROJECT_TOKEN`: classic token with only the **`read:project`** scope. Used to read the board (fine-grained tokens are not documented for user-owned projects).
 
-4. Run the sync:
+   The `.env` file is ignored by Git. Tokens are loaded with `python-dotenv`, so they are never hardcoded or exported to the shell history.
+
+3. Close the spreadsheet in Excel (Windows locks open files), then run:
    ```bash
    python sync_backlog.py
    ```
 
-The script is idempotent: running it multiple times will not duplicate issues. It uses `python-dotenv` to load credentials, so no token is ever hardcoded or exported to the shell history.
+The script checks both tokens before doing anything and is idempotent: rows that already have an issue are skipped, and the spreadsheet is only saved when a status actually changed.
 
 ### Secret Scanning: Gitleaks + pre-commit
 
-The repository enforces secret scanning at two layers:
+The repository enforces secret scanning at two layers, both using the same `.gitleaks.toml`:
 
-- **Local:** a `pre-commit` hook runs Gitleaks on every `git commit` and blocks the commit if a secret is detected. Install it once with:
+- **Local:** a `pre-commit` hook runs Gitleaks on every `git commit` and blocks the commit if a secret is detected. `pre-commit` is installed by `requirements.txt`; register the hook once with:
   ```bash
-  pip install pre-commit
   pre-commit install
   ```
-- **Custom rules:** `.gitleaks.toml` extends the default ruleset with an allowlist for didactic placeholders (e.g. `YOUR_TOKEN_HERE`) and for local files that must never be committed (`.env`, `k8s/secret.yaml`, Next.js build cache).
+- **CI:** the `Secret Scanning` workflow (`.github/workflows/secret-scan.yml`) runs Gitleaks on every push to `main` and on every pull request.
+
+`.gitleaks.toml` extends the default ruleset and only allowlists documentation placeholders (e.g. `YOUR_TOKEN_HERE`, `REPLACE_ME`), matched against the detected value. There is no file allowlist, so `.env` or `k8s/secret.yaml` are blocked even if force-added (see SCAN-01).
 
 Every remediation performed on this repository is logged in [`docs/security/remediation-log.md`](docs/security/remediation-log.md), with root cause, fix, regression test, and evidence.
 
