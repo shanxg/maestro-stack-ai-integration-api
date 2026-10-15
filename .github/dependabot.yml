@@ -4,6 +4,12 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # @apollo/server 5 (the latest release) declares the peer graphql "^16.11.0",
+      # so graphql 17 only installs by overriding that peer. Revisit when Apollo
+      # Server supports graphql 17.
+      - dependency-name: graphql
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /frontend
