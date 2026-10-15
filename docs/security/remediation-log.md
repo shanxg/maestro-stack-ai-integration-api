@@ -563,3 +563,45 @@ Each module read the environment on its own with a local default; no single plac
 - Commit `04aae5a` — login rate-limit test.
 - Commit `07c42a1` — `.env.example`, `docker-compose.yml`, `k8s/deployment.yaml`, `k8s/secret.yaml.example`.
 - Issue #37.
+
+---
+
+## 🟡 [CRED-05] RabbitMQ connection used the broker's default `guest` account
+
+**Date:** 2026-10-15
+
+**Detected by:** Author (found while moving the RabbitMQ settings to `src/config.ts` for CRED-04; issue #96)
+
+**Severity:** Medium
+
+**References:** CWE-1392, OWASP A07:2025
+
+**Finding:**
+
+`src/services/EventBrokerService.ts` connected to `amqp://host:port` without credentials, so amqplib logged in as `guest:guest`. Neither `docker-compose.yml` nor `k8s/deployment.yaml` set RabbitMQ credentials. The official `rabbitmq` image ships `loopback_users.guest = false`, so `guest` (tagged `administrator`) was accepted from any host, and compose published ports 5672 and 15672 (management UI) on all interfaces. Anyone who reached those ports could read the `user_events` queue or publish registration events to it.
+
+**Root cause:**
+
+The broker was used with its built-in defaults; no account was defined for the API, and the environment had no variables for broker credentials.
+
+**Remediation applied:**
+
+- `src/config.ts` requires `RABBIT_USER` and `RABBIT_PASSWORD` and rejects `guest` as the user.
+- `EventBrokerService` connects with an options object built from them, so the password is never part of a URL or of the logged address.
+- `docker-compose.yml` passes them to `RABBITMQ_DEFAULT_USER` and `RABBITMQ_DEFAULT_PASS`, so the broker creates that account on its first start and never creates `guest`; compose stops if they are unset. `k8s/deployment.yaml` injects both from the `maestro-api-secret` Secret (new `rabbit-user` and `rabbit-password` keys). `.env.example` documents them as required.
+- Local environment: `rabbit_integrated` was recreated with a `maestro` account and a random 48-character hex password, stored only in `.env`.
+- The deprecated blueprint modules (`src/queue/rabbit-deprecated.ts`, `src/worker-deprecated.ts`) still connect without credentials; the API does not load them, and they no longer reach a broker without `guest`.
+
+**Regression test:**
+
+- `tests/eventBroker.spec.ts` › `connects with RABBIT_USER and RABBIT_PASSWORD and never logs the password`: it checks the connection options and the log output, and it fails when the connection goes back to the credential-less URL.
+- `docker compose --env-file <empty file> config` fails with `required variable RABBIT_USER is missing a value`.
+- After `docker compose up -d` recreated `rabbit_integrated`, `rabbitmqctl list_users` listed only `maestro`. An AMQP login with the `.env` account succeeded, `guest:guest` was refused (`403 ACCESS_REFUSED`), and the management API answered `401` to `guest:guest`.
+- The API started with the real `.env`, declared the `user_events` queue, and its log did not contain the password.
+- `npx tsc --noEmit` passes; `npm test` passes (4 suites, 21 tests).
+
+**Evidence:**
+
+- Commit `92dffb0` — `src/config.ts`, `src/services/EventBrokerService.ts`, `tests/setupEnv.ts`, `tests/eventBroker.spec.ts`.
+- Commit `d342708` — `.env.example`, `docker-compose.yml`, `k8s/deployment.yaml`, `k8s/secret.yaml.example`.
+- Issue #96.
