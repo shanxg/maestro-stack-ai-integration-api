@@ -717,3 +717,44 @@ Review of every redirect in the API and the Next.js frontend. The frontend navig
 
 - Commit `03a4ab2` — `SECURITY.md` (Redirects row).
 - Issue #64.
+
+---
+
+## 🔵 [RATE-01] Rate-limit counters were not shared between API replicas
+
+**Date:** 2026-10-15
+
+**Detected by:** Author (backlog item 4.02, issue #65)
+
+**Severity:** Low
+
+**References:** CWE-770, CWE-307, OWASP API4:2023
+
+**Finding:**
+
+The three `express-rate-limit` limiters in `src/app.ts` (global, login and AI chat) used the default in-memory store, so each API process kept its own counters. `k8s/deployment.yaml` runs two replicas behind one Service, so a client spread across both replicas could send twice the configured limits: 10 login attempts every 5 minutes instead of 5, and 200 requests every 15 minutes instead of 100.
+
+**Root cause:**
+
+The limiters were written for a single process; the counters were never moved to shared storage when the deployment was scaled to two replicas.
+
+**Remediation applied:**
+
+- `src/middlewares/redisRateLimitStore.ts` implements the `express-rate-limit` store contract on Redis (`ioredis`, already a dependency). Each hit runs one `MULTI`/`EXEC` transaction: `SET key 0 PX <window> NX` creates the counter with the window as its expiry, `INCR` adds the hit and keeps the expiry, and `PTTL` gives the reset time. A counter found without an expiry gets one, so a client can never be blocked forever.
+- Each limiter has its own key prefix (`rl:global:`, `rl:login:`, `rl:ai-chat:`), so global hits never count as login attempts.
+- While Redis is unavailable, the store counts in the process's memory and logs the outage once (and the recovery once). The limits then apply per replica, as before, and no request fails because of the outage. The Redis client has no offline queue, so commands fail at once instead of holding requests.
+- The `rate-limit-redis` package was considered and not used: it loads a Lua script once when the limiter is created, and if Redis is unreachable at that moment (for example, while the cluster is still starting), the failed load stays cached and the limiter keeps failing until the API restarts.
+- `openapi.yaml` (`TooManyRequests`) and the HTTP hardening row of `SECURITY.md` describe the shared counters; the known-issue note about issue #65 was removed.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › `POST /auth/login -> two replicas share one login limit through Redis`: two app instances share an in-memory fake Redis; 5 wrong logins split between them get `401`, and the next attempt on each instance gets `429 AUTH_FLOOD_DETECTED`. Against the previous code it failed with `Expected: 429, Received: 401`.
+- `tests/redisRateLimitStore.spec.ts` (5 tests): stores on different replicas share one counter; the counter expires with the limiter window; different prefixes stay apart; a Redis outage falls back to in-memory counting and logs once; a counter without an expiry gets one.
+- Manual, against the local `redis_integrated` container: two stores with separate clients counted `1, 2, 3` for the same client key, and the key had a TTL of about 60 seconds. With Redis unreachable, the store counted `1, 2, 3` in memory and logged one warning.
+- `npx tsc --noEmit` passes; `npm test` passes (5 suites, 31 tests).
+
+**Evidence:**
+
+- Commit `46e6acc` — `src/middlewares/redisRateLimitStore.ts`, `src/app.ts`, `tests/helpers/fakeRedis.ts`, `tests/redisRateLimitStore.spec.ts`, `tests/userRoutes.spec.ts`.
+- Commit `93f430a` — `openapi.yaml`, `SECURITY.md`.
+- Issue #65.

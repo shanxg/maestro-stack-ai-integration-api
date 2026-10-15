@@ -6,21 +6,18 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { describe, beforeAll, afterAll, it, expect, jest } from '@jest/globals';
+import { describe, beforeAll, beforeEach, afterAll, it, expect, jest } from '@jest/globals';
 import request from 'supertest';
 import type { User } from '../src/models/User.js';
+import { FakeRedis } from './helpers/fakeRedis.js';
 
 // 🚀 GLOBAL INTERCEPTION (MOCK REDIS TCP CONNECTIONS):
-// Whenever a file (including UserController) calls 'new Redis()',
-// Jest supplies this fast in-memory mock to avoid network timeouts.
+// Whenever a file (UserController's cache, or the rate limiters in app.ts) calls 'new Redis()',
+// Jest supplies this in-memory fake to avoid network timeouts. The cache always misses, and
+// every app instance shares the rate-limit counters, like replicas sharing one Redis server.
 jest.unstable_mockModule('ioredis', () => {
   return {
-    Redis: class {
-      async get() { return null; } // Simulate a cache miss so the route reads from the service
-      async set() { return 'OK'; }
-      async keys() { return []; }
-      async del() { return 0; }
-    }
+    Redis: FakeRedis
   };
 });
 
@@ -127,6 +124,11 @@ describe('User routes (integration tests)', () => {
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
     tokenAdmin = response.body.token;
+  });
+
+  // The rate-limit counters live in the shared fake Redis; start every test from zero.
+  beforeEach(() => {
+    FakeRedis.reset();
   });
 
   // TEST 1: Verify that a correct e-mail and password produce a signed JWT.
@@ -248,9 +250,9 @@ describe('User routes (integration tests)', () => {
   });
 
   // TEST 10: Verify that the login limiter from src/config.ts blocks brute force (CWE-307).
-  // Condition: A fresh app accepts exactly settings.rateLimits.login.max attempts; the next one gets 429.
+  // Condition: The app accepts exactly settings.rateLimits.login.max attempts; the next one gets 429.
   it('POST /auth/login -> returns 429 after the configured number of attempts', async () => {
-    // A new app instance has its own limiter counters, so the logins in the tests above do not count.
+    // The shared counters are reset before each test, so the logins in the tests above do not count.
     const freshServer = await createApp(mockUserService);
     const attempt = () => request(freshServer)
       .post('/auth/login')
@@ -310,7 +312,7 @@ describe('User routes (integration tests)', () => {
   });
 
   // TEST 13: Verify the login rejects fields that are missing, blank or not text (CWE-1287).
-  // Condition: A fresh app (own limiter counters) gets four malformed bodies; none reaches the database.
+  // Condition: The app gets four malformed bodies (counters reset before each test); none reaches the database.
   it('POST /auth/login -> returns 400 when username or password is missing, blank or not text', async () => {
     const freshServer = await createApp(mockUserService);
     mockUserService.getUserByEmail.mockClear();
@@ -349,6 +351,28 @@ describe('User routes (integration tests)', () => {
     } finally {
       compareSpy.mockRestore();
     }
+  });
+
+  // TEST 15: Verify two API replicas enforce one login limit together, not one each (issue #65).
+  // Condition: Two app instances share the fake Redis; attempts on both count toward the same limit.
+  it('POST /auth/login -> two replicas share one login limit through Redis', async () => {
+    const replicaA = await createApp(mockUserService);
+    const replicaB = await createApp(mockUserService);
+    const attempt = (server: http.Server) => request(server)
+      .post('/auth/login')
+      .send({ username: ADMIN_EMAIL, password: 'wrong-password' });
+
+    // Split the allowed attempts between the replicas, as a load balancer would.
+    for (let i = 0; i < settings.rateLimits.login.max; i++) {
+      expect((await attempt(i % 2 === 0 ? replicaA : replicaB)).status).toBe(401);
+    }
+
+    // Each replica has seen fewer than max attempts, but the shared counter is full.
+    const blockedOnA = await attempt(replicaA);
+    const blockedOnB = await attempt(replicaB);
+    expect(blockedOnA.status).toBe(429);
+    expect(blockedOnB.status).toBe(429);
+    expect(blockedOnA.body.error.code).toBe('AUTH_FLOOD_DETECTED');
   });
 
 });
