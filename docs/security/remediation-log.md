@@ -605,3 +605,43 @@ The broker was used with its built-in defaults; no account was defined for the A
 - Commit `92dffb0` — `src/config.ts`, `src/services/EventBrokerService.ts`, `tests/setupEnv.ts`, `tests/eventBroker.spec.ts`.
 - Commit `d342708` — `.env.example`, `docker-compose.yml`, `k8s/deployment.yaml`, `k8s/secret.yaml.example`.
 - Issue #96.
+
+---
+
+## 🔵 [VAL-02] `GET /users` accepted unvalidated and unbounded pagination
+
+**Date:** 2026-10-15
+
+**Detected by:** Author (backlog item 1.11, issue #44; confirmed while documenting the routes in `openapi.yaml` for issue #61)
+
+**Severity:** Low
+
+**References:** CWE-1284, CWE-770, OWASP API4:2023
+
+**Finding:**
+
+`UserController.getUsers` converted `limit` and `offset` with `parseInt` and only raised values below the minimum (`Math.max`). A non-numeric value such as `limit=abc` became `NaN`; the PostgreSQL query failed inside `UserRepository.findAll`, which logs the error and returns an empty list, so the route answered `200 []` instead of `400`. There was no upper bound on `limit`, so any authenticated user could fetch the whole `users` table in one response (for example, `limit=1000000`).
+
+**Root cause:**
+
+The route had no input schema. The controller parsed the query string by hand and silently corrected some invalid values instead of rejecting them.
+
+**Remediation applied:**
+
+- `src/config.ts` holds the page size in `settings.pagination` (`defaultLimit` 10, `maxLimit` 100).
+- `listUsersSchema` in `src/schemas/userSchema.ts` (Zod) requires whole numbers: `limit` from 1 to `maxLimit` and `offset` from 0. Missing values fall back to the defaults.
+- The route runs `authMiddleware` and then `validateMiddleware(listUsersSchema)`, so invalid values get `400 VALIDATION_FAILURE` naming the failing field before the service or the database is reached. Callers without a token still get `401` first.
+- The controller reads the converted numbers with `listUsersSchema.shape.query.parse(req.query)`; `parseInt` and `Math.max` were removed. Zero and negative values are now rejected instead of being raised to the minimum.
+- `openapi.yaml` documents `minimum`, `maximum` and the `400` response; the known-issue notes about issue #44 were removed.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › `GET /users -> returns 400 when limit or offset is not a whole number in range`: `limit` set to `abc`, `2.5`, `0` or `101`, and `offset` set to `-1`, must each get `400 VALIDATION_FAILURE` naming the failing field, and the service must never be called. Run against the previous route and controller (with only `settings.pagination` added), it failed with `Expected: 400, Received: 200`.
+- `tests/userRoutes.spec.ts` › `GET /users -> passes the cap and the default page to the service as numbers`: `limit=100&offset=20` reaches the service as `{ limit: 100, offset: 20 }`, and a request without parameters as `{ limit: 10, offset: 0 }`.
+- `npx tsc --noEmit` passes; `npm test` passes (4 suites, 23 tests).
+
+**Evidence:**
+
+- Commit `1c61f92` — `src/config.ts`, `src/schemas/userSchema.ts`, `src/app.ts`, `src/controllers/UserController.ts`, `tests/userRoutes.spec.ts`.
+- Commit `65c7005` — `openapi.yaml`.
+- Issue #44.
