@@ -3,6 +3,7 @@
 import { type Request, type Response } from 'express';
 import { UserService } from '../services/UserService.js';
 import { EventBrokerService } from '../services/EventBrokerService.js';
+import { env, settings } from '../config.js';
 
 // Import industrial-grade security library for password hashing
 import bcrypt from 'bcrypt';
@@ -10,15 +11,15 @@ import bcrypt from 'bcrypt';
 // Redis client library
 import { Redis } from 'ioredis'; 
 const redis = new Redis({
-  host: process.env.REDIS_HOST || 'localhost',  // Redis server address
-  port: 6379,        // Default Redis port
+  host: env.REDIS_HOST, // Redis server address
+  port: env.REDIS_PORT, // Defaults in src/config.ts
 });
 
 // 2. CONTROLLER CLASS: This layer is the API's gateway.
 // It receives requests, calls the service, and returns an HTTP response.
 export class UserController {
-  // APPSEC CONFIGURATION: Define a robust workload cost factor (12 rounds balances CPU overhead and security)
-  private readonly SALT_ROUNDS = 12;
+  // APPSEC CONFIGURATION: bcrypt work factor, shared with UserService through src/config.ts
+  private readonly SALT_ROUNDS = settings.bcryptSaltRounds;
   
   // DEPENDENCY INJECTION: The controller does not create the service itself.
   // INVERSION OF CONTROL (IoC): The constructor receives live instances from the main factory.
@@ -65,9 +66,9 @@ export class UserController {
         offset: offsetNumber 
       });
       
-      // Step D: Store the result as JSON in Redis with a 60-second TTL
+      // Step D: Store the result as JSON in Redis with the TTL from src/config.ts
       // to limit how long stale data can remain cached.
-      await redis.set(cacheKey, JSON.stringify(users), 'EX', 60);
+      await redis.set(cacheKey, JSON.stringify(users), 'EX', settings.usersCacheTtlSeconds);
       
       // Step E: Return the consolidated data to the client.
       res.status(200).json(users);

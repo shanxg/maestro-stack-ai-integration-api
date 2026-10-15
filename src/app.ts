@@ -1,5 +1,3 @@
-// 🔥 SECURITY REQUIREMENT: Load dotenv on the first line to read .env into API memory.
-import 'dotenv/config';
 import bcrypt from 'bcrypt'; // Slow-stretched password hashing and verification
 
 // 1. INFRASTRUCTURE AND EXPRESS IMPORTS
@@ -27,10 +25,11 @@ import helmet from 'helmet';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 
-// 3. MIDDLEWARE AND ZOD SCHEMA IMPORTS
+// 3. MIDDLEWARE, ZOD SCHEMA AND CONFIG IMPORTS
 import { authMiddleware } from './middlewares/authMiddleware.js';
 import { validateMiddleware } from './middlewares/validateMiddleware.js';
 import { createUserSchema } from './schemas/userSchema.js';
+import { env, settings } from './config.js'; // Validated environment and fixed limits (also loads .env)
 
 // 4. GRAPHQL (APOLLO SERVER) IMPORTS
 import { ApolloServer } from '@apollo/server';
@@ -43,18 +42,9 @@ import { createUserResolvers } from './graphql/userResolvers.js';
 // =========================================================================
 // 🔐 CRYPTOGRAPHIC VAULT & ENVIRONMENT VALIDATION (CWE-798)
 // =========================================================================
-// Inspect the active environment memory mapping for the critical sign token.
-// If the DevOps orchestration layer fails to inject the secret key, we enforce
-// an immediate runtime crash condition to prevent operating in an insecure state.
-if (!process.env.JWT_SECRET) {
-  console.error('❌ CRITICAL APPSEC FAILURE: SECURITY ENVIRONMENT MISCONFIGURATION');
-  console.error('=> The system requires an explicit cryptographic [JWT_SECRET] variable payload.');
-  console.error('=> Application engine startup aborted to isolate crypto token exposure vectors.');
-  process.exit(1); // Force immediate system termination with structural error code
-}
-
-// Extract the thoroughly vetted cryptographic secret token directly from system memory mapping
-const JWT_SECRET = process.env.JWT_SECRET;
+// src/config.ts validates the environment when it is imported and stops the boot
+// if JWT_SECRET is missing or too short, so the API never runs in an insecure state.
+const JWT_SECRET = env.JWT_SECRET;
 
 /**
  * 🏭 APPLICATION FACTORY (createApp):
@@ -74,7 +64,7 @@ export async function createApp(customUserService?: any) {
 
   // A. HELMET: Set strict HTTP headers to mitigate clickjacking, sniffing, and XSS.
   // Disable CSP locally to allow the Apollo Sandbox to run.
-  const helmetOptions = process.env.NODE_ENV === 'production' ? {} : { contentSecurityPolicy: false };
+  const helmetOptions = env.NODE_ENV === 'production' ? {} : { contentSecurityPolicy: false };
   app.use(helmet(helmetOptions));
 
   // B. CORS: Restrict request origins to traffic from the Next.js frontend.
@@ -102,8 +92,8 @@ export async function createApp(customUserService?: any) {
   
   // C. RATE LIMITER: Protect the API from malicious request floods (DDoS).
   const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15-minute counting window
-    max: 100,                 // Allow at most 100 requests per IP per window
+    windowMs: settings.rateLimits.global.windowMs, // Window and cap live in src/config.ts
+    max: settings.rateLimits.global.max,
     standardHeaders: true,
     legacyHeaders: false,
     message: {
@@ -122,8 +112,8 @@ export async function createApp(customUserService?: any) {
    * Isolates credential probing loops and blocks distributed dictionary credential stuffing.
    */
   const authBruteForceLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000, // 5-minute strict monitoring window
-    max: 5, // Limit each source IP address to exactly 5 login attempts per window loop
+    windowMs: settings.rateLimits.login.windowMs, // Window and cap live in src/config.ts
+    max: settings.rateLimits.login.max,
     standardHeaders: true,
     legacyHeaders: false,
     statusCode: 429,
@@ -142,8 +132,8 @@ export async function createApp(customUserService?: any) {
    * Mitigates orchestration compute exhaustion and limits overall system token budget runout.
    */
   const aiInferenceThrottler = rateLimit({
-    windowMs: 1 * 60 * 1000, // 1-minute tracking micro-window
-    max: 10, // Max 10 complex prompt dispatches per minute per active client IP context
+    windowMs: settings.rateLimits.aiChat.windowMs, // Window and cap live in src/config.ts
+    max: settings.rateLimits.aiChat.max,
     standardHeaders: true,
     legacyHeaders: false,
     statusCode: 429,
@@ -245,7 +235,7 @@ export async function createApp(customUserService?: any) {
       const token = jwt.sign(
         sessionPayload, 
         JWT_SECRET, 
-        { expiresIn: '1h' } // Enforce robust 1-hour expiration time window
+        { expiresIn: settings.jwtExpiresIn } // Token lifetime lives in src/config.ts
       );
 
       console.log(`✅ [Auth] Handshake verified successfully. JWT token issued for user ID: ${userRecord.id}`);
@@ -294,7 +284,7 @@ export async function createApp(customUserService?: any) {
   const dynamicGraphQLResolvers = createUserResolvers(userService);
   const apolloServer = new ApolloServer({ typeDefs, resolvers: dynamicGraphQLResolvers });
 
-  if (process.env.NODE_ENV !== 'test') {
+  if (env.NODE_ENV !== 'test') {
     await apolloServer.start();
     
     // APPSEC REMEDIATION - GRAPHQL AUTHENTICATION FIREWALL (CWE-284 / OWASP TOP 10)
@@ -327,8 +317,8 @@ export async function createApp(customUserService?: any) {
   // ==========================================
   // 🚀 UNIVERSAL HTTP SERVER STARTUP
   // ==========================================
-  const PORT = Number(process.env.PORT) || 3000;
-  if (process.env.NODE_ENV === 'test') {
+  const PORT = env.PORT;
+  if (env.NODE_ENV === 'test') {
     console.log("⚠️ Test mode enabled: The HTTP server will not start to avoid port conflicts.");
   } else {
     // Listen on 0.0.0.0 to accept Kubernetes traffic.

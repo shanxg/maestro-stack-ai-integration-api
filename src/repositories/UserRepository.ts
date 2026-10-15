@@ -2,7 +2,7 @@
 import { type IUserRepository } from "../interfaces/IUserRepository.js";
 import { type User } from "../models/User.js";
 import pg from 'pg'; // Use the official 'pg' driver to connect to the relational database.
-
+import { env } from '../config.js'; // Validated database settings (no default password)
 
 // 2. CLASS: 'implements IUserRepository' tells TypeScript that this class
 // must implement the three methods required by the contract (findAll, findById, create).
@@ -12,11 +12,11 @@ export class UserRepository implements IUserRepository {
 constructor() {
     // 🔌 INVERSION OF CONTROL (IoC): Initialize the connection pool using container credentials.
     this.pool = new pg.Pool({
-      host: process.env.POSTGRES_HOST || 'localhost',
-      user: process.env.POSTGRES_USER || 'postgres',
-      password: process.env.POSTGRES_PASSWORD || 'secret',
-      database: process.env.POSTGRES_DB || 'postgres',
-      port: Number(process.env.POSTGRES_PORT) || 5433,
+      host: env.POSTGRES_HOST,
+      user: env.POSTGRES_USER,
+      password: env.POSTGRES_PASSWORD, // Required: no hardcoded fallback (CWE-1392)
+      database: env.POSTGRES_DB,
+      port: env.POSTGRES_PORT,
       max: 10, 
       idleTimeoutMillis: 30000 
     });

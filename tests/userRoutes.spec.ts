@@ -10,11 +10,6 @@ import { describe, beforeAll, afterAll, it, expect, jest } from '@jest/globals';
 import request from 'supertest';
 import type { User } from '../src/models/User.js';
 
-// 🔐 EPHEMERAL SIGNING SECRET: app.ts and authMiddleware fail closed without JWT_SECRET.
-// When .env does not define one (for example on a fresh clone or in CI), generate a random
-// secret that lives only for this test run. Nothing is hardcoded in the repository.
-process.env.JWT_SECRET ??= crypto.randomUUID();
-
 // 🚀 GLOBAL INTERCEPTION (MOCK REDIS TCP CONNECTIONS):
 // Whenever a file (including UserController) calls 'new Redis()',
 // Jest supplies this fast in-memory mock to avoid network timeouts.
@@ -79,6 +74,7 @@ jest.unstable_mockModule('amqplib', () => {
 // 2. FACTORY IMPORT: Bring in the modular application factory.
 // Dynamic imports run after the mocks above are registered (ESM has no mock hoisting).
 const { createApp } = await import('../src/app.js');
+const { settings } = await import('../src/config.js');
 
 // 3. LEGACY BLUEPRINT IMPORTS: The API never imports these modules (see README.md,
 // "Architectural Evolution"). They are loaded here only to test them in isolation.
@@ -250,6 +246,25 @@ describe('User routes (integration tests)', () => {
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_FAILURE');
   });
+
+  // TEST 10: Verify that the login limiter from src/config.ts blocks brute force (CWE-307).
+  // Condition: A fresh app accepts exactly settings.rateLimits.login.max attempts; the next one gets 429.
+  it('POST /auth/login -> returns 429 after the configured number of attempts', async () => {
+    // A new app instance has its own limiter counters, so the logins in the tests above do not count.
+    const freshServer = await createApp(mockUserService);
+    const attempt = () => request(freshServer)
+      .post('/auth/login')
+      .send({ username: ADMIN_EMAIL, password: 'wrong-password' });
+
+    for (let i = 0; i < settings.rateLimits.login.max; i++) {
+      expect((await attempt()).status).toBe(401);
+    }
+
+    const blocked = await attempt();
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error.code).toBe('AUTH_FLOOD_DETECTED');
+  });
+
 });
 
 describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', () => {

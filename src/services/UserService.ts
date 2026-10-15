@@ -3,12 +3,13 @@ import { type IUserRepository } from '../interfaces/IUserRepository.js';
 import { type User } from '../models/User.js';
 import bcrypt from 'bcrypt'; // Use bcrypt for secure password hashing
 import crypto from 'node:crypto'; // Native, cryptographically secure pseudo-random number generator (CSPRNG)
+import { settings } from '../config.js';
 
 // 2. SERVICE CLASS: Business rules live here, at the heart of the system.
 // It delegates database operations to the repository.
 export class UserService {
-  // APPSEC CONFIGURATION: Define a robust workload cost factor (12 rounds balances CPU overhead and security)
-  private readonly SALT_ROUNDS = 12;
+  // APPSEC CONFIGURATION: bcrypt work factor, shared with UserController through src/config.ts
+  private readonly SALT_ROUNDS = settings.bcryptSaltRounds;
   // DEPENDENCY INJECTION: The constructor does not create the database or repository itself.
   // The caller must provide a repository that implements IUserRepository.
   constructor(private userRepository: IUserRepository) {}
