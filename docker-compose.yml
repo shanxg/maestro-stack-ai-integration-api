@@ -22,6 +22,10 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management
     container_name: rabbit_integrated
+    environment:
+      # The broker creates this account on its first start instead of the default guest user (CRED-05).
+      RABBITMQ_DEFAULT_USER: ${RABBIT_USER:?Set RABBIT_USER in .env (see .env.example)}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD:?Set RABBIT_PASSWORD in .env (see .env.example)}
     ports:
       - "5672:5672"
       - "15672:15672"

@@ -111,4 +111,17 @@ spec:
 
             - name: RABBIT_HOST
               value: "rabbitmq-service"
+
+            # Required by src/config.ts: the broker account, never the default guest user (CRED-05).
+            - name: RABBIT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: maestro-api-secret
+                  key: rabbit-user
+
+            - name: RABBIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: maestro-api-secret
+                  key: rabbit-password
               
