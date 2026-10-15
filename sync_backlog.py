@@ -10,10 +10,14 @@ from openpyxl import load_workbook
 # SETTINGS
 # ============================================================
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+GITHUB_PROJECT_TOKEN = os.getenv("GITHUB_PROJECT_TOKEN")  # classic token, read:project only
 GITHUB_REPO  = "shanxg/maestro-stack-ai-integration-api"   # owner/repo
 EXCEL_FILE   = "security_plan_maestro_api.xlsx"
 SHEET_NAME   = "Security Remediation Backlog"
 HEADER_ROW   = 1  # Row that holds the column headers
+PROJECT_OWNER  = "shanxg"
+PROJECT_NUMBER = 2  # https://github.com/users/shanxg/projects/2
+
 
 # Column map (1-based indexes, as used by openpyxl)
 COL = {
@@ -33,10 +37,6 @@ COL = {
     "ISSUE_NUMBER":   14,
     "ISSUE_URL":      15,
 }
-
-# Status values mirror the columns of the GitHub Projects board
-STATUS_BACKLOG = "Backlog"
-STATUS_DONE    = "Done"
 
 HEADERS = {
     "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -124,29 +124,46 @@ def create_issue(title, body, labels):
     print(f"   ❌ Error {r.status_code}: {r.text[:200]}")
     return None, None
 
-def list_issues():
-    """Returns {number: issue} for every issue in the repository."""
-    issues = {}
-    page = 1
-    while True:
-        url = (f"https://api.github.com/repos/{GITHUB_REPO}/issues"
-               f"?state=all&per_page=100&page={page}")
-        r = requests.get(url, headers=HEADERS, timeout=30)
-        if r.status_code != 200:
-            print(f"❌ Failed to list issues: {r.status_code} {r.text[:200]}")
-            return {}
-        batch = r.json()
-        if not batch:
-            break
-        for item in batch:
-            # Skip pull requests (the API returns issues and PRs together)
-            if "pull_request" in item:
-                continue
-            issues[item["number"]] = item
-        if len(batch) < 100:
-            break
-        page += 1
-    return issues
+PROJECT_STATUS_QUERY = """
+query($login: String!, $number: Int!, $field: String!) {
+    user(login: $login) {
+        projectV2(number: $number) {
+            items(first: 100) {
+                pageInfo { hasNextPage }
+                nodes {
+                    content{ ... on Issue {number}}
+                    fieldValueByName(name: $field) { ... on ProjectV2ItemFieldSingleSelectValue { name } }
+                }
+            }
+        }
+    }
+}
+"""
+def list_project_statuses():
+    """Returns {issue_number: status} from the GitHub Projects board."""
+    payload = {
+        "query": PROJECT_STATUS_QUERY,
+        "variables": {"login": PROJECT_OWNER, "number": PROJECT_NUMBER, "field": "Status"},
+    }
+    headers = {"Authorization": f"Bearer {GITHUB_PROJECT_TOKEN}"}
+    r = requests.post("https://api.github.com/graphql", headers=headers, json=payload, timeout=30)
+    data = r.json() if r.status_code == 200 else {}
+    # GraphQL answers 200 even when the query fails, so the "errors" key must be checked too
+    if r.status_code != 200 or "errors" in data:
+        print(f"❌ Failed to read the project board: {r.status_code} {r.text[:200]}")
+        return {}
+
+    items = data["data"]["user"]["projectV2"]["items"]
+    if items["pageInfo"]["hasNextPage"]:
+        print("   ⚠️  The board has more than 100 items; only the first 100 were read.")
+
+    statuses = {}
+    for node in items["nodes"]:
+        number = (node["content"] or {}).get("number")         # PRs and drafts have no issue number
+        status = (node["fieldValueByName"] or {}).get("name")  # cards without a Status are skipped
+        if number and status:
+            statuses[number] = status
+    return statuses
 
 # ============================================================
 # SYNC
@@ -194,11 +211,11 @@ def excel_to_github():
 
 
 def github_to_excel():
-    """Updates the Status column (L) from the state of the GitHub issues."""
-    print("\n🔄 [2/2] GitHub → Excel (sync status)")
-    issues = list_issues()
-    if not issues:
-        print("   ℹ️  No issues found in the repository.")
+    """Updates the Status column (L) from the GitHub Projects board."""
+    print("\n🔄 [2/2] GitHub Projects → Excel (sync status)")
+    statuses = list_project_statuses()
+    if not statuses:
+        print("   ℹ️  No status found on the project board.")
         return
 
     wb = load_workbook(EXCEL_FILE)
@@ -214,21 +231,10 @@ def github_to_excel():
         except (TypeError, ValueError):
             continue
 
-        if number not in issues:
-            continue
-
-        gh_state       = issues[number]["state"]          # "open" | "closed"
-        current_status = ws.cell(r, COL["STATUS"]).value or STATUS_BACKLOG
-
-        # Sync rules:
-        # - Issue closed → "Done"
-        # - Issue open but the local status is "Done" → back to "Backlog"
-        # - Otherwise → leave it (keeps "Ready", "In progress" and "In review")
-        if gh_state == "closed" and current_status != STATUS_DONE:
-            ws.cell(r, COL["STATUS"], STATUS_DONE)
-            updated += 1
-        elif gh_state == "open" and current_status == STATUS_DONE:
-            ws.cell(r, COL["STATUS"], STATUS_BACKLOG)
+        # The board owns Status; rows whose issue is not on the board are left as they are
+        board_status = statuses.get(number)
+        if board_status and board_status != ws.cell(r, COL["STATUS"]).value:
+            ws.cell(r, COL["STATUS"], board_status)
             updated += 1
 
     if updated:
@@ -243,11 +249,12 @@ def github_to_excel():
 # MAIN
 # ============================================================
 if __name__ == "__main__":
-    if not GITHUB_TOKEN:
-        print("❌ ERROR: GITHUB_TOKEN is not set.")
-        print("   Add it to the local .env file (gitignored). Avoid exporting it in the")
-        print("   shell: it stays in the shell history (see CRED-01 in the remediation log).")
-        sys.exit(1)
+    for name, value in (("GITHUB_TOKEN", GITHUB_TOKEN), ("GITHUB_PROJECT_TOKEN", GITHUB_PROJECT_TOKEN)):
+        if not value:
+            print(f"❌ ERROR: {name} is not set.")
+            print("   Add it to the local .env file (gitignored). Avoid exporting it in the")
+            print("   shell: it stays in the shell history (see CRED-01 in the remediation log).")
+            sys.exit(1)
 
     if not os.path.exists(EXCEL_FILE):
         print(f"❌ ERROR: file '{EXCEL_FILE}' not found in the current folder.")
