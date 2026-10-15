@@ -19,7 +19,7 @@
     "openai": "^7.32.0",
     "pg": "^8.23.1",
     "socket.io": "^4.8.4",
-    "zod": "^4.6.5"
+    "zod": "^4.6.6"
   },
   "scripts": {
     "infra:up": "docker compose up -d",
