@@ -3,9 +3,14 @@ openapi: 3.0.3
 info:
   title: Project Maestro - Scalable and Secure API
   description: >
-    Technical documentation of the user management endpoints, with support
-    for asynchronous messaging on RabbitMQ, cache-aside on Redis and a cryptographic firewall.
+    REST, Server-Sent Events and GraphQL endpoints of the Maestro API: JWT login, user
+    registration through a RabbitMQ queue, user reads with a Redis cache-aside layer,
+    a chat endpoint backed by a local LLM (Ollama) and a real-time event stream.
   version: 1.0.0
+
+servers:
+  - url: http://localhost:3000
+    description: Local development (npm run dev)
 
 # Secure by default: every operation requires a JWT unless it overrides this with `security: []`.
 security:
@@ -18,7 +23,8 @@ paths:
       description: >
         Checks the credentials against the bcrypt hash stored in PostgreSQL and returns
         a JWT that expires in 1 hour. Unknown emails and wrong passwords get the same 401
-        response, so the endpoint does not reveal which accounts exist (CWE-204).
+        response body (CWE-204). Known issue: an unknown email skips the bcrypt comparison,
+        so the faster response still reveals which accounts exist (CWE-208, tracked in issue #40).
       security: []
       requestBody:
         required: true
@@ -54,24 +60,33 @@ paths:
           description: The username or password field is missing or blank.
         '401':
           description: Invalid credentials. Unknown emails and wrong passwords get this same response.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
-          description: Internal failure while checking the credentials.
+          description: >
+            Internal failure while checking the credentials. Known issue: a username that is
+            not a string (for example, a number) also ends here instead of 400 (tracked in issue #40).
 
   /users:
     get:
       summary: List users with pagination
-      description: Retrieves slices of the user array with dynamic Cache-Aside support on Redis.
+      description: >
+        Retrieves slices of the user array with dynamic Cache-Aside support on Redis.
+        Known issue: a non-numeric limit or offset makes the database query fail, and the
+        endpoint answers 200 with an empty list instead of 400 (tracked in issue #44).
       parameters:
         - name: limit
           in: query
-          description: Maximum number of records returned in the page.
+          description: >
+            Maximum number of records returned in the page. Values below 1 become 1, and no
+            upper limit is enforced (tracked in issue #44).
           required: false
           schema:
             type: integer
             default: 10
         - name: offset
           in: query
-          description: Number of records skipped at the start of the query.
+          description: Number of records skipped at the start of the query. Negative values become 0.
           required: false
           schema:
             type: integer
@@ -79,8 +94,16 @@ paths:
       responses:
         '200':
           description: Operation completed successfully.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
         '401':
           description: Access denied because the JWT is missing or invalid.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           description: Internal failure in the data server.
 
@@ -99,12 +122,18 @@ paths:
       responses:
         '200':
           description: User found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
         '400':
           description: The ID is blank.
         '401':
           description: Access denied because the JWT is missing, expired or invalid.
         '404':
           description: No user exists with this ID.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           description: Internal failure while looking up the user.
 
@@ -121,9 +150,25 @@ paths:
               $ref: '#/components/schemas/UserRegistrationPayload'
       responses:
         '202':
-          description: Request accepted for asynchronous batch processing in the queue.
+          description: >
+            Request accepted for asynchronous batch processing in the queue. Known issue: the
+            response is the same when the email is already registered; the worker then drops
+            the message and the user is not created (tracked in issue #50).
         '400':
-          description: Invalid request because it breaks the payload contract or misses required parameters.
+          description: The body fails the Zod validation schema. Each failing field is listed in error.details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: VALIDATION_FAILURE
+                  message: "Falha na validação dos dados de entrada."
+                  details:
+                    - field: body.email
+                      message: "Insira um formato de e-mail válido (exemplo: usuario@email.com)."
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           description: Internal infrastructure error while dispatching the request to the event queue.
 
@@ -155,9 +200,11 @@ paths:
                     type: string
                     description: Text response generated by the local model.
         '400':
-          description: Invalid request because the "prompt" key is missing from the payload.
+          description: The prompt field is missing, blank or not a string (code VALIDATION_FAILURE).
         '401':
           description: Access denied because the JWT is missing, expired or invalid.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           description: Failure communicating with the local Ollama service.
 
@@ -184,6 +231,8 @@ paths:
 
                 event: user_created
                 data: {"name":"Lucas Rivaldo","email":"lucas@example.com"}
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
 
   /graphql:
     post:
@@ -217,6 +266,8 @@ paths:
           description: The operation ran. Errors thrown by resolvers come back in the errors array, still with HTTP 200.
         '400':
           description: Invalid GraphQL request (syntax or schema validation error), or a request blocked by CSRF prevention.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '500':
           description: Missing or invalid JWT (see the known issue above) or an internal failure.
 
@@ -226,9 +277,82 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Enter the JWT obtained from the /auth/login endpoint to unlock the AI firewall.
+      description: Send the JWT returned by POST /auth/login in the Authorization header, as Bearer followed by the token.
+
+  responses:
+    TooManyRequests:
+      description: >
+        Rate limit exceeded. Every route shares a global limit of 100 requests per IP every
+        15 minutes (code TOO_MANY_REQUESTS). /auth/login also allows only 5 attempts per IP
+        every 5 minutes (code AUTH_FLOOD_DETECTED), and /ai/chat only 10 prompts per IP per
+        minute (code LLM_COMPUTE_LIMIT_EXCEEDED). The counters live in the memory of each API
+        instance, so replicas do not share them (tracked in issue #65).
+      headers:
+        Retry-After:
+          description: Seconds until the client can send requests again.
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
 
   schemas:
+    User:
+      type: object
+      description: Public view of a user. The password hash is never included.
+      required:
+        - id
+        - name
+        - email
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Lucas Rivaldo"
+        email:
+          type: string
+          format: email
+          example: "lucas@example.com"
+
+    Error:
+      type: object
+      description: >
+        Error envelope shared by the REST routes. Clients should branch on error.code;
+        error.message is human-readable text, currently a mix of Portuguese and English.
+      required:
+        - error
+      properties:
+        error:
+          type: object
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              example: TOO_MANY_REQUESTS
+            message:
+              type: string
+            details:
+              description: >
+                Extra context. Validation failures list each failing field, and a rejected JWT
+                carries the verification error. Some 500 responses put the internal error
+                message here (tracked in issue #39).
+              oneOf:
+                - type: string
+                - type: array
+                  items:
+                    type: object
+                    properties:
+                      field:
+                        type: string
+                        example: body.email
+                      message:
+                        type: string
+
     UserRegistrationPayload:
       type: object
       required:
