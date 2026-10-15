@@ -27,6 +27,10 @@ const envSchema = z.object({
   RABBIT_HOST: z.string().default('localhost'),
   RABBIT_PORT: port.default(5672),
 
+  // RabbitMQ has no default account: the broker's built-in guest user is never used.
+  RABBIT_USER: z.string().refine((user) => user !== 'guest', 'must not be the default guest account'),
+  RABBIT_PASSWORD: z.string(),
+
   // AI chat: the defaults point to a local Ollama server, which ignores the key.
   OPENAI_BASE_URL: z.url().default('http://localhost:11434/v1'),
   OPENAI_API_KEY: z.string().default('local-ollama-free-key-maestro'),
