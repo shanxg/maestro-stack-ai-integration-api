@@ -482,3 +482,38 @@ Classic tokens only offer broad scopes, and CRED-01 assumed `repo` was the minim
 **Evidence:**
 
 - Commit `9112edd` — `package.json`, `package-lock.json`, `jest.config.ts`.
+
+---
+
+## 🔵 [CONT-02] Unpinned images in `docker-compose.yml` and no `securityContext` in the Kubernetes deployment
+
+**Date:** 2026-10-15
+
+**Detected by:** Author (backlog item 3.08, issue #63)
+
+**Severity:** Low
+
+**References:** CWE-250, OWASP A02:2025, A03:2025
+
+**Finding:**
+
+`docker-compose.yml` pulled `postgres:latest` and `redis:latest`, so the first `docker compose up` after a new major release would run a different major version; a new PostgreSQL major cannot open the previous data directory. `k8s/deployment.yaml` set no `securityContext`, so the cluster did not enforce a non-root user, did not block privilege escalation or Linux capabilities, and left the root filesystem writable. The `USER node` instruction from CONT-01 was the only control, and it lived in the image, not in the deployment.
+
+**Root cause:**
+
+CONT-01 hardened the `Dockerfile` only; the compose file and the Kubernetes manifest were not reviewed in the same pass.
+
+**Remediation applied:**
+
+- `docker-compose.yml` pins the majors already in use: `postgres:18`, `redis:8` and `rabbitmq:3.13-management`.
+- `k8s/deployment.yaml` adds a Pod `securityContext` (`runAsNonRoot`, `runAsUser`/`runAsGroup` 1000, `seccompProfile: RuntimeDefault`) and a container `securityContext` (`allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true`, `capabilities.drop: ["ALL"]`).
+
+**Regression test:**
+
+- `docker compose up -d` recreated the three containers on the pinned tags; PostgreSQL 18.6 reopened the existing data directory and the `users` table.
+- No cluster was available, so the manifest was checked by parsing it (both `securityContext` blocks sit at the expected paths) and by running `maestro-api:v1` with the equivalent flags (`--read-only --cap-drop ALL --security-opt no-new-privileges --user 1000:1000`) on the compose network: the API connected to PostgreSQL and RabbitMQ, answered `401` on `GET /users`, and `touch` in `/app` and `/tmp` failed with `Read-only file system`.
+
+**Evidence:**
+
+- Commit `6b811bb` — `docker-compose.yml`.
+- Commit `f9a18b3` — `k8s/deployment.yaml`.
