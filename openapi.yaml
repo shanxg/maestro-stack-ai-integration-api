@@ -23,8 +23,8 @@ paths:
       description: >
         Checks the credentials against the bcrypt hash stored in PostgreSQL and returns
         a JWT that expires in 1 hour. Unknown emails and wrong passwords get the same 401
-        response body (CWE-204). Known issue: an unknown email skips the bcrypt comparison,
-        so the faster response still reveals which accounts exist (CWE-208, tracked in issue #40).
+        response body (CWE-204), and an unknown email is also compared against a dummy bcrypt
+        hash with the same cost, so the response time does not reveal which accounts exist (CWE-208).
       security: []
       requestBody:
         required: true
@@ -57,15 +57,26 @@ paths:
                     type: string
                     description: Signed JWT, valid for 1 hour, with the claims id, user, email and role.
         '400':
-          description: The username or password field is missing or blank.
+          description: >
+            The username or password field is missing, blank or not a string (for example, a number).
+            Each failing field is listed in error.details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error:
+                  code: VALIDATION_FAILURE
+                  message: "Falha na validação dos dados de entrada."
+                  details:
+                    - field: body.username
+                      message: "O e-mail (username) é obrigatório e precisa ser um texto."
         '401':
           description: Invalid credentials. Unknown emails and wrong passwords get this same response.
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '500':
-          description: >
-            Internal failure while checking the credentials. Known issue: a username that is
-            not a string (for example, a number) also ends here instead of 400 (tracked in issue #40).
+          description: Internal failure while checking the credentials.
 
   /users:
     get:
