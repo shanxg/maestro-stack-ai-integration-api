@@ -67,13 +67,15 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     // Step G: Call next() to pass the request to the controller.
     return next();
     
-  } catch (error: any) {
+  } catch {
     // Step H: Immediately reject tokens that were altered or have expired.
+    // The verification error (for example "invalid signature" or "jwt expired") is NOT sent:
+    // telling the caller which check failed helps an attacker tune forged tokens (CWE-209).
+    // Every rejected token gets the same response.
     return res.status(401).json({
       error: {
         code: 'INVALID_TOKEN',
-        message: 'Token inválido ou expirado',
-        details: error.message
+        message: 'Token inválido ou expirado'
       }
     });
   }

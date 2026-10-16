@@ -843,3 +843,51 @@ One method served two kinds of input: untrusted passwords from the API and trust
 
 - Commit `cb0a619` — `src/services/UserService.ts`, `src/controllers/UserController.ts`, `src/services/EventBrokerService.ts`, `src/worker-deprecated.ts`, `src/services/UserService.spec.ts`, `tests/eventBroker.spec.ts`, `tests/userRoutes.spec.ts`.
 - Issue #41.
+
+---
+
+## 🔵 [ERR-01] Internal error messages and stack traces reached API clients
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 1.06, issue #39; the malformed JSON case was found while fixing it)
+
+**Severity:** Low
+
+**References:** CWE-209, OWASP A10:2025, OWASP API8:2023
+
+**Finding:**
+
+Error responses carried internal information:
+
+- The three `UserController` routes (`GET /users`, `GET /users/{id}` and `POST /api/v1/users`) answered `500` with `error.details` set to the caught error's message, in every environment. A PostgreSQL, Redis or bcrypt failure could reach the client as the library's own text, such as a connection error that names the database address.
+- `authMiddleware` put the `jsonwebtoken` error in the `401` body (`invalid signature`, `jwt expired`, `jwt malformed`), telling the caller which check rejected a forged token.
+- A request body that `express.json()` could not parse fell through to Express's default error handler. Whenever `NODE_ENV` was not `production`, it answered with an HTML page holding the full stack trace and the server's file paths (`...\node_modules\body-parser\...`).
+- Every route built its own `500`, with different messages, one of them in English.
+
+**Root cause:**
+
+The API had no central error handling. Each handler caught its own errors and decided what to send, and nothing replaced Express's default handler for errors raised before a route ran.
+
+**Remediation applied:**
+
+- `src/middlewares/errorHandler.ts`, registered last in `createApp`, answers every error with the shared envelope `{ error: { code, message } }`. Unexpected errors are logged in full on the server and answered with a fixed `500 INTERNAL_SERVER_ERROR` message, without details. Bodies that `express.json()` rejects keep their 4xx status, with code `INVALID_REQUEST_BODY` and a fixed message.
+- `src/errors/AppError.ts` is the class for expected failures, with a status, a code and a message written for the client. `POST /api/v1/users` now throws `AppError(503, 'SERVICE_UNAVAILABLE', ...)` when the broker refuses the event, instead of answering `500`.
+- The `try/catch` blocks that built `500` responses were removed from `UserController`, `AIController` and the login route, because Express 5 forwards rejected promises to the error handler. `validateMiddleware` passes errors that are not validation failures on with `next(error)`.
+- `authMiddleware` answers every rejected token with the same `401 INVALID_TOKEN` body, without `details`.
+- `openapi.yaml` documents `error.details` as validation-only, points the REST `500` responses to a shared `InternalError` response, adds `503` to `POST /api/v1/users` and describes `INVALID_REQUEST_BODY` on the routes that take a JSON body.
+- GraphQL errors are formatted by Apollo Server and were not changed here.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › `UserController routes -> return a generic 500 without the internal error message`: the service fails on each route with an error that carries a database address; the body must contain neither that text nor `details`, and the server log must still receive the error. Against the previous code it failed with `Received: "connect ECONNREFUSED 10.0.0.5:5432 (pg_integrated)"`.
+- `tests/userRoutes.spec.ts` › `GET /users -> returns 401 without the JWT verification error`: a token signed with another secret. Against the previous code it failed with `Received: "invalid signature"`.
+- `tests/userRoutes.spec.ts` › `POST /api/v1/users -> returns 400 in JSON, without a stack trace, for a malformed body`. Against the previous code it failed with `Received string: "text/html; charset=utf-8"`.
+- `tests/userRoutes.spec.ts` › `POST /api/v1/users -> returns 503 when the broker refuses the event`. Against the previous code it failed with `Expected: 503` and `Received: 500`.
+- `npx tsc --noEmit` passes; `npm test` passes (5 suites, 40 tests).
+
+**Evidence:**
+
+- Commit `2ef400a` — `src/errors/AppError.ts`, `src/middlewares/errorHandler.ts`, `src/app.ts`, `src/controllers/UserController.ts`, `src/controllers/AIController.ts`, `src/middlewares/authMiddleware.ts`, `src/middlewares/validateMiddleware.ts`, `tests/userRoutes.spec.ts`.
+- Commit `7beb733` — `openapi.yaml`.
+- Issue #39.

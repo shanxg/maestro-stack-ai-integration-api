@@ -31,6 +31,7 @@ import { Redis } from 'ioredis'; // Client for the shared rate-limit counters
 import { authMiddleware } from './middlewares/authMiddleware.js';
 import { validateMiddleware } from './middlewares/validateMiddleware.js';
 import { RedisRateLimitStore } from './middlewares/redisRateLimitStore.js';
+import { errorHandler } from './middlewares/errorHandler.js'; // Central JSON error responses (CWE-209)
 import { createUserSchema, listUsersSchema } from './schemas/userSchema.js';
 import { loginSchema } from './schemas/authSchema.js';
 import { env, settings } from './config.js'; // Validated environment and fixed limits (also loads .env)
@@ -207,59 +208,50 @@ export async function createApp(customUserService?: any) {
   // Swapped hard-coded static validation for a secure adaptive Bcrypt verification 
   // loop checking real persistent user account records inside the PostgreSQL cluster.
   app.post('/auth/login', authBruteForceLimiter, validateMiddleware(loginSchema), async (req: Request, res: Response): Promise<void> => {
-    try {
-      // validateMiddleware(loginSchema) has already answered 400 for a missing, blank or non-text
-      // field, so this parse only returns the values, with the e-mail already trimmed.
-      const { username, password } = loginSchema.shape.body.parse(req.body);
+    // No try/catch here: Express 5 sends a rejected promise (for example, the database lookup
+    // failing) to the central errorHandler, which logs it and answers a generic 500.
+    // validateMiddleware(loginSchema) has already answered 400 for a missing, blank or non-text
+    // field, so this parse only returns the values, with the e-mail already trimmed.
+    const { username, password } = loginSchema.shape.body.parse(req.body);
 
-      console.log(`🔑 [Auth] Intercepting authentication token request for address: ${username}`);
+    console.log(`🔑 [Auth] Intercepting authentication token request for address: ${username}`);
 
-      // Locate the account entity using the unique email record pointer mapping
-      const userRecord = await userService.getUserByEmail(username);
+    // Locate the account entity using the unique email record pointer mapping
+    const userRecord = await userService.getUserByEmail(username);
 
-      // CRYPTOGRAPHIC VERIFICATION: bcrypt always runs, against the dummy hash when the account
-      // does not exist, so unknown e-mails and wrong passwords take the same time (CWE-208).
-      const isPasswordValid = await bcrypt.compare(password, userRecord?.password ?? dummyPasswordHash);
+    // CRYPTOGRAPHIC VERIFICATION: bcrypt always runs, against the dummy hash when the account
+    // does not exist, so unknown e-mails and wrong passwords take the same time (CWE-208).
+    const isPasswordValid = await bcrypt.compare(password, userRecord?.password ?? dummyPasswordHash);
 
-      // SECURITY POLICY: Unknown e-mails and wrong passwords get the same generic 401 response,
-      // so the response body does not reveal which accounts exist either (CWE-204).
-      if (!userRecord?.password || !isPasswordValid) {
-        res.status(401).json({
-          error: {
-            code: 'UNAUTHORIZED_ACCESS',
-            message: 'Credenciais inválidas. Verifique o usuário e a senha inseridos.'
-          }
-        });
-        return;
-      }
-
-      // Assemble the session payload context by embedding user parameters
-      const sessionPayload = { 
-        id: userRecord.id, 
-        user: userRecord.name, 
-        email: userRecord.email,
-        role: 'USER' // Enforce application role hierarchy assignment mapping
-      };
-
-      // Sign the final cryptographic token
-      const token = jwt.sign(
-        sessionPayload, 
-        JWT_SECRET, 
-        { expiresIn: settings.jwtExpiresIn } // Token lifetime lives in src/config.ts
-      );
-
-      console.log(`✅ [Auth] Handshake verified successfully. JWT token issued for user ID: ${userRecord.id}`);
-      res.status(200).json({ token });
-
-    } catch (error) {
-      console.error('❌ AppSec exception intercepted inside login controller lifecycle:', error);
-      res.status(500).json({
+    // SECURITY POLICY: Unknown e-mails and wrong passwords get the same generic 401 response,
+    // so the response body does not reveal which accounts exist either (CWE-204).
+    if (!userRecord?.password || !isPasswordValid) {
+      res.status(401).json({
         error: {
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Operational failure while processing authentication parameters.'
+          code: 'UNAUTHORIZED_ACCESS',
+          message: 'Credenciais inválidas. Verifique o usuário e a senha inseridos.'
         }
       });
+      return;
     }
+
+    // Assemble the session payload context by embedding user parameters
+    const sessionPayload = {
+      id: userRecord.id,
+      user: userRecord.name,
+      email: userRecord.email,
+      role: 'USER' // Enforce application role hierarchy assignment mapping
+    };
+
+    // Sign the final cryptographic token
+    const token = jwt.sign(
+      sessionPayload,
+      JWT_SECRET,
+      { expiresIn: settings.jwtExpiresIn } // Token lifetime lives in src/config.ts
+    );
+
+    console.log(`✅ [Auth] Handshake verified successfully. JWT token issued for user ID: ${userRecord.id}`);
+    res.status(200).json({ token });
   });
 
   // ==========================================
@@ -338,6 +330,15 @@ export async function createApp(customUserService?: any) {
       }
     });
   });
+
+  // ==========================================
+  // 🧯 CENTRAL ERROR HANDLER (CWE-209)
+  // ==========================================
+  // Registered last, after the 404 handler. When an error is raised, Express skips the
+  // normal middleware and jumps to the first handler with four parameters. Every route
+  // failure, rejected promise and unreadable JSON body ends here and gets the same JSON
+  // envelope, without internal error text (see src/middlewares/errorHandler.ts).
+  app.use(errorHandler);
 
   // ==========================================
   // 🚀 UNIVERSAL HTTP SERVER STARTUP

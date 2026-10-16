@@ -387,6 +387,84 @@ describe('User routes (integration tests)', () => {
     expect(response.body.error.code).toBe('NOT_FOUND');
   });
 
+  // TEST 17: Verify a 500 never echoes the internal error text back to the client (CWE-209).
+  // Condition: The service fails with an error that carries an internal database address on each
+  // UserController route; the client must get the generic envelope, and the log the full error.
+  it('UserController routes -> return a generic 500 without the internal error message', async () => {
+    const internalMessage = 'connect ECONNREFUSED 10.0.0.5:5432 (pg_integrated)';
+    mockUserService.getAllUsers.mockRejectedValueOnce(new Error(internalMessage) as never);
+    mockUserService.getUserById.mockRejectedValueOnce(new Error(internalMessage));
+    mockUserService.hashPassword.mockRejectedValueOnce(new Error(internalMessage));
+
+    // Silence the expected error logs, but keep them to check that the server still records the failure.
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    const responses = [
+      await request(serverTarget).get('/users').set('Authorization', `Bearer ${tokenAdmin}`),
+      await request(serverTarget).get('/users/abc-777').set('Authorization', `Bearer ${tokenAdmin}`),
+      await request(serverTarget)
+        .post('/api/v1/users')
+        .send({ name: 'Lucas Falha', email: 'lucas.falha@maestro.com', password: crypto.randomUUID() })
+    ];
+
+    const loggedErrors = consoleErrorSpy.mock.calls.flat();
+    consoleErrorSpy.mockRestore();
+
+    for (const response of responses) {
+      expect(response.status).toBe(500);
+      expect(response.body.error.code).toBe('INTERNAL_SERVER_ERROR');
+      expect(response.body.error.details).toBeUndefined();
+      expect(JSON.stringify(response.body)).not.toContain('ECONNREFUSED');
+    }
+
+    // The full error is not lost: it reaches the server log, where operators can investigate it.
+    expect(loggedErrors.some((entry) => entry instanceof Error && entry.message === internalMessage)).toBe(true);
+  });
+
+  // TEST 18: Verify a rejected JWT does not reveal which verification check failed (CWE-209).
+  // Condition: Send a token signed with another secret; jsonwebtoken reports "invalid signature".
+  it('GET /users -> returns 401 without the JWT verification error', async () => {
+    const forgedToken = jwt.sign({ id: 'attacker', role: 'USER' }, crypto.randomUUID());
+
+    const response = await request(serverTarget)
+      .get('/users')
+      .set('Authorization', `Bearer ${forgedToken}`);
+
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe('INVALID_TOKEN');
+    expect(response.body.error.details).toBeUndefined();
+    expect(JSON.stringify(response.body)).not.toContain('signature');
+  });
+
+  // TEST 19: Verify a malformed JSON body gets the JSON envelope, not Express's HTML stack trace.
+  // Condition: Outside production, Express's default handler answered this with an HTML page
+  // holding the stack trace and the server's file paths (node_modules/body-parser/...).
+  it('POST /api/v1/users -> returns 400 in JSON, without a stack trace, for a malformed body', async () => {
+    const response = await request(serverTarget)
+      .post('/api/v1/users')
+      .set('Content-Type', 'application/json')
+      .send('{"name": "Lucas", ');
+
+    expect(response.status).toBe(400);
+    expect(response.headers['content-type']).toMatch(/application\/json/);
+    expect(response.body.error.code).toBe('INVALID_REQUEST_BODY');
+    expect(response.text).not.toContain('node_modules');
+  });
+
+  // TEST 20: Verify a broker outage answers 503 with a client-safe message (AppError).
+  // Condition: publishEvent returns false, as it does when the RabbitMQ channel is offline.
+  it('POST /api/v1/users -> returns 503 when the broker refuses the event', async () => {
+    publishEventMock.mockResolvedValueOnce(false);
+
+    const response = await request(serverTarget)
+      .post('/api/v1/users')
+      .send({ name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: crypto.randomUUID() });
+
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe('SERVICE_UNAVAILABLE');
+    expect(response.body.error.details).toBeUndefined();
+  });
+
 });
 
 describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', () => {
