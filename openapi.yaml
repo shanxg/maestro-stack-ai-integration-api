@@ -3,7 +3,7 @@ openapi: 3.0.3
 info:
   title: Project Maestro - Scalable and Secure API
   description: >
-    REST, Server-Sent Events and GraphQL endpoints of the Maestro API: JWT login, user
+    REST and Server-Sent Events endpoints of the Maestro API: JWT login, user
     registration through a RabbitMQ queue, user reads with a Redis cache-aside layer,
     a chat endpoint backed by a local LLM (Ollama) and a real-time event stream.
   version: 1.0.0
@@ -306,43 +306,6 @@ paths:
                 data: {"name":"Lucas Rivaldo","email":"lucas@example.com"}
         '429':
           $ref: '#/components/responses/TooManyRequests'
-
-  /graphql:
-    post:
-      summary: Run a GraphQL query or mutation (Apollo Server)
-      description: >
-        Single endpoint of the GraphQL API. The schema is in src/graphql/schema.graphql and
-        exposes the queries users and user(id) and the mutation createUser(name, email, password).
-        Every operation requires a JWT. Requests must send Content-Type application/json,
-        otherwise Apollo's CSRF prevention blocks them with HTTP 400.
-        Known issue: a missing or invalid JWT returns HTTP 500 with the message
-        "Context creation failed: UNAUTHORIZED: ..." instead of 401 (tracked in issue #38).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - query
-              properties:
-                query:
-                  type: string
-                  example: "{ users { id name email } }"
-                operationName:
-                  type: string
-                variables:
-                  type: object
-                  additionalProperties: true
-      responses:
-        '200':
-          description: The operation ran. Errors thrown by resolvers come back in the errors array, still with HTTP 200.
-        '400':
-          description: Invalid GraphQL request (syntax or schema validation error), or a request blocked by CSRF prevention.
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          description: Missing or invalid JWT (see the known issue above) or an internal failure.
 
 components:
   securitySchemes:
