@@ -323,7 +323,22 @@ export async function createApp(customUserService?: any) {
         }
       }
     }));
-  } 
+  }
+
+  // ==========================================
+  // 🚫 JSON 404 FOR UNKNOWN ROUTES
+  // ==========================================
+  // Registered after every route (GraphQL included). Without it, Express answers unknown
+  // paths with its default HTML page; API clients get the same JSON error envelope instead.
+  app.use((req: Request, res: Response) => {
+    res.status(404).json({
+      error: {
+        code: 'NOT_FOUND',
+        message: 'A rota solicitada não existe nesta API.'
+      }
+    });
+  });
+
   // ==========================================
   // 🚀 UNIVERSAL HTTP SERVER STARTUP
   // ==========================================
