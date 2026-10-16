@@ -42,7 +42,7 @@ import { getRabbitChannel, closeRabbitChannel, QUEUE_NAME } from './queue/rabbit
 import { UserRepository } from './repositories/UserRepository.js';
 import { UserService } from './services/UserService.js';
 import { createUserSchema } from './schemas/userSchema.js';
-import { initializeSocket, broadcastUserCreated, closeSocket } from './graphql/socket-deprecated.js';
+import { initializeSocket, broadcastUserCreated, closeSocket } from './realtime/socket-deprecated.js';
 
 // 📮 EVENT CONTRACT: Action name published by UserController for new registrations.
 export const USER_CREATED_ACTION = 'user_created';

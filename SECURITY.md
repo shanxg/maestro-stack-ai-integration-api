@@ -40,7 +40,7 @@ timeframe and triaged on a best-effort basis.
 
 In scope:
 
-- Source code in `src/` (Express back-end, GraphQL resolvers, services).
+- Source code in `src/` (Express back-end, services).
 - Source code in `frontend/` (Next.js / React).
 - Infrastructure files: `Dockerfile`, `docker-compose.yml`, `k8s/`.
 - CI/CD workflows under `.github/workflows/`.
@@ -63,7 +63,7 @@ Out of scope:
 | :------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Secrets**          | Local `.env` only (never committed). Gitleaks runs locally (pre-commit hook) and in CI on every push and pull request. Only documentation placeholders are allowlisted, so `.env` and `k8s/secret.yaml` are blocked even if force-added. |
 | **Authentication**   | JWT-based. Tokens are signed with a secret loaded from the environment; the API refuses to start without it, and there is no hardcoded fallback.                                                                                         |
-| **Input validation** | Zod schemas on REST user creation, `GET /users` pagination (whole numbers, page size capped at 100) login and the AI chat prompt (1 to 2000 characters), and on the GraphQL `createUser` mutation.                                            |
+| **Input validation** | Zod schemas on REST user creation, `GET /users` pagination (whole numbers, page size capped at 100), login and the AI chat prompt (1 to 2000 characters).                                            |
 | **Redirects**        | Every client-side navigation goes to a fixed internal route (`/login`, `/chat`, `/register`); no route reads a return URL from the request. A future `returnTo` must be checked against an allowlist of relative paths (CWE-601).        |
 | **HTTP hardening**   | Helmet security headers (CSP enforced in production). Rate limiting: 100 req/15 min global, 5 login attempts/5 min per IP and 10 AI prompts/min per account, counted in Redis so every replica shares the limits.                                    |
 | **LLM interaction**  | System prompt and user input sent as separate messages; the model gets no user data and no tools; answers capped at 512 tokens with a 60 s timeout (503 when the model server is unavailable); model output sanitized with DOMPurify before rendering.                                                                                                                          |

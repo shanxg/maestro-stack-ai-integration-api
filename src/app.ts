@@ -3,8 +3,6 @@ import bcrypt from 'bcrypt'; // Slow-stretched password hashing and verification
 // 1. INFRASTRUCTURE AND EXPRESS IMPORTS
 import express, { type Request, type Response } from 'express';
 import jwt from 'jsonwebtoken'; // Sign and issue authentication tokens
-import fs from 'node:fs';       // Native module for reading files from disk
-import path from 'node:path';   // Native module for safely resolving directory paths
 import http from 'node:http';   // Node module for managing network servers
 import crypto from 'node:crypto'; // CSPRNG for the throwaway value behind the dummy login hash
 
@@ -37,14 +35,6 @@ import { loginSchema } from './schemas/authSchema.js';
 import { chatSchema } from './schemas/aiSchema.js';
 import { env, settings, redisConnection } from './config.js'; // Validated environment, fixed limits and the Redis connection (also loads .env)
 
-// 4. GRAPHQL (APOLLO SERVER) IMPORTS
-import { ApolloServer } from '@apollo/server';
-import { expressMiddleware } from '@as-integrations/express5';
-
-// ARCHITECTURAL REMEDIATION - PURGE MODULE-LEVEL SIDE EFFECTS
-// Swapped out the static 'userResolvers' instantiation link for our clean dynamic factory function.
-import { createUserResolvers } from './graphql/userResolvers.js';
-
 // =========================================================================
 // 🔐 CRYPTOGRAPHIC VAULT & ENVIRONMENT VALIDATION (CWE-798)
 // =========================================================================
@@ -69,9 +59,9 @@ export async function createApp(customUserService?: any) {
   // ==========================================
 
   // A. HELMET: Set strict HTTP headers to mitigate clickjacking, sniffing, and XSS.
-  // Disable CSP locally to allow the Apollo Sandbox to run.
-  const helmetOptions = env.NODE_ENV === 'production' ? {} : { contentSecurityPolicy: false };
-  app.use(helmet(helmetOptions));
+  // The Content Security Policy now applies in every environment: it was turned off outside
+  // production only to let the Apollo Sandbox page run, and GraphQL was retired (ADR 0001).
+  app.use(helmet());
 
   // B. CORS: Restrict request origins to traffic from the Next.js frontend.
   app.use(cors({ 
@@ -285,50 +275,14 @@ export async function createApp(customUserService?: any) {
     eventBrokerService.registerSSEClient(req, res);
   });
 
-  // =========================================================================
-  // 🌌 GRAPHQL CONFIGURATION AND INITIALIZATION
-  // =========================================================================
-  const typeDefs = fs.readFileSync(path.resolve('src', 'graphql', 'schema.graphql'), 'utf-8');
-  
-  // Re-use our dynamic resolvers factory from the previous step
-  const dynamicGraphQLResolvers = createUserResolvers(userService);
-  const apolloServer = new ApolloServer({ typeDefs, resolvers: dynamicGraphQLResolvers });
-
-  if (env.NODE_ENV !== 'test') {
-    await apolloServer.start();
-    
-    // APPSEC REMEDIATION - GRAPHQL AUTHENTICATION FIREWALL (CWE-284 / OWASP TOP 10)
-    // We bind a strict context validation loop to the Apollo routing middleware. 
-    // This intercepts inbound graph operations and parses the cryptographic JWT signature 
-    // from the 'Authorization' header block before allowing any query or mutation resolution.
-    app.use('/graphql', expressMiddleware(apolloServer, {
-      context: async ({ req }) => {
-        const authHeader = req.headers.authorization;
-
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-          throw new Error('UNAUTHORIZED: Missing or malformed authentication bearer signature.');
-        }
-
-        const token = authHeader.split(' ')[1];
-        if (!token) {
-          throw new Error('UNAUTHORIZED: Authentication token missing inside packet string.');
-        }
-
-        try {
-          // Decrypt and verify the payload using the secure memory-mapped vault key
-          const decodedIdentity = jwt.verify(token, JWT_SECRET);
-          return { user: decodedIdentity }; // Inject verified session identity into GraphQL context metadata
-        } catch (jwtError) {
-          throw new Error('UNAUTHORIZED: Cryptographic signature verification failed or token expired.');
-        }
-      }
-    }));
-  }
+  // GraphQL was retired (docs/adr/0001-retire-the-graphql-endpoint.md): REST, described by
+  // openapi.yaml, is the single API contract. Every route above must appear in openapi.yaml,
+  // which the inventory test in tests/userRoutes.spec.ts checks.
 
   // ==========================================
   // 🚫 JSON 404 FOR UNKNOWN ROUTES
   // ==========================================
-  // Registered after every route (GraphQL included). Without it, Express answers unknown
+  // Registered after every route. Without it, Express answers unknown
   // paths with its default HTML page; API clients get the same JSON error envelope instead.
   app.use((req: Request, res: Response) => {
     res.status(404).json({
@@ -357,8 +311,7 @@ export async function createApp(customUserService?: any) {
   } else {
     // Listen on 0.0.0.0 to accept Kubernetes traffic.
     server.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 REST API, GraphQL & SSE notifications running securely at http://localhost:${PORT}`);
-    console.log(`🌌 GraphQL Sandbox active at http://localhost:${PORT}/graphql`);
+    console.log(`🚀 REST API & SSE notifications running securely at http://localhost:${PORT}`);
     console.log(`📡 Real-time SSE notifications channel active at http://localhost:${PORT}/events`);
   });
   }

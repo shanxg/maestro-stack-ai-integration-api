@@ -222,6 +222,10 @@ The repository intentionally preserves the core files `socket-deprecated.ts`, `r
 
 _These legacy assets are not wired into the running API. They follow the current message contract and security rules (JWT handshake, CORS allowlist, hashed passwords only), are covered by isolated tests in `tests/userRoutes.spec.ts`, and the worker runs on its own with `npx tsx src/worker-deprecated.ts`. They demonstrate production-ready capabilities in migrating mission-critical applications between Hybrid Cloud (AWS) and fully sovereign localized (On-Premise) data privacy topologies._
 
+### Architecture Decision Records
+
+Decisions that change the shape of the API are recorded in [`docs/adr/`](docs/adr/). [ADR 0001](docs/adr/0001-retire-the-graphql-endpoint.md) retired the GraphQL endpoint that shipped with the first version: no client used it, and keeping two delivery mechanisms in step doubled the surface to secure. REST, described by `openapi.yaml`, is the single API contract, and a test checks that every route the API serves is documented there.
+
 ---
 
 ## ⚖️ Architectural Trade-offs: CAP Theorem Dynamics

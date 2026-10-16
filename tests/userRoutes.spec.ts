@@ -3,7 +3,9 @@ import 'dotenv/config';
 
 // 1. IMPORTS: Bring in Jest utilities, Supertest, and the crypto helpers used to build credentials.
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import http from 'node:http';
+import yaml from 'js-yaml';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { describe, beforeAll, beforeEach, afterAll, it, expect, jest } from '@jest/globals';
@@ -91,7 +93,7 @@ const { env, settings } = await import('../src/config.js');
 // 3. LEGACY BLUEPRINT IMPORTS: The API never imports these modules (see README.md,
 // "Architectural Evolution"). They are loaded here only to test them in isolation.
 const rabbitModule = await import('../src/queue/rabbit-deprecated.js');
-const socketModule = await import('../src/graphql/socket-deprecated.js');
+const socketModule = await import('../src/realtime/socket-deprecated.js');
 const workerModule = await import('../src/worker-deprecated.js');
 
 describe('User routes (integration tests)', () => {
@@ -585,6 +587,77 @@ describe('AI chat route (integration tests)', () => {
 
     const servedB = await sendPrompt(tokenB, 'Primeira pergunta de outra conta');
     expect(servedB.status).toBe(200);
+  });
+
+});
+
+describe('API contract (openapi.yaml)', () => {
+  let serverTarget: http.Server;
+
+  // The parts of openapi.yaml these tests read: each path, its operations and their security.
+  type Operation = { security?: Array<Record<string, string[]>> };
+  type Spec = { security?: Array<Record<string, string[]>>; paths: Record<string, Record<string, Operation>> };
+  const spec = yaml.load(fs.readFileSync('openapi.yaml', 'utf8')) as Spec;
+  const httpMethods = ['get', 'post', 'put', 'patch', 'delete'];
+
+  // Every documented operation as "METHOD /path", with its effective security: the operation's own
+  // list, or the global one when it has none. An empty list (security: []) marks a public route.
+  const documentedOperations = Object.entries(spec.paths).flatMap(([path, operations]) =>
+    Object.entries(operations)
+      .filter(([method]) => httpMethods.includes(method))
+      .map(([method, operation]) => ({
+        method: method.toUpperCase(),
+        path,
+        isProtected: (operation.security ?? spec.security ?? []).length > 0
+      }))
+  );
+
+  // Every route registered on the Express app, as "METHOD /path" in OpenAPI notation (":id" -> "{id}").
+  // createApp() returns the HTTP server; its 'request' listener is the Express app. The OPTIONS
+  // handler for CORS preflights is infrastructure, not an API operation, so it is left out.
+  const registeredRoutes = (server: http.Server): string[] => {
+    type Layer = { route?: { path: string; methods: Record<string, boolean> } };
+    const app = server.listeners('request')[0] as unknown as { router: { stack: Layer[] } };
+    return app.router.stack.flatMap((layer) => {
+      const route = layer.route;
+      if (!route) return [];
+      return Object.keys(route.methods)
+        .filter((method) => httpMethods.includes(method))
+        .map((method) => `${method.toUpperCase()} ${route.path.replace(/:(\w+)/g, '{$1}')}`);
+    });
+  };
+
+  beforeAll(async () => {
+    serverTarget = await createApp();
+  });
+
+  beforeEach(() => {
+    FakeRedis.reset();
+  });
+
+  // TEST 1: Verify every route the app serves is documented, and every documented route exists
+  // (OWASP API9:2023, Improper Inventory Management; ADR 0001).
+  // Condition: The Express route list and the openapi.yaml operations must be the same set, so an
+  // undocumented endpoint (like the retired GraphQL one) cannot be added without updating the spec.
+  it('every Express route is in openapi.yaml and every documented operation is served', () => {
+    const documented = documentedOperations.map(({ method, path }) => `${method} ${path}`).sort();
+
+    expect(registeredRoutes(serverTarget).sort()).toEqual(documented);
+  });
+
+  // TEST 2: Verify every operation documented as protected rejects a request without a token.
+  // Condition: For each operation whose effective security is not empty, call it with no
+  // Authorization header (path parameters filled with a sample value) and expect 401.
+  it('every operation documented as protected answers 401 without a token', async () => {
+    const protectedOperations = documentedOperations.filter((operation) => operation.isProtected);
+    expect(protectedOperations.length).toBeGreaterThan(0);
+
+    for (const { method, path } of protectedOperations) {
+      const url = path.replace(/\{\w+\}/g, 'abc-777');
+      const response = await request(serverTarget)[method.toLowerCase() as 'get' | 'post' | 'put' | 'patch' | 'delete'](url).send({});
+
+      expect({ operation: `${method} ${path}`, status: response.status }).toEqual({ operation: `${method} ${path}`, status: 401 });
+    }
   });
 
 });

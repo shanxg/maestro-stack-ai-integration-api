@@ -82,7 +82,7 @@ describe('UserService (Testes Unitários)', () => {
   });
 
   // TEST 4: Verify a password that looks like a bcrypt hash is still hashed (issue #41, CWE-916).
-  // Condition: An outside caller (the GraphQL mutation) sends a "$2a$04$..." string as the password.
+  // Condition: An outside caller sends a "$2a$04$..." string as the password (the retired GraphQL mutation could).
   it('hashes a password from outside even when it already looks like a bcrypt hash', async () => {
     mockUserRepository.create.mockImplementation(async (user: User) => user);
     const hashLikePassword = (await bcrypt.hash('weak-and-cheap', 4)).replace(/^\$2b\$/, '$2a$');
