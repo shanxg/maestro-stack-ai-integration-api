@@ -8,7 +8,7 @@ import { settings } from '../config.js';
 // 2. SERVICE CLASS: Business rules live here, at the heart of the system.
 // It delegates database operations to the repository.
 export class UserService {
-  // APPSEC CONFIGURATION: bcrypt work factor, shared with UserController through src/config.ts
+  // APPSEC CONFIGURATION: bcrypt work factor from src/config.ts, used by hashPassword() and createUserWithPasswordHash()
   private readonly SALT_ROUNDS = settings.bcryptSaltRounds;
   // DEPENDENCY INJECTION: The constructor does not create the database or repository itself.
   // The caller must provide a repository that implements IUserRepository.
@@ -42,14 +42,25 @@ export class UserService {
     return null;
   }
 
+  /**
+   * 🔐 PASSWORD HASHING (CWE-916):
+   * The only place that turns a plaintext password into a bcrypt hash, with the work factor
+   * from src/config.ts. UserController uses it before publishing a registration to the queue,
+   * so the plaintext never travels through RabbitMQ.
+   */
+  async hashPassword(password: string): Promise<string> {
+    const secureSalt = await bcrypt.genSalt(this.SALT_ROUNDS);
+    return bcrypt.hash(password, secureSalt);
+  }
+
    /**
-   * APPSEC SECURE WORKFLOW - CRYPTOGRAPHIC USER PROVISIONING (CWE-256 / CWE-338)
-   * 
-   * This method secures account creation by enforcing:
+   * APPSEC SECURE WORKFLOW - CRYPTOGRAPHIC USER PROVISIONING (CWE-256 / CWE-338 / CWE-916)
+   *
+   * Entry point for passwords that come from outside the API (the GraphQL mutation):
    * 1. Cryptographically strong UUID generation instead of predictable PRNG.
-   * 2. Slow, adaptive key-stretching password hashing using the Eksblowfish algorithm (bcrypt).
-   * 3. Idempotent encryption check: If the password parameter matches a pre-computed Bcrypt 
-   *    hash fingerprint, it bypasses re-encryption to eliminate double-hashing malfunctions.
+   * 2. The password is ALWAYS hashed with bcrypt, even when it looks like a bcrypt hash.
+   *    A caller could otherwise store a ready-made hash with a weak cost, skip the password
+   *    rules, or have a password that starts with "$2b$" stored as plaintext.
    */
   async createUser(name: string, email: string, password?: string): Promise<User> {
     // Edge-case mitigation: Throw a strict schema error if the authentication string is missing
@@ -57,29 +68,35 @@ export class UserService {
       throw new Error('Crucial validation error: Request payload lacks a functional password string.');
     }
 
-    // APPSEC REMEDIATION: Swap out Math.random() for crypto.randomUUID() to bypass predictable sequence indexing
-    const safeId = crypto.randomUUID();
+    return this.persistUser(name, email, await this.hashPassword(password));
+  }
 
-    let finalPasswordHash = password;
+  /**
+   * 📥 TRUSTED PATH FOR THE REGISTRATION QUEUE:
+   * Used only by the RabbitMQ consumer, whose messages carry the hash that hashPassword()
+   * computed in UserController. As a second check, it accepts only a complete bcrypt hash
+   * with at least the configured work factor, so a forged queue message cannot store
+   * plaintext or a cheap hash.
+   */
+  async createUserWithPasswordHash(name: string, email: string, passwordHash: string): Promise<User> {
+    // A complete bcrypt hash: version, two-digit cost, then 53 characters of salt and digest.
+    const bcryptHashFormat = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
 
-    // BCRYPT HASH REGEX CHECK: Evaluates if the incoming string payload is already stretched.
-    // Standard Bcrypt signatures strictly comply with the following structural layout matching prefix rules: ^\$2[aby]\$.*
-    const isAlreadyHashed = /^\$2[aby]\$/.test(password);
-
-    if (!isAlreadyHashed) {
-      // If the string is raw text (e.g. from GraphQL mutations), apply stretching rules immediately
-      const secureSalt = await bcrypt.genSalt(this.SALT_ROUNDS);
-      finalPasswordHash = await bcrypt.hash(password, secureSalt);
-    } else {
-      console.log(`🔒 [UserService] Pre-computed cryptographic payload detected for: ${email}. Skipping re-encryption layer.`);
+    if (!bcryptHashFormat.test(passwordHash) || bcrypt.getRounds(passwordHash) < this.SALT_ROUNDS) {
+      throw new Error('Rejected registration event: the password is not a bcrypt hash with the configured cost.');
     }
 
-    // Assemble the fortified User model structure with zero exposure of plaintext variables
+    return this.persistUser(name, email, passwordHash);
+  }
+
+  // Assemble the User model with a CSPRNG identifier and save it; the password is always a hash here.
+  private async persistUser(name: string, email: string, passwordHash: string): Promise<User> {
+    // APPSEC REMEDIATION: Swap out Math.random() for crypto.randomUUID() to bypass predictable sequence indexing
     const newUser: User = {
-      id: safeId,
+      id: crypto.randomUUID(),
       name,
       email,
-      password: finalPasswordHash // Safely map the single-hashed payload to the persistence layer
+      password: passwordHash
     };
 
     return this.userRepository.create(newUser);

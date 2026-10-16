@@ -798,3 +798,48 @@ The project had no dynamic scan report. A ZAP API scan, driven by `openapi.yaml`
 - Commit `e46501e` — `src/app.ts`, `tests/userRoutes.spec.ts`.
 - Commit `d92627d` — `docs/security/dast/README.md`, `docs/security/dast/zap-api-scan-2026-10-15-before.md`, `docs/security/dast/zap-api-scan-2026-10-15-after.md`, `SECURITY.md`.
 - Issue #66.
+
+---
+
+## 🟡 [PWD-01] A password shaped like a bcrypt hash was stored without hashing
+
+**Date:** 2026-10-15
+
+**Detected by:** Author (backlog item 1.08, issue #41; the GraphQL validation half of the issue was fixed earlier as VAL-01)
+
+**Severity:** Medium
+
+**References:** CWE-916, CWE-256, OWASP A04:2025
+
+**Finding:**
+
+`UserService.createUser` treated any password matching `/^\$2[aby]\$/` as a ready-made bcrypt hash and stored it without hashing. The shortcut existed for the registration queue: `UserController` hashed the password before publishing the event, and the RabbitMQ consumer called `createUser` with that hash. The GraphQL `createUser` mutation, open to any authenticated user, calls the same method with the password it receives, so a caller could:
+
+- store a hash of their choice with a cheap work factor (for example `$2a$04$...`), far below the configured cost of 12;
+- get around the 8-character password rule, because the 60-character hash of a one-letter password passes it;
+- have a real password that happens to start with `$2b$` stored as plaintext (and then fail to log in with it).
+
+The REST route was not exposed: `UserController` always hashed the input before queueing it.
+
+**Root cause:**
+
+One method served two kinds of input: untrusted passwords from the API and trusted hashes from the queue. It told them apart by the shape of the string, which a caller controls.
+
+**Remediation applied:**
+
+- `UserService.createUser` always runs bcrypt; the regular expression shortcut was removed.
+- `UserService.hashPassword()` is the single place that hashes passwords, with `settings.bcryptSaltRounds`. `UserController` uses it before publishing to the queue, so the plaintext still never travels through RabbitMQ, and its own bcrypt import and work-factor copy were removed.
+- `UserService.createUserWithPasswordHash()` is the trusted path, used only by the queue consumer (`EventBrokerService`) and the deprecated worker. It accepts only a complete bcrypt hash (`^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$`) whose cost, read with `bcrypt.getRounds`, is at least the configured one, so a forged queue message cannot store plaintext or a cheap hash. The full pattern is needed because `bcrypt.getRounds('$2b$12$short')` returns 12 without checking the rest of the string.
+
+**Regression test:**
+
+- `src/services/UserService.spec.ts` › `hashes a password from outside even when it already looks like a bcrypt hash`: `createUser` with a `$2a$04$...` password must store a different value, with the configured cost, that `bcrypt.compare` matches against the input. Against the previous code it failed with `Expected: not "$2a$04$..."`.
+- `src/services/UserService.spec.ts` › `stores a bcrypt hash with the configured cost unchanged through createUserWithPasswordHash` and `rejects plaintext, malformed and low-cost hashes in createUserWithPasswordHash`.
+- `tests/eventBroker.spec.ts` › `passes the queued hash to createUserWithPasswordHash, never to createUser`: a `user_created` message reaches the trusted path and is acknowledged. Against the previous code it failed, because the consumer called `createUser`.
+- `tests/userRoutes.spec.ts`: the deprecated worker tests now expect `createUserWithPasswordHash`, and `POST /api/v1/users` still queues only a bcrypt hash.
+- `npx tsc --noEmit` passes; `npm test` passes (5 suites, 36 tests).
+
+**Evidence:**
+
+- Commit `cb0a619` — `src/services/UserService.ts`, `src/controllers/UserController.ts`, `src/services/EventBrokerService.ts`, `src/worker-deprecated.ts`, `src/services/UserService.spec.ts`, `tests/eventBroker.spec.ts`, `tests/userRoutes.spec.ts`.
+- Issue #41.
