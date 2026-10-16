@@ -1246,3 +1246,43 @@ The short port syntax in Compose binds to all interfaces when no address is give
 - Commit `0eb0aa4` — `docker-compose.yml`, `tests/dockerCompose.spec.ts`.
 - Commit `f6d6ead` — `SECURITY.md`.
 - Issue #119.
+
+---
+
+## 🔵 [CORS-01] Trusted browser origins were hardcoded and not validated
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 2.12, issue #120; found while closing #34 and #35)
+
+**Severity:** Low
+
+**References:** CWE-942
+
+**Finding:**
+
+`settings.allowedOrigins` in `src/config.ts` was a fixed list of four `http://localhost` and `http://127.0.0.1` origins. Since SESSION-01 it drives both the CORS allowlist, with credentials, and the CSRF Origin check. A deployed frontend on any other origin needed a code change, and the quick workaround (widening the list by hand, or reflecting any origin) would undo both protections. Nothing validated the entries: a `*`, a path or a typo would have been accepted.
+
+**Root cause:**
+
+The list was written for local development and kept in the fixed settings, while it depends on the environment the API runs in.
+
+**Remediation applied:**
+
+- `src/config.ts` reads `ALLOWED_ORIGINS`, a comma-separated list validated by Zod at boot: each entry must be a bare `http` or `https` origin, exactly as browsers send the `Origin` header. A wildcard (`*` or a `*.example.com` host), a path, a trailing slash, another scheme or an empty list stops the boot with an error on `ALLOWED_ORIGINS`. Without the variable, only the local development origins are trusted, so a deployment that forgets it fails closed.
+- CORS in `src/app.ts`, `src/middlewares/originCheck.ts` and the WebSocket blueprint read `env.ALLOWED_ORIGINS`.
+- `.env.example` and `k8s/deployment.yaml` show how to set the deployed frontend's origin; `SECURITY.md` and the `ForeignOrigin` response in `openapi.yaml` name the variable.
+
+**Regression test:**
+
+- `tests/config.spec.ts` › `reads ALLOWED_ORIGINS as a list of origins`. Against the previous code it failed with `Received: undefined`.
+- `tests/config.spec.ts` › `rejects wildcards, paths, trailing slashes, other schemes and an empty list in ALLOWED_ORIGINS`. Against the previous code the schema accepted them (`"success": true`).
+- `tests/config.spec.ts` › `trusts only the local development origins when ALLOWED_ORIGINS is not set`. Against the previous code it failed with `Received: undefined`.
+- Manual boot check through `src/config.ts`: `ALLOWED_ORIGINS='*'` stops the boot with the validation message, a custom origin is accepted, and no variable gives the local list.
+- `npx tsc --noEmit` passes; `npm test` passes (7 suites, 68 tests).
+
+**Evidence:**
+
+- Commit `04515c7` — `src/config.ts`, `src/app.ts`, `src/middlewares/originCheck.ts`, `src/realtime/socket-deprecated.ts`, `src/services/EventBrokerService.ts`, `tests/config.spec.ts`, `tests/userRoutes.spec.ts`.
+- Commit `17b0776` — `.env.example`, `k8s/deployment.yaml`, `SECURITY.md`, `openapi.yaml`.
+- Issue #120.
