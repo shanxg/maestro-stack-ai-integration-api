@@ -155,10 +155,6 @@ curl.exe -i -X POST http://127.0.0 -H "Authorization: Bearer YOUR_TOKEN_HERE" -H
 
 ---
 
-Você tem razão, o comando estava complicado demais. Aqui está o texto puro em markdown. Copie e cole no VSCode, logo antes da linha `## ☁️ Architectural Evolution: Hybrid Cloud Foundations` (linha 149).
-
----
-
 ## 🛠️ Developer Tooling: Backlog Synchronization Pipeline
 
 To keep the security remediation backlog auditable, the repository includes a Python tool that keeps a local Excel plan, GitHub Issues and the GitHub Projects board in sync.
