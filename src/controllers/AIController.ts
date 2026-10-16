@@ -1,6 +1,7 @@
-// 1. IMPORTS: Bring in Express types and the AI service.
+// 1. IMPORTS: Bring in Express types, the AI service and the request schema.
 import type { Request, Response } from 'express';
 import { AIService } from '../services/AIService.js';
+import { chatSchema } from '../schemas/aiSchema.js';
 
 export class AIController {
   // Dependency injection: the controller receives the AI service instance in its constructor.
@@ -8,30 +9,22 @@ export class AIController {
 
   /**
   * 📡 POST /ai/chat:
-  * Read and validate the prompt in the request body,
-  * then pass it to the local model for processing.
+  * Read the validated prompt from the request body,
+  * then pass it to the configured model for processing.
    */
   async chat(req: Request, res: Response): Promise<Response> {
-    // No try/catch: if the local Ollama service fails or cannot be reached, the rejected promise
-    // goes to the central errorHandler (src/middlewares/errorHandler.ts), which logs the failure
-    // and answers the same generic 500 as every other route (CWE-209).
-    const { prompt } = req.body;
+    // No try/catch: if the model server fails or cannot be reached, the rejected promise
+    // goes to the central errorHandler (src/middlewares/errorHandler.ts). AIService turns an
+    // unreachable or timed-out server into a 503 AppError; anything else becomes a generic 500.
 
-    // 📝 VALIDATION: Check that the prompt exists in the JSON payload.
-    // If the prompt field is missing, immediately return HTTP 400 (Bad Request).
-    if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
-      return res.status(400).json({
-        error: {
-          code: 'VALIDATION_FAILURE',
-          message: 'O campo "prompt" é obrigatório e precisa ser uma string de texto válida.'
-        }
-      });
-    }
+    // validateMiddleware(chatSchema) has already answered 400 for a missing, blank, non-text or
+    // oversized prompt, so this parse only returns the value, with surrounding spaces removed.
+    const { prompt } = chatSchema.shape.body.parse(req.body);
 
-    // Pass trimmed text to the service layer.
-    const aiResponse = await this.aiService.generateResponse(prompt.trim());
+    // Pass the validated text to the service layer.
+    const aiResponse = await this.aiService.generateResponse(prompt);
 
-    // Return the response processed by Llama 3 with HTTP 200 (OK).
+    // Return the response processed by the model with HTTP 200 (OK).
     return res.status(200).json({
       response: aiResponse
     });

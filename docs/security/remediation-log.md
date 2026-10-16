@@ -891,3 +891,52 @@ The API had no central error handling. Each handler caught its own errors and de
 - Commit `2ef400a` — `src/errors/AppError.ts`, `src/middlewares/errorHandler.ts`, `src/app.ts`, `src/controllers/UserController.ts`, `src/controllers/AIController.ts`, `src/middlewares/authMiddleware.ts`, `src/middlewares/validateMiddleware.ts`, `tests/userRoutes.spec.ts`.
 - Commit `7beb733` — `openapi.yaml`.
 - Issue #39.
+
+---
+
+## 🟡 [LLM-01] `/ai/chat` had no bound on prompt size, answer length or waiting time
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 1.10, issue #43)
+
+**Severity:** Medium
+
+**References:** CWE-770, OWASP API4:2023, OWASP LLM10:2025
+
+**Finding:**
+
+Every call to `POST /ai/chat` costs model compute (a local Llama 3 on CPU by default, or a paid cloud model), and none of it was bounded:
+
+- the `prompt` field accepted text of any size, up to the 100 KB JSON body limit;
+- the request to the model set no `max_tokens`, so one prompt could keep the model generating a long answer;
+- the OpenAI SDK waited up to its default of 10 minutes for the model server and retried twice, so one failing request could hold a connection for about half an hour while adding load to a server that was already struggling;
+- the rate limit (10 prompts per minute) counted per IP address: users behind one shared IP blocked each other, while one account could multiply its budget by switching networks;
+- the model name was hardcoded as `llama3`, and an unreachable model server answered a generic `500`.
+
+**Root cause:**
+
+The AI route was written for a single local user and relied only on the per-IP rate limit; the model call used the SDK's defaults.
+
+**Remediation applied:**
+
+- `src/schemas/aiSchema.ts`: `chatSchema` trims the prompt and accepts 1 to `settings.aiChat.maxPromptLength` (2000) characters. The route runs `authMiddleware` → limiter → `validateMiddleware(chatSchema)` → handler.
+- `src/services/AIService.ts`: every call sends `max_tokens` (`settings.aiChat.maxTokens`, 512), a timeout of `settings.aiChat.timeoutMs` (60 s, enforced by the SDK with an `AbortController`) and `maxRetries: 0`. An unreachable or timed-out model server becomes `503 AI_SERVICE_UNAVAILABLE` through `AppError` (ERR-01); the connection details stay in the server log.
+- `src/app.ts`: the AI limiter keys on the user id from the verified JWT (`user:<id>`), with the IP only as a fallback for a token without an id.
+- `src/config.ts`: `OPENAI_MODEL` (default `llama3`) selects the model; `.env.example` lists it.
+- `README.md` documents the LLM security boundaries: the model receives only the fixed system prompt and the user's own prompt, with no user data and no tools (LLM01:2025 and LLM02:2025), and the answer must be displayed as text (LLM05:2025, issue #42). The migration snippet now uses the real variable names.
+- `openapi.yaml` documents the prompt length, the answer and time ceilings, the `503` response and the per-account limit.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › `POST /ai/chat -> returns 400 for a prompt over the length limit, without calling the model`. Against the previous code it failed with `Expected: 400` and `Received: 200`.
+- `tests/userRoutes.spec.ts` › `POST /ai/chat -> sends max_tokens, the configured model, a timeout and no retries to the model`. Against the previous code it failed with `Expected path: "max_tokens"` and `Received path: []`.
+- `tests/userRoutes.spec.ts` › `POST /ai/chat -> returns 503 when the model server cannot be reached`. Against the previous code it failed with `Expected: 503` and `Received: 500`.
+- `tests/userRoutes.spec.ts` › `POST /ai/chat -> limits each account separately, even from the same IP`. Against the previous code it failed with `Expected: 200` and `Received: 429` for the second account.
+- `npx tsc --noEmit` passes; `npm test` passes (5 suites, 44 tests).
+
+**Evidence:**
+
+- Commit `304e6ef` — `src/config.ts`, `src/schemas/aiSchema.ts`, `src/services/AIService.ts`, `src/controllers/AIController.ts`, `src/app.ts`, `tests/userRoutes.spec.ts`, `.env.example`.
+- Commit `b809786` — `openapi.yaml`, `README.md`.
+- Issue #43.

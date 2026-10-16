@@ -34,6 +34,8 @@ const envSchema = z.object({
   // AI chat: the defaults point to a local Ollama server, which ignores the key.
   OPENAI_BASE_URL: z.url().default('http://localhost:11434/v1'),
   OPENAI_API_KEY: z.string().default('local-ollama-free-key-maestro'),
+  // Model name sent to the server above (for example "gpt-4o-mini" on the OpenAI platform).
+  OPENAI_MODEL: z.string().default('llama3'),
 });
 
 // An empty value in .env (for example "PORT=") counts as not set:
@@ -65,6 +67,13 @@ export const settings = {
   rateLimits: {
     global: { windowMs: 15 * 60 * 1000, max: 100 }, // per client IP
     login: { windowMs: 5 * 60 * 1000, max: 5 },
-    aiChat: { windowMs: 60 * 1000, max: 10 },
+    aiChat: { windowMs: 60 * 1000, max: 10 }, // per account (the user id in the JWT)
+  },
+  // POST /ai/chat bounds (CWE-770 / OWASP LLM10:2025): every prompt costs model compute,
+  // so the input, the output and the waiting time all have a ceiling.
+  aiChat: {
+    maxPromptLength: 2000, // characters accepted in the prompt field
+    maxTokens: 512,        // longest answer the model may generate (max_tokens)
+    timeoutMs: 60_000,     // a local model on CPU is slow; past this the API answers 503
   },
 } as const;

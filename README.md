@@ -43,6 +43,15 @@ To meet microservices decoupling standards, the user registration process operat
 - **The Consumer (Background Worker):** An autonomous worker thread continuously polls the RabbitMQ `user_events` queue. Once an event is intercepted, it decodes the binary buffer, processes the domain logic, and safely persists the record into the **PostgreSQL** cluster.
 - **The Stream (Server-Sent Events):** Upon successful database write, the worker hands the data to the `EventBrokerService`'s internal SSE bridge. The server loops through the active pool of connection channels (`GET /events`) and pushes the notification to all active browser interfaces via a memory-efficient, unidirectional text-event stream, causing the front-end to reactively paint the updated state without repetitive HTTP polling loops.
 
+### 5. LLM Security Boundaries (OWASP Top 10 for LLM Applications 2025)
+
+`POST /ai/chat` treats the model as an untrusted, expensive dependency:
+
+- **Unbounded consumption (LLM10:2025):** the prompt is limited to 2000 characters (Zod), the answer to 512 tokens (`max_tokens`), and the model server gets 60 seconds, without automatic retries, before the API answers `503 AI_SERVICE_UNAVAILABLE`. Each account may send 10 prompts per minute. The values live in `src/config.ts` (`settings.aiChat` and `settings.rateLimits.aiChat`).
+- **Prompt injection (LLM01:2025):** a user can always try to override the system prompt. The model holds no data and has no tools or function calls, so a successful injection can only change the text of the answer returned to that same user.
+- **Sensitive information disclosure (LLM02:2025):** the model receives only the fixed system prompt and the user's own prompt; no database records, other users' data or secrets are sent to it.
+- **Improper output handling (LLM05:2025):** the answer is untrusted text and must be displayed as text, never as HTML (the chat page is tracked in issue #42).
+
 ---
 
 ## 🐳 Local Infrastructure Setup & Backing Services
@@ -88,15 +97,15 @@ Migrating the application from the localized offline **Llama 3** engine to enter
    Modify the backing service environment variables inside your root `.env` file to swap the internal routing hooks:
 
    ```env
-   # ❌ LOCAL OFFLINE TOPOLOGY
+   # ❌ LOCAL OFFLINE TOPOLOGY (the defaults in src/config.ts)
    # OPENAI_API_KEY="ollama"
-   # AI_MODEL_NAME="llama3"
-   # AI_BASE_URL="http://localhost:11434/v1"
+   # OPENAI_MODEL="llama3"
+   # OPENAI_BASE_URL="http://localhost:11434/v1"
 
    # 🚀 ENTERPRISE CLOUD PRODUCTION TOPOLOGY
    OPENAI_API_KEY="sk-proj-YOUR_AUTHENTICATED_PRODUCTION_KEY_HERE"
-   AI_MODEL_NAME="gpt-4o" # Or any target production model layer
-   AI_BASE_URL="https://openai.com"
+   OPENAI_MODEL="gpt-4o" # Or any target production model layer
+   OPENAI_BASE_URL="https://api.openai.com/v1"
    ```
 
 3. **Hot-Reload the Ecosystem:**
