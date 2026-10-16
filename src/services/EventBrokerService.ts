@@ -131,11 +131,11 @@ export class EventBrokerService {
             const { name, email, password } = parsedPayload.data;
             
             // APPSEC REMEDIATION - EVENT CONSUMPTION INGESTION ACTIVATION
-            // Invoke the domain service instance directly by cascading the hashed password token downstream.
-            // Our updated UserService layer will notice the hash signature and prevent double-hashing natively.
+            // The message carries the bcrypt hash computed by UserController, so it goes through the
+            // trusted path that stores a verified hash as is (createUser would hash it a second time).
             if (this.userService) {
               console.log(`📥 [Worker] Intercepted 'user_created' event from queue. Persistent entity write initiated for: ${email}`);
-              await this.userService.createUser(name, email, password);
+              await this.userService.createUserWithPasswordHash(name, email, password);
               console.log(`💾 [Worker] Event transaction successfully resolved and persisted inside PostgreSQL cluster.`);
             } else {
               console.warn('⚠️ [Worker] Execution blocked: UserService container reference is unmapped inside the broker instance.');

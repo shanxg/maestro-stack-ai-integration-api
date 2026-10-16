@@ -2,10 +2,14 @@
 import { describe, it, expect, jest } from '@jest/globals';
 
 // 🐇 AMQPLIB MOCK: Record the connection options instead of opening a TCP connection.
-// The fake channel answers the two calls the broker makes after connecting.
+// The fake channel answers the calls the broker makes after connecting, and consume()
+// keeps the message handler so a test can deliver a message to it.
+type MessageHandler = (message: { content: Buffer } | null) => Promise<void>;
 const fakeChannel = {
   assertQueue: jest.fn(async () => ({})),
-  consume: jest.fn(async () => ({ consumerTag: 'test-consumer' }))
+  consume: jest.fn(async (_queue: string, _onMessage: MessageHandler) => ({ consumerTag: 'test-consumer' })),
+  ack: jest.fn(),
+  nack: jest.fn()
 };
 const connectMock = jest.fn(async (_options: unknown) => ({ createChannel: async () => fakeChannel }));
 jest.unstable_mockModule('amqplib', () => {
@@ -39,6 +43,36 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
 
     const logged = logSpy.mock.calls.flat().join(' ');
     expect(logged).not.toContain(env.RABBIT_PASSWORD);
+
+    logSpy.mockRestore();
+  });
+
+  // TEST 2: Verify the queue consumer stores the queued hash through the trusted path (issue #41).
+  // Condition: A 'user_created' message carries the bcrypt hash computed by UserController.
+  it('passes the queued hash to createUserWithPasswordHash, never to createUser', async () => {
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const userService = {
+      createUser: jest.fn(),
+      createUserWithPasswordHash: jest.fn(async () => ({ id: 'queued-id' }))
+    };
+    fakeChannel.consume.mockClear();
+
+    new EventBrokerService(userService as never);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const onMessage = fakeChannel.consume.mock.calls[0]?.[1] as MessageHandler;
+    const passwordHash = '$2b$12$' + 'a'.repeat(53);
+    const message = {
+      content: Buffer.from(JSON.stringify({
+        action: 'user_created',
+        data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: passwordHash }
+      }))
+    };
+    await onMessage(message);
+
+    expect(userService.createUserWithPasswordHash).toHaveBeenCalledWith('Lucas Fila', 'lucas.fila@maestro.com', passwordHash);
+    expect(userService.createUser).not.toHaveBeenCalled();
+    expect(fakeChannel.ack).toHaveBeenCalledWith(message);
 
     logSpy.mockRestore();
   });

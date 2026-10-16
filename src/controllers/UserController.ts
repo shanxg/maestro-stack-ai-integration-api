@@ -6,9 +6,6 @@ import { EventBrokerService } from '../services/EventBrokerService.js';
 import { listUsersSchema } from '../schemas/userSchema.js';
 import { env, settings } from '../config.js';
 
-// Import industrial-grade security library for password hashing
-import bcrypt from 'bcrypt';
-
 // Redis client library
 import { Redis } from 'ioredis'; 
 const redis = new Redis({
@@ -19,9 +16,6 @@ const redis = new Redis({
 // 2. CONTROLLER CLASS: This layer is the API's gateway.
 // It receives requests, calls the service, and returns an HTTP response.
 export class UserController {
-  // APPSEC CONFIGURATION: bcrypt work factor, shared with UserService through src/config.ts
-  private readonly SALT_ROUNDS = settings.bcryptSaltRounds;
-  
   // DEPENDENCY INJECTION: The controller does not create the service itself.
   // INVERSION OF CONTROL (IoC): The constructor receives live instances from the main factory.
   // The caller provides ready-to-use UserService and EventBrokerService instances.
@@ -156,8 +150,8 @@ export class UserController {
       // =========================================================================
       // We compute the cryptographic hash stream right at the edge application interface.
       // This guarantees that cleartext password strings never transit or leak inside internal message brokers.
-      const secureSalt = await bcrypt.genSalt(this.SALT_ROUNDS);
-      const cryptographicPasswordHash = await bcrypt.hash(password, secureSalt);
+      // UserService.hashPassword is the single place that hashes passwords (work factor in src/config.ts).
+      const cryptographicPasswordHash = await this.userService.hashPassword(password);
 
       // Construct a safe data container containing the stretched and hashed variable payload
       const securedUserPayload = {

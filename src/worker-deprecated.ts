@@ -51,7 +51,7 @@ export const USER_CREATED_ACTION = 'user_created';
 const SOCKET_PORT = Number(process.env.WORKER_SOCKET_PORT) || 3002;
 
 // Only the method the worker needs; tests can pass a lightweight mock.
-type UserCreator = Pick<UserService, 'createUser'>;
+type UserCreator = Pick<UserService, 'createUserWithPasswordHash'>;
 
 /**
  * 📥 MESSAGE HANDLER (processUserEventMessage):
@@ -92,9 +92,10 @@ export async function processUserEventMessage(
       }
 
       // Step D (REAL PERSISTENCE): Trigger the business layer to generate the CSPRNG ID and
-      // save the user. The password is the bcrypt hash computed by the API controller.
+      // save the user. The password is the bcrypt hash computed by the API controller, so it
+      // goes through the trusted path that verifies the hash instead of hashing it again.
       const { name, email, password } = parsed.data;
-      const newUser = await userService.createUser(name, email, password);
+      const newUser = await userService.createUserWithPasswordHash(name, email, password);
       console.log(`✅ User successfully created in the database via the queue! New ID: ${newUser.id}`);
 
       // 🔥 (REAL-TIME WEBSOCKET TRIGGER): Push the sanitized user to every authenticated client.

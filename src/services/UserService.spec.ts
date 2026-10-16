@@ -5,6 +5,8 @@ import { jest } from '@jest/globals';
 import { UserService } from './UserService.js';
 import { type IUserRepository } from '../interfaces/IUserRepository.js';
 import { type User } from '../models/User.js';
+import bcrypt from 'bcrypt';
+import { settings } from '../config.js';
 
 // 2. BUILD THE MOCK: Create an object with the same methods as the real repository.
 // Use 'jest.fn()' to create spy functions that can be controlled and inspected in tests.
@@ -77,5 +79,42 @@ describe('UserService (Testes Unitários)', () => {
     expect(result?.id).toBe('123');
     expect(result?.name).toBe('User Target');
     expect(mockUserRepository.findById).toHaveBeenCalledWith('123');
+  });
+
+  // TEST 4: Verify a password that looks like a bcrypt hash is still hashed (issue #41, CWE-916).
+  // Condition: An outside caller (the GraphQL mutation) sends a "$2a$04$..." string as the password.
+  it('hashes a password from outside even when it already looks like a bcrypt hash', async () => {
+    mockUserRepository.create.mockImplementation(async (user: User) => user);
+    const hashLikePassword = (await bcrypt.hash('weak-and-cheap', 4)).replace(/^\$2b\$/, '$2a$');
+
+    await userService.createUser('Lucas Hash', 'lucas.hash@maestro.com', hashLikePassword);
+
+    const stored = mockUserRepository.create.mock.calls[0]?.[0].password as string;
+    expect(stored).not.toBe(hashLikePassword);
+    expect(bcrypt.getRounds(stored)).toBe(settings.bcryptSaltRounds);
+    expect(await bcrypt.compare(hashLikePassword, stored)).toBe(true);
+  });
+
+  // TEST 5: Verify the queue's trusted path stores a hash made by hashPassword() unchanged.
+  // Condition: The hash has the configured cost, as UserController produces it.
+  it('stores a bcrypt hash with the configured cost unchanged through createUserWithPasswordHash', async () => {
+    mockUserRepository.create.mockImplementation(async (user: User) => user);
+    const passwordHash = await userService.hashPassword('queued-password');
+
+    await userService.createUserWithPasswordHash('Lucas Fila', 'lucas.fila@maestro.com', passwordHash);
+
+    expect(mockUserRepository.create.mock.calls[0]?.[0].password).toBe(passwordHash);
+  });
+
+  // TEST 6: Verify the trusted path refuses anything that is not a full hash with the configured cost.
+  // Condition: Plaintext, a truncated hash and a cost-4 hash never reach the repository.
+  it('rejects plaintext, malformed and low-cost hashes in createUserWithPasswordHash', async () => {
+    const lowCostHash = await bcrypt.hash('weak-and-cheap', 4);
+    const rejected = ['plain-text-password', '$2b$12$short', lowCostHash];
+
+    for (const value of rejected) {
+      await expect(userService.createUserWithPasswordHash('Lucas Fila', 'lucas.fila@maestro.com', value)).rejects.toThrow();
+    }
+    expect(mockUserRepository.create).not.toHaveBeenCalled();
   });
 });

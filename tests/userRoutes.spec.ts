@@ -91,6 +91,8 @@ describe('User routes (integration tests)', () => {
 
   // 🏭 SERVICE MOCK: Create a simple object with the same methods as the real UserService.
   const mockUserService = {
+    // Same contract as UserService.hashPassword; cost factor 4 keeps the suite fast.
+    hashPassword: jest.fn<(password: string) => Promise<string>>(async (password) => bcrypt.hash(password, 4)),
     createUser: jest.fn().mockResolvedValue({
       id: 'mock-id-123',
       name: 'Lucas Integrado',
@@ -447,7 +449,7 @@ describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', (
     const emitSpy = jest.spyOn(socketModule.io as NonNullable<typeof socketModule.io>, 'emit');
 
     const passwordHash = await bcrypt.hash(crypto.randomUUID(), 4);
-    const createUser = jest.fn<(name: string, email: string, password?: string) => Promise<User>>(async (name, email) => ({
+    const createUserWithPasswordHash = jest.fn<(name: string, email: string, passwordHash: string) => Promise<User>>(async (name, email) => ({
       id: 'queued-id',
       name,
       email,
@@ -461,9 +463,9 @@ describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', (
       }))
     };
 
-    await workerModule.processUserEventMessage(channel as never, message as never, { createUser } as never);
+    await workerModule.processUserEventMessage(channel as never, message as never, { createUserWithPasswordHash } as never);
 
-    expect(createUser).toHaveBeenCalledWith('Lucas Fila', 'lucas.fila@maestro.com', passwordHash);
+    expect(createUserWithPasswordHash).toHaveBeenCalledWith('Lucas Fila', 'lucas.fila@maestro.com', passwordHash);
     expect(emitSpy).toHaveBeenCalledWith('user_created', {
       id: 'queued-id',
       name: 'Lucas Fila',
@@ -476,7 +478,7 @@ describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', (
   // TEST 5: Verify the worker rejects poison messages without persisting them.
   // Condition: A broken JSON and a payload that fails the Zod schema are both nacked, not requeued.
   it('worker-deprecated -> rejects malformed or invalid events without persisting them', async () => {
-    const createUser = jest.fn();
+    const createUserWithPasswordHash = jest.fn();
     const channel = { ack: jest.fn(), nack: jest.fn() };
     const brokenJson = { content: Buffer.from('{not-json') };
     const invalidUser = {
@@ -486,10 +488,10 @@ describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', (
       }))
     };
 
-    await workerModule.processUserEventMessage(channel as never, brokenJson as never, { createUser } as never);
-    await workerModule.processUserEventMessage(channel as never, invalidUser as never, { createUser } as never);
+    await workerModule.processUserEventMessage(channel as never, brokenJson as never, { createUserWithPasswordHash } as never);
+    await workerModule.processUserEventMessage(channel as never, invalidUser as never, { createUserWithPasswordHash } as never);
 
-    expect(createUser).not.toHaveBeenCalled();
+    expect(createUserWithPasswordHash).not.toHaveBeenCalled();
     expect(channel.nack).toHaveBeenNthCalledWith(1, brokenJson, false, false);
     expect(channel.nack).toHaveBeenNthCalledWith(2, invalidUser, false, false);
     expect(channel.ack).not.toHaveBeenCalled();
