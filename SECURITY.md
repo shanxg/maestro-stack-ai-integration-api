@@ -68,6 +68,7 @@ Out of scope:
 | **HTTP hardening**   | Helmet security headers (CSP enforced in production). Rate limiting: 100 req/15 min global, 5 login attempts/5 min and 10 AI prompts/min per IP, counted in Redis so every replica shares the limits.                                    |
 | **LLM interaction**  | System prompt and user input sent as separate messages; model output sanitized with DOMPurify before rendering.                                                                                                                          |
 | **Dependencies**     | Dependabot alerts and weekly version-update PRs (npm, GitHub Actions, Docker).                                                                                                                                                           |
+| **DAST**             | OWASP ZAP API scan of the local API, driven by `openapi.yaml` (passive and active rules); reports and triage in `docs/security/dast/`. Not run in CI.                                                                                    |
 | **Container**        | Runs as the unprivileged `node` user; Node 24 LTS base image; dependencies installed from the lockfile (`npm ci`). An allowlist `.dockerignore` keeps `.env`, `node_modules` and `frontend/` out of the build context.                   |
 | **Infrastructure**   | Kubernetes manifests do not carry secrets — `secret.yaml` is gitignored and only `secret.yaml.example` is committed.                                                                                                                     |
 
