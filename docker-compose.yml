@@ -15,8 +15,14 @@ services:
   redis:
     image: redis:8
     container_name: redis_integrated
+    environment:
+      # Read from .env, like the PostgreSQL and RabbitMQ passwords (CRED-06). Compose stops if it is unset.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env (see .env.example)}
+    # requirepass turns on authentication. "$$" makes Compose pass a literal "$", so the shell inside
+    # the container expands the variable: the value is not written in this file or in the command line.
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\""]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379" # Host only: other machines on the network cannot reach Redis
 
   # 3. Messaging service
   rabbitmq:
