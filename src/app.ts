@@ -2,7 +2,6 @@ import bcrypt from 'bcrypt'; // Slow-stretched password hashing and verification
 
 // 1. INFRASTRUCTURE AND EXPRESS IMPORTS
 import express, { type Request, type Response } from 'express';
-import jwt from 'jsonwebtoken'; // Sign and issue authentication tokens
 import http from 'node:http';   // Node module for managing network servers
 import crypto from 'node:crypto'; // CSPRNG for the throwaway value behind the dummy login hash
 
@@ -34,13 +33,8 @@ import { createUserSchema, listUsersSchema } from './schemas/userSchema.js';
 import { loginSchema } from './schemas/authSchema.js';
 import { chatSchema } from './schemas/aiSchema.js';
 import { env, settings, redisConnection } from './config.js'; // Validated environment, fixed limits and the Redis connection (also loads .env)
-
-// =========================================================================
-// 🔐 CRYPTOGRAPHIC VAULT & ENVIRONMENT VALIDATION (CWE-798)
-// =========================================================================
-// src/config.ts validates the environment when it is imported and stops the boot
-// if JWT_SECRET is missing or too short, so the API never runs in an insecure state.
-const JWT_SECRET = env.JWT_SECRET;
+// Signs the login tokens. src/config.ts stops the boot if JWT_SECRET is missing or too short (CWE-798).
+import { signAccessToken } from './auth/accessToken.js';
 
 /**
  * 🏭 APPLICATION FACTORY (createApp):
@@ -239,12 +233,9 @@ export async function createApp(customUserService?: any) {
       role: 'USER' // Enforce application role hierarchy assignment mapping
     };
 
-    // Sign the final cryptographic token
-    const token = jwt.sign(
-      sessionPayload,
-      JWT_SECRET,
-      { expiresIn: settings.jwtExpiresIn } // Token lifetime lives in src/config.ts
-    );
+    // Sign the final cryptographic token: HS256 with the issuer, audience and lifetime from
+    // settings.jwt, the same rules authMiddleware checks (src/auth/accessToken.ts).
+    const token = signAccessToken(sessionPayload);
 
     console.log(`✅ [Auth] Handshake verified successfully. JWT token issued for user ID: ${userRecord.id}`);
     res.status(200).json({ token });

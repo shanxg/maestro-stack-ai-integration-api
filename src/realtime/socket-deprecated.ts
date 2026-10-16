@@ -14,7 +14,7 @@
 
 // 1. IMPORTS: Node HTTP types, the JWT library, and the Socket.io engine.
 import type http from 'node:http';
-import jwt from 'jsonwebtoken';
+import { verifyAccessToken } from '../auth/accessToken.js'; // The same token rules as authMiddleware
 import { Server, type Socket } from 'socket.io';
 import { type User } from '../models/User.js';
 
@@ -37,7 +37,7 @@ export let io: Server | undefined;
  * 'connection' event, mirroring the JWT check of authMiddleware.
  * Clients send the token with: io(url, { auth: { token } }).
  */
-export function createHandshakeAuthenticator(secret: string) {
+export function createHandshakeAuthenticator() {
   return (socket: Socket, next: (err?: Error) => void): void => {
     // Step A: Read the token from the handshake 'auth' payload.
     const token = socket.handshake.auth?.token;
@@ -51,7 +51,7 @@ export function createHandshakeAuthenticator(secret: string) {
     try {
       // Step C: Verify the signature and expiry, then keep the identity on the socket
       // so event handlers can apply per-user rules later.
-      socket.data.user = jwt.verify(token, secret);
+      socket.data.user = verifyAccessToken(token);
       next();
     } catch {
       // Step D: Altered or expired tokens never reach the 'connection' event.
@@ -62,11 +62,8 @@ export function createHandshakeAuthenticator(secret: string) {
 
 // 2. INITIALIZATION FUNCTION: The worker calls this once to start the engine.
 export function initializeSocket(server: http.Server): Server {
-  // 🛡️ FAIL CLOSED: Refuse to start without the signing secret, as app.ts does (CWE-798).
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error('JWT_SECRET is not set');
-  }
+  // 🛡️ FAIL CLOSED: src/auth/accessToken.ts loads src/config.ts, which stops the process
+  // without a valid JWT_SECRET (CWE-798), so there is no secret check left to do here.
 
   io = new Server(server, {
     cors: {
@@ -77,7 +74,7 @@ export function initializeSocket(server: http.Server): Server {
   });
 
   // Register the JWT firewall before any connection listener.
-  io.use(createHandshakeAuthenticator(secret));
+  io.use(createHandshakeAuthenticator());
 
   // Configure the default real-time connection listeners.
   io.on('connection', (socket) => {

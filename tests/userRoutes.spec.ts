@@ -89,6 +89,7 @@ jest.unstable_mockModule('amqplib', () => {
 // Dynamic imports run after the mocks above are registered (ESM has no mock hoisting).
 const { createApp } = await import('../src/app.js');
 const { env, settings } = await import('../src/config.js');
+const { signAccessToken } = await import('../src/auth/accessToken.js');
 
 // 3. LEGACY BLUEPRINT IMPORTS: The API never imports these modules (see README.md,
 // "Architectural Evolution"). They are loaded here only to test them in isolation.
@@ -494,16 +495,56 @@ describe('User routes (integration tests)', () => {
     }
   });
 
+  // TEST 22: Verify the login issues HS256 tokens that name this API as issuer and audience (CWE-347).
+  // Condition: Log in with the test account and decode the token header and claims (without verifying).
+  it('POST /auth/login -> issues an HS256 token with the issuer and audience from src/config.ts', async () => {
+    const response = await request(serverTarget)
+      .post('/auth/login')
+      .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+
+    expect(response.status).toBe(200);
+    const decoded = jwt.decode(response.body.token, { complete: true }) as jwt.Jwt;
+    const claims = decoded.payload as jwt.JwtPayload;
+
+    expect(claims.iss).toBeDefined();
+    expect(decoded.header.alg).toBe(settings.jwt.algorithm);
+    expect(claims).toMatchObject({ iss: settings.jwt.issuer, aud: settings.jwt.audience, id: 'admin-id' });
+  });
+
+  // TEST 23: Verify a token signed with the API secret is still rejected when it breaks a pinned rule.
+  // Condition: Three tokens signed with the real JWT_SECRET: one without issuer and audience (as every
+  // token was before), one with another HMAC algorithm (HS512) and one issued for another audience.
+  it('GET /users -> returns 401 for tokens without iss/aud, with another algorithm or for another audience', async () => {
+    const claims = { id: 'admin-id', user: 'Maestro Admin', email: ADMIN_EMAIL, role: 'USER' };
+
+    // Send the token to a protected route and expect the generic 401, naming the case on failure.
+    const expectRejected = async (name: string, token: string) => {
+      const response = await request(serverTarget).get('/users').set('Authorization', `Bearer ${token}`);
+
+      expect({ token: name, status: response.status, code: response.body.error?.code })
+        .toEqual({ token: name, status: 401, code: 'INVALID_TOKEN' });
+    };
+
+    // Signed like every token was before this fix: the right secret, but no issuer or audience.
+    await expectRejected('withoutIssuerOrAudience', jwt.sign(claims, env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '5m' }));
+
+    // Right secret, issuer and audience, but an algorithm other than the pinned HS256.
+    const pinned = { issuer: settings.jwt.issuer, audience: settings.jwt.audience, expiresIn: '5m' } as const;
+    await expectRejected('anotherAlgorithm', jwt.sign(claims, env.JWT_SECRET, { ...pinned, algorithm: 'HS512' }));
+
+    // Right secret, algorithm and issuer, but issued for another service.
+    await expectRejected('anotherAudience', jwt.sign(claims, env.JWT_SECRET, { ...pinned, algorithm: 'HS256', audience: 'another-service' }));
+  });
+
 });
 
 describe('AI chat route (integration tests)', () => {
   let serverTarget: http.Server;
 
-  // 🔑 TEST ACCOUNTS: tokens signed with the test JWT secret and the same claims that
+  // 🔑 TEST ACCOUNTS: tokens signed by src/auth/accessToken.ts with the same claims that
   // POST /auth/login issues, so each test can act as a different account.
-  const secret = process.env.JWT_SECRET as string;
   const tokenFor = (id: string) =>
-    jwt.sign({ id, user: `User ${id}`, email: `${id}@maestro.test`, role: 'USER' }, secret, { expiresIn: '1h' });
+    signAccessToken({ id, user: `User ${id}`, email: `${id}@maestro.test`, role: 'USER' });
 
   // Send one prompt to /ai/chat as the given account.
   const sendPrompt = (token: string, prompt: unknown) =>
@@ -663,7 +704,6 @@ describe('API contract (openapi.yaml)', () => {
 });
 
 describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', () => {
-  const secret = process.env.JWT_SECRET as string;
 
   afterAll(async () => {
     // Release the fake broker connection and close the WebSocket server opened in TEST 4.
@@ -695,7 +735,7 @@ describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', (
   // TEST 3: Verify the WebSocket handshake firewall mirrors the REST JWT checks.
   // Condition: A missing token and a forged token are refused; a signed token is accepted.
   it('socket-deprecated -> accepts only handshakes that carry a valid JWT', () => {
-    const authenticate = socketModule.createHandshakeAuthenticator(secret);
+    const authenticate = socketModule.createHandshakeAuthenticator();
 
     const missingNext = jest.fn();
     authenticate({ handshake: { auth: {} }, data: {} } as never, missingNext);
@@ -706,7 +746,7 @@ describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', (
     expect(forgedNext).toHaveBeenCalledWith(expect.any(Error));
 
     const validSocket = {
-      handshake: { auth: { token: jwt.sign({ id: 'admin-id' }, secret, { expiresIn: '1m' }) } },
+      handshake: { auth: { token: signAccessToken({ id: 'admin-id', user: 'Maestro Admin', email: 'admin@maestro.test', role: 'USER' }) } },
       data: {} as { user?: unknown }
     };
     const validNext = jest.fn();

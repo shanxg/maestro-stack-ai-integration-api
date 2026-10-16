@@ -1,21 +1,16 @@
-// 1. IMPORTS: Bring in Express lifecycle types, the JWT library and the validated config.
+// 1. IMPORTS: Bring in Express lifecycle types and the shared token verification.
 import { type Request, type Response, type NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-import { env } from '../config.js';
+import { verifyAccessToken, type AccessTokenClaims } from '../auth/accessToken.js';
 
 // 2. GLOBAL INTERFACE EXTENSION: Tell TypeScript that Express's Request
-// object has a '.user' property for storing decoded token data.
+// object has a '.user' property holding the verified token claims (id, user, email, role).
 declare global {
   namespace Express {
     interface Request {
-      user?: any;
+      user?: AccessTokenClaims;
     }
   }
 }
-
-// 🔥 SAFE SECRET RETRIEVAL: src/config.ts refuses to start without a valid JWT_SECRET,
-// so there is no hardcoded fallback that would let anyone forge tokens (CWE-798).
-const JWT_SECRET = env.JWT_SECRET;
 
 // 3. MIDDLEWARE: Acts as a firewall before the request reaches the controller.
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
@@ -58,8 +53,9 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
   }
 
   try {
-    // Step E: Verify the signature cryptographically using the secret key.
-    const payload = jwt.verify(token, JWT_SECRET);
+    // Step E: Verify the token with the shared rules (src/auth/accessToken.ts): HS256 only,
+    // this API's issuer and audience, a valid signature and an unexpired "exp" (CWE-347).
+    const payload = verifyAccessToken(token);
     
     // Step F: Attach the decoded payload to req.user.
     req.user = payload;
@@ -68,7 +64,8 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     return next();
     
   } catch {
-    // Step H: Immediately reject tokens that were altered or have expired.
+    // Step H: Immediately reject tokens that were altered, have expired, use another algorithm,
+    // or were not issued by and for this API.
     // The verification error (for example "invalid signature" or "jwt expired") is NOT sent:
     // telling the caller which check failed helps an attacker tune forged tokens (CWE-209).
     // Every rejected token gets the same response.

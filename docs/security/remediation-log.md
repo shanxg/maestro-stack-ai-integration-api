@@ -1025,3 +1025,44 @@ GraphQL was added in the first version to evaluate a flexible query interface, a
 - Commit `9f1be1e` — `Dockerfile`, `.dockerignore`, `k8s/deployment.yaml`, `k8s/service.yaml`, `.github/dependabot.yml`.
 - Commit `fe2a4d1` — `docs/adr/0001-retire-the-graphql-endpoint.md`, `README.md`, `openapi.yaml`, `SECURITY.md`.
 - Issue #45.
+
+---
+
+## 🟡 [AUTH-02] JWTs were verified without a pinned algorithm, issuer or audience
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 1.05, issue #38)
+
+**Severity:** Medium
+
+**References:** CWE-347, OWASP API2:2023
+
+**Finding:**
+
+`POST /auth/login` signed tokens with only a lifetime (`jwt.sign(payload, secret, { expiresIn })`), and every consumer verified them on its own with `jwt.verify(token, secret)`: `authMiddleware`, the Apollo context of the GraphQL endpoint and the WebSocket blueprint. No call pinned the algorithm, the issuer or the audience, so any HMAC algorithm signed with the secret (HS384, HS512) was accepted, and so was any token signed with the same secret for another purpose or service. The duplicated verification had already drifted: on `/graphql` a missing or invalid token answered `500` instead of `401` (reported in issue #38).
+
+**Root cause:**
+
+Token handling was written inline at each entry point instead of in one module, so the verification rules were whatever each call happened to pass to `jsonwebtoken`.
+
+**Remediation applied:**
+
+- `src/auth/accessToken.ts` is the single place that signs and verifies access tokens. `signAccessToken()` signs with `settings.jwt` (HS256, issuer and audience `maestro-api`, 1 hour); `verifyAccessToken()` accepts only `algorithms: ['HS256']` with that issuer and audience (and, as before, a valid signature and an unexpired `exp`), and rejects a token whose payload is not a JSON object.
+- `POST /auth/login` signs through it; `authMiddleware` and the WebSocket blueprint (`src/realtime/socket-deprecated.ts`) verify through it, so every entry point applies the same rules and answers the same generic `401 INVALID_TOKEN` (ERR-01). `req.user` is typed with the token claims.
+- The GraphQL half of the issue (the `500` on a missing token) no longer applies: the endpoint was retired (SURFACE-01, ADR 0001).
+- Tokens issued before this change carry no issuer or audience and are rejected; users log in again (tokens lasted at most 1 hour anyway).
+- `openapi.yaml` and `SECURITY.md` describe the pinned rules.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › `POST /auth/login -> issues an HS256 token with the issuer and audience from src/config.ts`. Against the previous code it failed with `Received: undefined` for the `iss` claim.
+- `tests/userRoutes.spec.ts` › `GET /users -> returns 401 for tokens without iss/aud, with another algorithm or for another audience`: three tokens signed with the real secret. Against the previous code the first one (no issuer or audience, like every token issued before) was accepted with `200` instead of `401`.
+- The AI chat and WebSocket tests now sign their tokens with `signAccessToken()`.
+- `npx tsc --noEmit` passes; `npm test` passes (5 suites, 49 tests).
+
+**Evidence:**
+
+- Commit `4158a01` — `src/auth/accessToken.ts`, `src/app.ts`, `src/config.ts`, `src/middlewares/authMiddleware.ts`, `src/realtime/socket-deprecated.ts`, `tests/userRoutes.spec.ts`.
+- Commit `0532e62` — `openapi.yaml`, `SECURITY.md`.
+- Issue #38.

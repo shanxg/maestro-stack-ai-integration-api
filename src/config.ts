@@ -71,7 +71,14 @@ export const redisConnection = {
 
 // Fixed values that do not change between environments.
 export const settings = {
-  jwtExpiresIn: '1h',
+  // Access tokens (src/auth/accessToken.ts, CWE-347): one algorithm, plus the issuer and audience
+  // claims, all checked on every request. The API issues its tokens for itself, so both name it.
+  jwt: {
+    algorithm: 'HS256',
+    issuer: 'maestro-api',
+    audience: 'maestro-api',
+    expiresIn: '1h',
+  },
   bcryptSaltRounds: 12,
   usersCacheTtlSeconds: 60,
   // GET /users page size: the default when no limit is sent, and the largest accepted.
