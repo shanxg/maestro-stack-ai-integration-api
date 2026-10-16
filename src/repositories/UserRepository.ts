@@ -42,10 +42,20 @@ constructor() {
       );
     `;
     
+    // ACCESS LEVEL (issue #36): every account has a role, USER unless an administrator promotes it
+    // directly in the database. ADD COLUMN IF NOT EXISTS upgrades tables created before the column
+    // existed, and the CHECK constraint allows only the two roles the API knows.
+    const addRoleColumnQuery = `
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS role VARCHAR(10) NOT NULL DEFAULT 'USER'
+        CHECK (role IN ('USER', 'ADMIN'));
+    `;
+
     // Acquire a single dedicated thread connection to run the core DDL transaction safely
     const client = await this.pool.connect();
     try {
       await client.query(createTableQuery);
+      await client.query(addRoleColumnQuery);
       console.log('✅ [PostgreSQL] The "users" table is validated and active in the database.');
     } catch (error) {
       console.error('❌ Critical error while initializing the table in PostgreSQL:', error);
@@ -111,7 +121,8 @@ constructor() {
     try {
       const queryConfig: pg.QueryConfig = {
         name: 'fetch-user-by-email',
-        text: 'SELECT id, name, email, password FROM users WHERE email = \$1;',
+        // The login needs the hash to check the password and the role to put in the JWT.
+        text: 'SELECT id, name, email, password, role FROM users WHERE email = \$1;',
         values: [email]
       };
 

@@ -1,6 +1,7 @@
 // 1. IMPORTS: The JWT library and the validated secret and fixed token settings.
 import jwt from 'jsonwebtoken';
 import { env, settings } from '../config.js';
+import { type UserRole } from '../models/User.js';
 
 /**
  * 🔐 ACCESS TOKENS (CWE-347): the single place that signs and verifies the API's JWTs.
@@ -23,7 +24,7 @@ export type AccessTokenClaims = {
   id: string;
   user: string;
   email: string;
-  role: string;
+  role: UserRole;
 };
 
 // Sign an access token for a user who has just proved their password.

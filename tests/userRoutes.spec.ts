@@ -100,6 +100,8 @@ const workerModule = await import('../src/worker-deprecated.js');
 describe('User routes (integration tests)', () => {
   let serverTarget: http.Server;
   let tokenAdmin: string;
+  let tokenRegular: string;
+  const REGULAR_ID = 'regular-id';
 
   // 🔑 TEST ACCOUNT: POST /auth/login now looks the account up by e-mail and compares the
   // password with bcrypt. The password is random per run and its hash is built in beforeAll.
@@ -124,10 +126,10 @@ describe('User routes (integration tests)', () => {
       if (id === '999') return null;
       return { id, name: 'Lucas Buscado', email: 'lucas@busca.com' };
     }),
-    // Return the stored hash only for the test administrator, like the PostgreSQL lookup would.
+    // Return the stored hash and the ADMIN role only for the test administrator, like the PostgreSQL lookup would.
     getUserByEmail: jest.fn<(email: string) => Promise<User | null>>(async (email) => {
       if (email !== ADMIN_EMAIL) return null;
-      return { id: 'admin-id', name: 'Maestro Admin', email, password: adminPasswordHash };
+      return { id: 'admin-id', name: 'Maestro Admin', email, password: adminPasswordHash, role: 'ADMIN' };
     })
   };
 
@@ -144,6 +146,9 @@ describe('User routes (integration tests)', () => {
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
     tokenAdmin = response.body.token;
+
+    // A regular account (role USER), signed like the login signs tokens.
+    tokenRegular = signAccessToken({ id: REGULAR_ID, user: 'Lucas Comum', email: 'comum@maestro.test', role: 'USER' });
   });
 
   // The rate-limit counters live in the shared fake Redis; start every test from zero.
@@ -534,6 +539,56 @@ describe('User routes (integration tests)', () => {
 
     // Right secret, algorithm and issuer, but issued for another service.
     await expectRejected('anotherAudience', jwt.sign(claims, env.JWT_SECRET, { ...pinned, algorithm: 'HS256', audience: 'another-service' }));
+  });
+
+  // TEST 24: Verify a regular account cannot list every user (BFLA, OWASP API5:2023, issue #36).
+  // Condition: A USER token gets 403 before the cache or the service is touched; the admin still gets the list.
+  it('GET /users -> returns 403 for a regular account and 200 for an admin', async () => {
+    mockUserService.getAllUsers.mockClear();
+
+    const regular = await request(serverTarget).get('/users').set('Authorization', `Bearer ${tokenRegular}`);
+    expect(regular.status).toBe(403);
+    expect(regular.body.error.code).toBe('FORBIDDEN');
+    expect(mockUserService.getAllUsers).not.toHaveBeenCalled();
+
+    const admin = await request(serverTarget).get('/users').set('Authorization', `Bearer ${tokenAdmin}`);
+    expect(admin.status).toBe(200);
+  });
+
+  // TEST 25: Verify a regular account reads only its own record (BOLA, OWASP API1:2023, issue #36).
+  // Condition: Another account's id gets 403 without a lookup, existing or not; its own id gets 200.
+  it('GET /users/:id -> returns 403 for another account and 200 for its own id', async () => {
+    mockUserService.getUserById.mockClear();
+
+    for (const otherId of ['abc-777', '999']) {
+      const other = await request(serverTarget).get(`/users/${otherId}`).set('Authorization', `Bearer ${tokenRegular}`);
+      expect({ id: otherId, status: other.status, code: other.body.error?.code }).toEqual({ id: otherId, status: 403, code: 'FORBIDDEN' });
+    }
+    expect(mockUserService.getUserById).not.toHaveBeenCalled();
+
+    const own = await request(serverTarget).get(`/users/${REGULAR_ID}`).set('Authorization', `Bearer ${tokenRegular}`);
+    expect(own.status).toBe(200);
+    expect(own.body.id).toBe(REGULAR_ID);
+  });
+
+  // TEST 26: Verify GET /users/me returns the caller's own record, with the id taken from the token.
+  // Condition: A regular account calls /users/me and must get its own record, not a user whose id is "me".
+  it('GET /users/me -> returns the record of the account in the token', async () => {
+    const response = await request(serverTarget).get('/users/me').set('Authorization', `Bearer ${tokenRegular}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.id).toBe(REGULAR_ID);
+  });
+
+  // TEST 27: Verify the login copies the account's role from the database into the token.
+  // Condition: The test administrator's record has role ADMIN, so its token must say ADMIN.
+  it('POST /auth/login -> puts the account role from the database in the token', async () => {
+    const response = await request(serverTarget)
+      .post('/auth/login')
+      .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+
+    expect(response.status).toBe(200);
+    expect(jwt.decode(response.body.token)).toMatchObject({ id: 'admin-id', role: 'ADMIN' });
   });
 
 });
