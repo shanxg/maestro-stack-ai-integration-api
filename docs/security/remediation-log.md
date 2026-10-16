@@ -1066,3 +1066,47 @@ Token handling was written inline at each entry point instead of in one module, 
 - Commit `4158a01` — `src/auth/accessToken.ts`, `src/app.ts`, `src/config.ts`, `src/middlewares/authMiddleware.ts`, `src/realtime/socket-deprecated.ts`, `tests/userRoutes.spec.ts`.
 - Commit `0532e62` — `openapi.yaml`, `SECURITY.md`.
 - Issue #38.
+
+---
+
+## 🔴 [AUTHZ-01] Any logged-in account could list every user and read any record by id
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 1.03, issue #36)
+
+**Severity:** High
+
+**References:** CWE-639, OWASP API1:2023, OWASP API5:2023
+
+**Finding:**
+
+The user routes checked only that a token was valid. Any account, including one created a minute earlier through the public registration route, could call `GET /users` to page through every account (id, name and e-mail; up to 100 per request) and `GET /users/{id}` to read any record by its id. The login always wrote `role: 'USER'` into the token and no route read it, so there was no way to tell an administrator from a regular user. The GraphQL `users`, `user` and `createUser` operations had the same gap; that endpoint was retired in SURFACE-01.
+
+**Root cause:**
+
+Authentication was treated as authorization: the routes had no rule about who may see which record, and the data model had no access level.
+
+**Remediation applied:**
+
+- The `users` table has a `role` column (`USER` by default, `ADMIN` allowed by a `CHECK` constraint), added at startup with `ADD COLUMN IF NOT EXISTS`, so existing tables are upgraded and the statement is safe to run on every boot. The login reads the role and copies it into the JWT (AUTH-02 keeps the token verified).
+- `src/auth/userPolicy.ts` holds the rules as pure functions over the verified claims: `canListUsers()` (admins only, OWASP API5:2023) and `canReadUser()` (the owner or an admin, OWASP API1:2023). There is no generic RBAC.
+- `GET /users` answers `403 FORBIDDEN` to a non-admin before the Redis cache is read, so a cached page is never served to an account that may not see it. `GET /users/{id}` answers `403` to another account's id before the database lookup, so the answer is the same whether that account exists or not.
+- New `GET /users/me` reads the caller's own record, with the id taken from the verified token.
+- Admins are promoted directly in the database (`UPDATE users SET role = 'ADMIN' WHERE email = '...';`) and get the role at their next login; `SECURITY.md` documents it. `openapi.yaml` documents the rules, the shared `Forbidden` response and `/users/me`.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › `GET /users -> returns 403 for a regular account and 200 for an admin`. Against the previous code it failed with `Expected: 403` and `Received: 200`.
+- `tests/userRoutes.spec.ts` › `GET /users/:id -> returns 403 for another account and 200 for its own id`. Against the previous code another account's id `abc-777` answered `200`.
+- `tests/userRoutes.spec.ts` › `GET /users/me -> returns the record of the account in the token`. Against the previous code `/users/me` was read as the id `me` (`Received: "me"`).
+- `tests/userRoutes.spec.ts` › `POST /auth/login -> puts the account role from the database in the token`. Against the previous code the token always said `USER`.
+- The contract tests (SURFACE-01) caught the new route until it was added to `openapi.yaml`, and they check that `/users/me` answers `401` without a token.
+- Manual check against the local PostgreSQL: after the API started, the `users` table has `role character varying DEFAULT 'USER'` with the `CHECK (role IN ('USER', 'ADMIN'))` constraint, and a second start leaves exactly one such constraint.
+- `npx tsc --noEmit` passes; `npm test` passes (5 suites, 53 tests).
+
+**Evidence:**
+
+- Commit `1db218f` — `src/auth/userPolicy.ts`, `src/auth/accessToken.ts`, `src/models/User.ts`, `src/repositories/UserRepository.ts`, `src/controllers/UserController.ts`, `src/app.ts`, `tests/userRoutes.spec.ts`.
+- Commit `c37aab3` — `openapi.yaml`, `SECURITY.md`.
+- Issue #36.
