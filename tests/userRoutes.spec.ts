@@ -375,6 +375,16 @@ describe('User routes (integration tests)', () => {
     expect(blockedOnA.body.error.code).toBe('AUTH_FLOOD_DETECTED');
   });
 
+  // TEST 16: Verify unknown routes answer with the JSON error envelope, not Express's HTML page.
+  // Condition: The ZAP API scan flagged text/html on 404 responses (rule 100001, issue #66).
+  it('GET /unknown -> returns 404 with the JSON error envelope', async () => {
+    const response = await request(serverTarget).get('/api/v1/does-not-exist');
+
+    expect(response.status).toBe(404);
+    expect(response.headers['content-type']).toMatch(/application\/json/);
+    expect(response.body.error.code).toBe('NOT_FOUND');
+  });
+
 });
 
 describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', () => {
