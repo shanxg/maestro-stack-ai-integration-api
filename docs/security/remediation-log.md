@@ -758,3 +758,43 @@ The limiters were written for a single process; the counters were never moved to
 - Commit `46e6acc` — `src/middlewares/redisRateLimitStore.ts`, `src/app.ts`, `tests/helpers/fakeRedis.ts`, `tests/redisRateLimitStore.spec.ts`, `tests/userRoutes.spec.ts`.
 - Commit `93f430a` — `openapi.yaml`, `SECURITY.md`.
 - Issue #65.
+
+---
+
+## 🔵 [DAST-01] First dynamic scan (OWASP ZAP API scan): unknown routes answered with an HTML page
+
+**Date:** 2026-10-15
+
+**Detected by:** OWASP ZAP `zap-api-scan.py` (backlog item 4.03, issue #66)
+
+**Severity:** Low
+
+**References:** OWASP ZAP alerts 100001, 100000 and 90022
+
+**Finding:**
+
+The project had no dynamic scan report. A ZAP API scan, driven by `openapi.yaml`, ran against the API started locally with `NODE_ENV=production`, authenticated with the JWT of a throwaway account, with passive and active rules. It found no High or Medium alerts and passed 118 rules, including SQL injection, cross-site scripting, OS command injection, path traversal, server-side template injection and XML external entities. It raised three Low alerts: 23 unknown paths answered with Express's default `text/html` 404 page instead of the API's JSON error envelope (alert 100001), and `POST /ai/chat` answered `500` (alerts 100000 and 90022).
+
+**Root cause:**
+
+- The application had no handler for unknown routes, so Express's default HTML page answered them.
+- The `/ai/chat` alerts come from the scan environment: no local model server (Ollama) was running, so the AI call failed. The response body is the generic error envelope, without a stack trace or internal detail, so alert 90022 (evidence: the `HTTP/1.1 500 Internal Server Error` status line) is a false positive.
+
+**Remediation applied:**
+
+- `src/app.ts` registers a final handler after every route, GraphQL included, that answers unknown paths with `404` and `{"error":{"code":"NOT_FOUND",...}}`.
+- Answering `503` with a timeout when the model server is unreachable stays with issue #43.
+- `docs/security/dast/` holds both reports (before and after the fix), the scope, the triage of every alert and the steps to run the scan again; `SECURITY.md` has a DAST row.
+- Scan-only conditions, documented in `docs/security/dast/README.md`: the rate limits were raised in the scan process, so the scanner was not answered with `429`; `/events` was left out because the scanner would hang on the open stream. No repository code was changed for the scan.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › `GET /unknown -> returns 404 with the JSON error envelope`: an unknown path must answer `404` with `application/json` and `error.code` `NOT_FOUND`. Against the previous code it failed with `Received string: "text/html; charset=utf-8"`.
+- A second ZAP API scan, after the fix, no longer raised alert 100001 (0 High, 0 Medium, 2 Low, 118 rules passed).
+- `npx tsc --noEmit` passes; `npm test` passes (5 suites, 32 tests).
+
+**Evidence:**
+
+- Commit `e46501e` — `src/app.ts`, `tests/userRoutes.spec.ts`.
+- Commit `d92627d` — `docs/security/dast/README.md`, `docs/security/dast/zap-api-scan-2026-10-15-before.md`, `docs/security/dast/zap-api-scan-2026-10-15-after.md`, `SECURITY.md`.
+- Issue #66.
