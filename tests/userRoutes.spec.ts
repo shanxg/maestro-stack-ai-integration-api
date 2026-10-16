@@ -50,6 +50,21 @@ jest.unstable_mockModule('../src/repositories/UserRepository.js', () => {
   };
 });
 
+// 🤖 MOCK THE OPENAI SDK: AIService reaches the model server (local Ollama by default) through
+// this SDK. The fake client records every chat completion request, so the tests can check the
+// limits sent to the model and simulate an unreachable server without any model running.
+// The SDK's timeout error (APIConnectionTimeoutError) is a subclass of APIConnectionError.
+class FakeAPIConnectionError extends Error {}
+const createCompletionMock = jest.fn<(body: Record<string, unknown>, options?: Record<string, unknown>) => Promise<object>>();
+jest.unstable_mockModule('openai', () => {
+  return {
+    default: class {
+      chat = { completions: { create: createCompletionMock } };
+    },
+    APIConnectionError: FakeAPIConnectionError
+  };
+});
+
 // 🐇 MOCK THE AMQP DRIVER: Only the legacy blueprint (rabbit-deprecated.ts) imports
 // 'amqplib' directly now. The fake connection and channel record calls instead of
 // opening TCP sockets to a broker.
@@ -71,7 +86,7 @@ jest.unstable_mockModule('amqplib', () => {
 // 2. FACTORY IMPORT: Bring in the modular application factory.
 // Dynamic imports run after the mocks above are registered (ESM has no mock hoisting).
 const { createApp } = await import('../src/app.js');
-const { settings } = await import('../src/config.js');
+const { env, settings } = await import('../src/config.js');
 
 // 3. LEGACY BLUEPRINT IMPORTS: The API never imports these modules (see README.md,
 // "Architectural Evolution"). They are loaded here only to test them in isolation.
@@ -463,6 +478,101 @@ describe('User routes (integration tests)', () => {
     expect(response.status).toBe(503);
     expect(response.body.error.code).toBe('SERVICE_UNAVAILABLE');
     expect(response.body.error.details).toBeUndefined();
+  });
+
+});
+
+describe('AI chat route (integration tests)', () => {
+  let serverTarget: http.Server;
+
+  // 🔑 TEST ACCOUNTS: tokens signed with the test JWT secret and the same claims that
+  // POST /auth/login issues, so each test can act as a different account.
+  const secret = process.env.JWT_SECRET as string;
+  const tokenFor = (id: string) =>
+    jwt.sign({ id, user: `User ${id}`, email: `${id}@maestro.test`, role: 'USER' }, secret, { expiresIn: '1h' });
+
+  // Send one prompt to /ai/chat as the given account.
+  const sendPrompt = (token: string, prompt: unknown) =>
+    request(serverTarget).post('/ai/chat').set('Authorization', `Bearer ${token}`).send({ prompt });
+
+  beforeAll(async () => {
+    // No custom user service: the chat route does not touch users, and the repository is mocked.
+    serverTarget = await createApp();
+  });
+
+  // Start every test with empty rate-limit counters and a model that answers at once.
+  beforeEach(() => {
+    FakeRedis.reset();
+    createCompletionMock.mockReset();
+    createCompletionMock.mockResolvedValue({ choices: [{ message: { content: 'Resposta de teste.' } }] });
+  });
+
+  // TEST 1: Verify an oversized prompt is rejected before it reaches the model (CWE-770 / LLM10:2025).
+  // Condition: A 50,000-character prompt, far above the limit, must answer 400; a prompt of exactly
+  // settings.aiChat.maxPromptLength characters is still accepted.
+  it('POST /ai/chat -> returns 400 for a prompt over the length limit, without calling the model', async () => {
+    const oversized = await sendPrompt(tokenFor('user-a'), 'a'.repeat(50_000));
+
+    expect(oversized.status).toBe(400);
+    expect(oversized.body.error.code).toBe('VALIDATION_FAILURE');
+    expect(oversized.body.error.details[0].field).toBe('body.prompt');
+    expect(createCompletionMock).not.toHaveBeenCalled();
+
+    const atTheLimit = await sendPrompt(tokenFor('user-a'), 'a'.repeat(settings.aiChat.maxPromptLength));
+    expect(atTheLimit.status).toBe(200);
+  });
+
+  // TEST 2: Verify every model call carries the output and time ceilings from src/config.ts.
+  // Condition: A valid prompt; the request sent to the SDK must hold max_tokens, the configured
+  // model, the timeout and no automatic retries.
+  it('POST /ai/chat -> sends max_tokens, the configured model, a timeout and no retries to the model', async () => {
+    const response = await sendPrompt(tokenFor('user-a'), '  Explique o padrão Cache-Aside.  ');
+
+    expect(response.status).toBe(200);
+    expect(response.body.response).toBe('Resposta de teste.');
+
+    const [body, options] = createCompletionMock.mock.calls[0] as [Record<string, unknown>, Record<string, unknown> | undefined];
+    expect(body).toHaveProperty('max_tokens');
+    expect(options).toBeDefined();
+    expect(body).toMatchObject({ model: env.OPENAI_MODEL, max_tokens: settings.aiChat.maxTokens });
+    expect(options).toMatchObject({ timeout: settings.aiChat.timeoutMs, maxRetries: 0 });
+
+    // The prompt reaches the model trimmed, as chatSchema returns it.
+    const messages = body.messages as Array<{ role: string; content: string }>;
+    expect(messages.at(-1)).toEqual({ role: 'user', content: 'Explique o padrão Cache-Aside.' });
+  });
+
+  // TEST 3: Verify an unreachable or timed-out model server answers 503 without connection details.
+  // Condition: The SDK fails with a connection error, as it does when Ollama is down or too slow.
+  it('POST /ai/chat -> returns 503 when the model server cannot be reached', async () => {
+    createCompletionMock.mockRejectedValueOnce(new FakeAPIConnectionError('connect ECONNREFUSED 127.0.0.1:11434'));
+    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const response = await sendPrompt(tokenFor('user-a'), 'Olá?');
+    consoleWarnSpy.mockRestore();
+
+    expect(response.status).toBe(503);
+    expect(response.body.error.code).toBe('AI_SERVICE_UNAVAILABLE');
+    expect(JSON.stringify(response.body)).not.toContain('ECONNREFUSED');
+  });
+
+  // TEST 4: Verify the prompt limit counts per account, not per IP address.
+  // Condition: Two accounts behind the same IP (every Supertest request comes from 127.0.0.1).
+  // Account A uses its whole budget and gets 429; account B must still be served.
+  it('POST /ai/chat -> limits each account separately, even from the same IP', async () => {
+    const tokenA = tokenFor('user-a');
+    const tokenB = tokenFor('user-b');
+
+    for (let i = 0; i < settings.rateLimits.aiChat.max; i++) {
+      expect((await sendPrompt(tokenA, `Pergunta ${i}`)).status).toBe(200);
+    }
+
+    const blockedA = await sendPrompt(tokenA, 'Mais uma pergunta');
+    expect(blockedA.status).toBe(429);
+    expect(blockedA.body.error.code).toBe('LLM_COMPUTE_LIMIT_EXCEEDED');
+
+    const servedB = await sendPrompt(tokenB, 'Primeira pergunta de outra conta');
+    expect(servedB.status).toBe(200);
   });
 
 });

@@ -24,7 +24,7 @@ import { AIController } from './controllers/AIController.js';
 // 2. GLOBAL SECURITY PACKAGE IMPORTS (OWASP TOP 10)
 import helmet from 'helmet';
 import cors from 'cors';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { Redis } from 'ioredis'; // Client for the shared rate-limit counters
 
 // 3. MIDDLEWARE, ZOD SCHEMA AND CONFIG IMPORTS
@@ -34,6 +34,7 @@ import { RedisRateLimitStore } from './middlewares/redisRateLimitStore.js';
 import { errorHandler } from './middlewares/errorHandler.js'; // Central JSON error responses (CWE-209)
 import { createUserSchema, listUsersSchema } from './schemas/userSchema.js';
 import { loginSchema } from './schemas/authSchema.js';
+import { chatSchema } from './schemas/aiSchema.js';
 import { env, settings } from './config.js'; // Validated environment and fixed limits (also loads .env)
 
 // 4. GRAPHQL (APOLLO SERVER) IMPORTS
@@ -147,14 +148,20 @@ export async function createApp(customUserService?: any) {
   });
 
   /**
-   * APPSEC REMEDIATION - RESOURCE EXHAUSTION SAFEGUARD (CWE-770)
-   * 
-   * Restricts prompt execution frequency against local Llama 3 inference infrastructure.
+   * APPSEC REMEDIATION - RESOURCE EXHAUSTION SAFEGUARD (CWE-770 / OWASP LLM10:2025)
+   *
+   * Restricts prompt execution frequency against the model server (local Llama 3 by default).
    * Mitigates orchestration compute exhaustion and limits overall system token budget runout.
    */
   const aiInferenceThrottler = rateLimit({
     windowMs: settings.rateLimits.aiChat.windowMs, // Window and cap live in src/config.ts
     max: settings.rateLimits.aiChat.max,
+    // PER-ACCOUNT LIMIT: /ai/chat runs after authMiddleware, which stores the verified JWT payload
+    // in req.user, so the counter follows the account instead of the IP address. Users behind one
+    // shared IP (an office or a mobile carrier) no longer block each other, and one account cannot
+    // multiply its budget by switching networks. The IP is only a fallback for a token without an
+    // id claim; ipKeyGenerator groups IPv6 addresses by subnet, as express-rate-limit recommends.
+    keyGenerator: (req: Request) => (req.user?.id ? `user:${req.user.id}` : `ip:${ipKeyGenerator(req.ip ?? '')}`),
     store: new RedisRateLimitStore(rateLimitRedis, 'rl:ai-chat:'), // Shared by every replica
     standardHeaders: true,
     legacyHeaders: false,
@@ -266,7 +273,9 @@ export async function createApp(customUserService?: any) {
   // ==========================================
   const aiService = new AIService();
   const aiController = new AIController(aiService);
-  app.post('/ai/chat', authMiddleware, aiInferenceThrottler, (req, res) => aiController.chat(req, res));
+  // Order: authMiddleware sets req.user, the throttler counts per account, and chatSchema rejects
+  // an oversized prompt before it reaches the model (invalid prompts still count toward the limit).
+  app.post('/ai/chat', authMiddleware, aiInferenceThrottler, validateMiddleware(chatSchema), (req: Request, res: Response) => aiController.chat(req, res));
 
   // ==========================================
   // 📡 🔥 REAL-TIME ENDPOINT: SERVER-SENT EVENTS (SSE)
