@@ -143,15 +143,21 @@ _The reactive client console will notice port 3000 is securely held by the Expre
 
 ## 📡 API Authentication Testing Vector
 
-To test the security handshake and chat orchestration via terminal loops, capture a valid session pass:
+The login does not return the JWT in its body: it sets the `maestro_session` cookie (HttpOnly, SameSite=Strict). From a terminal, keep that cookie in a local cookie jar and send it back:
 
 ```powershell
-# 1. Acquire an authenticated signature token
-curl.exe -i -X POST http://127.0.0 -H "Content-Type: application/json" -d "{\""username\"": \""admin\"", \""password\"": \""secret123\""}"
+# 1. Log in with an account you registered; -c saves the session cookie in a local cookie jar
+curl.exe -i -c maestro-cookies.txt -X POST http://localhost:3000/auth/login -H "Content-Type: application/json" -d "{\""username\"": \""you@example.com\"", \""password\"": \""<your password>\""}"
 
-# 2. Fire an authenticated prompt request into the local Llama 3 core (Replace token placeholder)
-curl.exe -i -X POST http://127.0.0 -H "Authorization: Bearer YOUR_TOKEN_HERE" -H "Content-Type: application/json" -d "{\""prompt\"": \""Hello Maestro, explain the benefits of distributed caching.\""}"
+# 2. Send a prompt to the local Llama 3 model with the saved session cookie (-b)
+curl.exe -i -b maestro-cookies.txt -X POST http://localhost:3000/ai/chat -H "Content-Type: application/json" -d "{\""prompt\"": \""Hello Maestro, explain the benefits of distributed caching.\""}"
+
+# 3. End the session and delete the cookie jar
+curl.exe -i -b maestro-cookies.txt -X POST http://localhost:3000/auth/logout
+Remove-Item maestro-cookies.txt
 ```
+
+API clients may also send the same JWT as `Authorization: Bearer <token>`, taking it from the `Set-Cookie` header of the login.
 
 ---
 

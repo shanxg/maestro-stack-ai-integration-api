@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation'; // Official router for the modern Next.js App Router.
+import { markSignedIn } from '../utils/session'; // Non-sensitive "signed in" flag (issue #34)
 
 export default function LoginPage() {
   // ==========================================
@@ -43,6 +44,8 @@ export default function LoginPage() {
       const res = await fetch(targetUrl.href, {
         method: 'POST',
         mode: 'cors', // Explicitly enable CORS mode for cross-origin requests
+        // Let the browser store the HttpOnly session cookie the API sets in its response.
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -64,11 +67,12 @@ export default function LoginPage() {
       }
 
       // =========================================================================
-      // 🔐 STORE THE JWT
+      // 🔐 SESSION COOKIE (CWE-922)
       // =========================================================================
-      // After credentials are validated (HTTP 200), store the signed token in localStorage.
-      // It keeps the session active and authorizes later requests to protected AI routes.
-      localStorage.setItem('token', data.token);
+      // The API put the JWT in an HttpOnly cookie that this page cannot read, and the browser sends
+      // it with every request made with credentials: 'include'. Only a non-sensitive flag is kept
+      // here, so the chat page knows the user signed in.
+      markSignedIn();
 
       // 🔀 Redirect the authenticated user to the chat dashboard.
       router.push('/chat');

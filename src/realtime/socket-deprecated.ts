@@ -15,17 +15,13 @@
 // 1. IMPORTS: Node HTTP types, the JWT library, and the Socket.io engine.
 import type http from 'node:http';
 import { verifyAccessToken } from '../auth/accessToken.js'; // The same token rules as authMiddleware
+import { settings } from '../config.js';
 import { Server, type Socket } from 'socket.io';
 import { type User } from '../models/User.js';
 
-// 🌐 CORS ALLOWLIST: Same browser origins that app.ts accepts for the REST API.
+// 🌐 CORS ALLOWLIST: The same browser origins the REST API accepts (settings.allowedOrigins).
 // A wildcard would let any website open an authenticated socket from a victim's browser.
-export const ALLOWED_ORIGINS = [
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1:3001'
-];
+export const ALLOWED_ORIGINS = [...settings.allowedOrigins];
 
 // 🔥 SHARED EXPORT: The global WebSocket instance. It stays undefined until
 // initializeSocket() runs, so importing this module has no side effects.

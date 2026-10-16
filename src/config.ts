@@ -79,6 +79,20 @@ export const settings = {
     audience: 'maestro-api',
     expiresIn: '1h',
   },
+  // Browser session (src/auth/sessionCookie.ts, CWE-922): the login stores the JWT in an HttpOnly
+  // cookie that page scripts cannot read. It lives as long as the token itself (settings.jwt.expiresIn).
+  sessionCookie: {
+    name: 'maestro_session',
+    maxAgeSeconds: 60 * 60,
+  },
+  // Browser origins allowed to call the API with credentials: the CORS allowlist and the CSRF
+  // Origin check (src/middlewares/originCheck.ts) both read this list (CWE-352 / CWE-942).
+  allowedOrigins: [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
+  ],
   bcryptSaltRounds: 12,
   usersCacheTtlSeconds: 60,
   // GET /users page size: the default when no limit is sent, and the largest accepted.

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
+import { SESSION_FLAG_KEY, clearSignedIn } from '../utils/session'; // "Signed in" flag, never the token (issue #34)
 
 interface Message {
   role: 'user' | 'assistant';
@@ -12,16 +13,16 @@ interface Message {
 // 📡 EXTERNAL LISTENER (SUBSCRIBE TO STORAGE)
 // =========================================================================
 // Notify React if localStorage changes in another tab
-const subscribeToToken = (callback: () => void) => {
+const subscribeToSession = (callback: () => void) => {
   window.addEventListener('storage', callback);
   return () => window.removeEventListener('storage', callback);
 };
 
-// Capture the current token snapshot directly from the browser
-const getTokenSnapshot = (): string | null => localStorage.getItem('token');
+// Read the "signed in" flag. The JWT itself is in an HttpOnly cookie this page cannot read.
+const getSessionSnapshot = (): string | null => localStorage.getItem(SESSION_FLAG_KEY);
 
 // Server configuration (SSR): localStorage is unavailable, so initialize as undefined
-const getServerTokenSnapshot = (): undefined => undefined;
+const getServerSessionSnapshot = (): undefined => undefined;
 
 export default function ChatPage() {
   const router = useRouter();
@@ -30,16 +31,16 @@ export default function ChatPage() {
   // =========================================================================
   // 💎 CONNECT TO THE EXTERNAL STORE (useSyncExternalStore)
   // =========================================================================
-  // Read the token reactively without synchronous state updates
-  const token = useSyncExternalStore(
-    subscribeToToken,
-    getTokenSnapshot,
-    getServerTokenSnapshot
+  // Read the session flag reactively without synchronous state updates
+  const sessionFlag = useSyncExternalStore(
+    subscribeToSession,
+    getSessionSnapshot,
+    getServerSessionSnapshot
   );
 
   // Derive state during rendering, as recommended by React
-  const isAuthenticated = token !== null && token !== undefined;
-  const isCheckingAuth = token === undefined;
+  const isAuthenticated = sessionFlag !== null && sessionFlag !== undefined;
+  const isCheckingAuth = sessionFlag === undefined;
 
   // Initialize message history directly, without going through useEffect
   const [messages, setMessages] = useState<Message[]>([
@@ -91,14 +92,22 @@ export default function ChatPage() {
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
       const targetUrl = new URL('/ai/chat', apiBaseUrl);
 
+      // No Authorization header: the browser attaches the HttpOnly session cookie because of
+      // credentials: 'include', and page scripts never see the token (CWE-922).
       const res = await fetch(targetUrl.href, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
         },
+        credentials: 'include',
         body: JSON.stringify({ prompt: userPrompt }),
       });
+
+      // The session expired or was cleared: drop the flag, and the effect above redirects to /login.
+      if (res.status === 401) {
+        clearSignedIn();
+        return;
+      }
 
       const data = await res.json();
 
@@ -120,10 +129,17 @@ export default function ChatPage() {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
+  const handleLogout = async () => {
+    // Ask the API to clear the HttpOnly cookie; page scripts cannot delete it themselves.
+    try {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+      await fetch(new URL('/auth/logout', apiBaseUrl).href, { method: 'POST', credentials: 'include' });
+    } catch (err: unknown) {
+      // Even if the API cannot be reached, leave the page; the cookie expires with the token.
+      console.error('❌ Falha ao encerrar a sessão na API:', err);
+    }
     // useSyncExternalStore detects the removal and the effect redirects to /login
-    window.dispatchEvent(new Event('storage')); // Dispatch the event in the current tab
+    clearSignedIn();
   };
 
   // 🧱 Fallback rendering during the initial Next.js startup

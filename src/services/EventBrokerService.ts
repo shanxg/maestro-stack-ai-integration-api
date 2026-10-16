@@ -135,18 +135,19 @@ export class EventBrokerService {
             // trusted path that stores a verified hash as is (createUser would hash it a second time).
             if (this.userService) {
               console.log(`📥 [Worker] Intercepted 'user_created' event from queue. Persistent entity write initiated for: ${email}`);
-              await this.userService.createUserWithPasswordHash(name, email, password);
+              const createdUser = await this.userService.createUserWithPasswordHash(name, email, password);
               console.log(`💾 [Worker] Event transaction successfully resolved and persisted inside PostgreSQL cluster.`);
+
+              // MINIMUM DATA ON THE STREAM (issue #35): every signed-in account receives these events,
+              // but a regular account may only read its own record (AUTHZ-01). So the event carries
+              // only the new account's id, never its name, e-mail or password hash; a client that may
+              // see the record fetches it through GET /users/{id}, where the access rules apply.
+              this.broadcastToSSEClients('user_created', { id: createdUser.id });
             } else {
               console.warn('⚠️ [Worker] Execution blocked: UserService container reference is unmapped inside the broker instance.');
             }
           }
-
-          // Broadcast to SSE clients (Sanitizing out the hash from the public real-time stream channel!)
-          this.broadcastToSSEClients(parsedPayload.action, parsedPayload.action === 'user_created' 
-            ? { name: parsedPayload.data.name, email: parsedPayload.data.email } 
-            : parsedPayload.data
-          );
+          // Other actions are not forwarded to the stream: only known events, with known fields, go out.
 
           this.channel?.ack(message);
 
@@ -171,7 +172,9 @@ export class EventBrokerService {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
-    res.setHeader('Access-Control-Allow-Origin', '*'); // Allow Next.js to read notifications across origins.
+    // No 'Access-Control-Allow-Origin: *' here any more (CWE-942): the global cors middleware in
+    // app.ts already answers with the requesting origin only when it is on settings.allowedOrigins,
+    // together with Allow-Credentials, which the cookie-authenticated stream needs.
 
     // Send an initial heartbeat to establish the connection with the frontend.
     res.write('data: {"status": "CONNECTED_TO_MAESTRO_STREAM"}\n\n');

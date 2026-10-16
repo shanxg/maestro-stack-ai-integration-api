@@ -1153,3 +1153,57 @@ The answer was treated as rich content to sanitize instead of as text to display
 - Commit `e02b6ab` — `frontend/app/chat/page.tsx`, `frontend/app/utils/security.ts` (removed), `frontend/security-headers.ts`, `frontend/next.config.ts`, `frontend/eslint.config.mjs`, `frontend/package.json`, `frontend/package-lock.json`, `tests/frontendSecurity.spec.ts`.
 - Commit `2fc0d73` — `SECURITY.md`, `README.md`.
 - Issue #42.
+
+---
+
+## 🔴 [SESSION-01] JWT readable by page scripts, unauthenticated event stream and permissive CORS
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog items 1.01 and 1.02, issues #34 and #35, fixed together as the backlog planned)
+
+**Severity:** High
+
+**References:** CWE-352, CWE-942, CWE-306, OWASP API3:2023, OWASP API8:2023
+
+**Finding:**
+
+- **Token storage (issue #34):** `POST /auth/login` returned the JWT in the response body, and the frontend stored it in `localStorage` and sent it as a Bearer header. Any script running on the page, an XSS payload included, could read the token and use it from anywhere until it expired.
+- **Event stream (issue #35):** `GET /events` had no authentication. It answered with `Access-Control-Allow-Origin: *`, so any website could read it from a visitor's browser, and every `user_created` event carried the new user's name and e-mail, information that regular accounts may not otherwise read (AUTHZ-01).
+- **CORS:** besides the `cors` middleware, a hand-written `OPTIONS /*splat` handler echoed any `Origin` (or `*`). The middleware answered preflights first, so the handler was unreachable in practice, but it was a permissive policy one change away from being live.
+
+The backlog item for issue #34 cites CWE-922; its MITRE mapping status is ALLOWED-WITH-REVIEW, so it is not used as a mapping here.
+
+**Root cause:**
+
+The session was designed for a token held by JavaScript, and the stream was added for a local demo without the API's authentication and CORS rules.
+
+**Remediation applied:**
+
+- `POST /auth/login` puts the token in the `maestro_session` cookie (`HttpOnly`, `SameSite=Strict`, `Secure` in production, `Path=/`, `Max-Age` equal to the token's 1-hour lifetime) and returns only the account details; `POST /auth/logout` clears the cookie with the same attributes. `authMiddleware` reads the cookie, or a Bearer header for API clients (`src/auth/sessionCookie.ts`).
+- Cross-site request forgery: besides `SameSite=Strict`, `src/middlewares/originCheck.ts` rejects state-changing requests whose `Origin` is not in `settings.allowedOrigins` with `403 CSRF_ORIGIN_REJECTED`. Requests without an `Origin` header come from non-browser clients, which carry no victim cookies.
+- CORS reads the same `settings.allowedOrigins` list (also used by the WebSocket blueprint), with credentials; the hand-written `OPTIONS` handler was removed.
+- `GET /events` runs `authMiddleware` (the browser's `EventSource` sends the cookie with `withCredentials: true`); `EventBrokerService` no longer sets `Access-Control-Allow-Origin: *`, and the `user_created` event carries only the new account's id. Unknown queue actions are no longer forwarded to the stream.
+- The frontend sends `credentials: 'include'`, keeps only a non-sensitive "signed in" flag in `localStorage` (removing any JWT stored there by earlier versions), clears it on `401`, and logs out through the API.
+- `openapi.yaml` (a `SessionCookie` scheme next to `BearerAuth`, the login's `Set-Cookie`, `/auth/logout`, a shared `ForeignOrigin` 403, the protected stream), the README (curl with a cookie jar), `SECURITY.md` and the DAST rerun steps describe the new session.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts`, against the previous code:
+  - `POST /auth/login -> sets an HttpOnly, SameSite=Strict session cookie and keeps the token out of the body`: no cookie was set (`Expected: not ""`).
+  - `GET /users/me -> accepts the session cookie without an Authorization header`: `Received: 401`.
+  - `POST /auth/login -> returns 403 for a foreign Origin and accepts the frontend origin`: `Expected: 403`, `Received: 200`.
+  - `GET /events -> returns 401 without a session and opens the stream with the session cookie`: `Expected: 401`, `Received: 200`.
+  - `POST /auth/logout -> clears the session cookie`: `Expected: 204`, `Received: 404`.
+  - `OPTIONS preflight -> echoes only an allowed origin` passes on both versions (the middleware answered first); it guards the policy from now on.
+  - The other route tests read the token from the cookie now, so against the previous code they also fail with `401`.
+- `tests/eventBroker.spec.ts`, against the previous code: `opens the event stream without a wildcard Access-Control-Allow-Origin header` and `broadcasts user_created with the new id only, never the name or e-mail` both failed.
+- Manual end-to-end check with the API (development) and the production build of the frontend, in the browser: registration through the queue, then login redirects to the chat; `document.cookie` does not show the session, and `localStorage` holds only the flag; `GET /users/me` answers `200` through the cookie; an `EventSource` with credentials opens the stream; a prompt reaches the AI route (which answered `503` because no local model was running); a regular account gets `403` on `GET /users`; after logout the page returns to `/login`, `localStorage` is empty, `GET /users/me` answers `401` and the stream is refused. The throwaway account `e2e-cookie-53a062@maestro.test` was left in the local database.
+- `npx tsc --noEmit` passes; `npm test` passes (6 suites, 64 tests); `npm run lint` passes in `frontend/`.
+
+**Evidence:**
+
+- Commit `2c41ac2` — `src/app.ts`, `src/config.ts`, `src/auth/sessionCookie.ts`, `src/middlewares/authMiddleware.ts`, `src/middlewares/originCheck.ts`, `src/services/EventBrokerService.ts`, `src/realtime/socket-deprecated.ts`, `tests/userRoutes.spec.ts`, `tests/eventBroker.spec.ts`.
+- Commit `6b650f1` — `frontend/app/login/page.tsx`, `frontend/app/chat/page.tsx`, `frontend/app/utils/session.ts`.
+- Commit `7fd5bc6` — `openapi.yaml`, `README.md`, `SECURITY.md`, `docs/security/dast/README.md`.
+- Issues #34 and #35.
