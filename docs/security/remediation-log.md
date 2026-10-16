@@ -1110,3 +1110,46 @@ Authentication was treated as authorization: the routes had no rule about who ma
 - Commit `1db218f` — `src/auth/userPolicy.ts`, `src/auth/accessToken.ts`, `src/models/User.ts`, `src/repositories/UserRepository.ts`, `src/controllers/UserController.ts`, `src/app.ts`, `tests/userRoutes.spec.ts`.
 - Commit `c37aab3` — `openapi.yaml`, `SECURITY.md`.
 - Issue #36.
+
+---
+
+## 🟡 [XSS-01] The chat page injected the model's answer as HTML, and the frontend sent no security headers
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 1.09, issue #42)
+
+**Severity:** Medium
+
+**References:** CWE-79, CWE-1021, OWASP LLM05:2025
+
+**Finding:**
+
+The chat page (`frontend/app/chat/page.tsx`) passed every message, including the model's answer, through DOMPurify and then into the page with `dangerouslySetInnerHTML`. The model's answer is untrusted: a user can steer it with prompt injection, and a cloud model is a third party. Protection against cross-site scripting therefore depended on the sanitizer's allowlist and on DOMPurify keeping up with every bypass, while the feature never needed HTML. The Next.js app also sent no security headers: no Content Security Policy to limit what an injected script could load or call, no protection against being framed by another site (clickjacking), no `nosniff` and no Referrer-Policy.
+
+**Root cause:**
+
+The answer was treated as rich content to sanitize instead of as text to display, and the frontend kept Next.js's default response headers.
+
+**Remediation applied:**
+
+- The chat page renders every message as text: React escapes it, so HTML in an answer shows up as literal characters and never runs. The DOMPurify helper (`frontend/app/utils/security.ts`) and the `dompurify` dependency were removed.
+- `frontend/security-headers.ts` builds the headers that `next.config.ts` sends on every route: a static Content Security Policy following the "Without Nonces" setup of the Next.js guide (`default-src 'self'`, `connect-src` limited to the app and the API origin, `object-src 'none'`, `base-uri` and `form-action 'self'`, `frame-ancestors 'none'`; `'unsafe-eval'` only in development and `upgrade-insecure-requests` only in production), plus `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and a `Permissions-Policy` that turns off camera, microphone and geolocation. Next.js still needs inline scripts and styles, so `'unsafe-inline'` stays; nonces and Trusted Types were left out on purpose.
+- `frontend/eslint.config.mjs` makes `react/no-danger` an error, so the HTML sink cannot come back unnoticed.
+- `SECURITY.md` and the README describe the change.
+
+**Regression test:**
+
+- `tests/frontendSecurity.spec.ts` (new suite in the API tests, because the frontend has no test runner):
+  - `next.config.ts -> sends the CSP and the other security headers on every route`: loads the real config and checks the headers for `/:path*`. Against the previous code it failed with `Expected: "function"` and `Received: "undefined"` (no `headers()`).
+  - `security-headers.ts -> keeps unsafe-eval out of production and upgrades requests there`.
+  - `frontend/app -> no component uses dangerouslySetInnerHTML`. Against the previous code it failed listing `chat/page.tsx`.
+- `npm run lint` in `frontend/` passes, and the same linter rejects a component that uses `dangerouslySetInnerHTML` (`react/no-danger`).
+- Manual check with the production build (`next build` and `next start`): every route answers with the five headers; in the browser, the chat page hydrates and renders under the policy, a `fetch()` to another origin is blocked by `connect-src`, the call to the API at `http://localhost:3000` is allowed and not upgraded, and a message containing `<img src=x onerror=...><b>negrito</b>` is shown as literal text, with no `img` or `b` element created and the handler never run.
+- `npx tsc --noEmit` passes; `npm test` passes (6 suites, 56 tests).
+
+**Evidence:**
+
+- Commit `e02b6ab` — `frontend/app/chat/page.tsx`, `frontend/app/utils/security.ts` (removed), `frontend/security-headers.ts`, `frontend/next.config.ts`, `frontend/eslint.config.mjs`, `frontend/package.json`, `frontend/package-lock.json`, `tests/frontendSecurity.spec.ts`.
+- Commit `2fc0d73` — `SECURITY.md`, `README.md`.
+- Issue #42.

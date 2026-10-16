@@ -50,7 +50,7 @@ To meet microservices decoupling standards, the user registration process operat
 - **Unbounded consumption (LLM10:2025):** the prompt is limited to 2000 characters (Zod), the answer to 512 tokens (`max_tokens`), and the model server gets 60 seconds, without automatic retries, before the API answers `503 AI_SERVICE_UNAVAILABLE`. Each account may send 10 prompts per minute. The values live in `src/config.ts` (`settings.aiChat` and `settings.rateLimits.aiChat`).
 - **Prompt injection (LLM01:2025):** a user can always try to override the system prompt. The model holds no data and has no tools or function calls, so a successful injection can only change the text of the answer returned to that same user.
 - **Sensitive information disclosure (LLM02:2025):** the model receives only the fixed system prompt and the user's own prompt; no database records, other users' data or secrets are sent to it.
-- **Improper output handling (LLM05:2025):** the answer is untrusted text and must be displayed as text, never as HTML (the chat page is tracked in issue #42).
+- **Improper output handling (LLM05:2025):** the answer is untrusted text, so the chat page renders it as text, never as HTML: React escapes it, ESLint's `react/no-danger` rule keeps raw HTML out of the frontend, and a static Content Security Policy limits what a page could load or call.
 
 ---
 
