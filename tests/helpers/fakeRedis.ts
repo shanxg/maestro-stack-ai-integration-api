@@ -12,6 +12,15 @@ export class FakeRedis {
     FakeRedis.failing = false;
   }
 
+  // The options every client was created with, in order, so tests can check the connection
+  // settings (for example, that each client sends REDIS_PASSWORD). reset() keeps this list,
+  // because the clients live as long as the module or app instance that created them.
+  static readonly connectionOptions: Array<Record<string, unknown>> = [];
+
+  constructor(options: Record<string, unknown> = {}) {
+    FakeRedis.connectionOptions.push(options);
+  }
+
   // Cache commands used by UserController: always a cache miss, so the routes read from the service.
   async get(): Promise<null> { return null; }
   async set(): Promise<'OK'> { return 'OK'; }

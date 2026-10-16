@@ -940,3 +940,44 @@ The AI route was written for a single local user and relied only on the per-IP r
 - Commit `304e6ef` — `src/config.ts`, `src/schemas/aiSchema.ts`, `src/services/AIService.ts`, `src/controllers/AIController.ts`, `src/app.ts`, `tests/userRoutes.spec.ts`, `.env.example`.
 - Commit `b809786` — `openapi.yaml`, `README.md`.
 - Issue #43.
+
+---
+
+## 🟡 [CRED-06] Redis ran without a password and was published on every network interface
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 1.14, issue #106; found while verifying the shared rate-limit store, RATE-01)
+
+**Severity:** Medium
+
+**References:** CWE-306, OWASP A02:2025
+
+**Finding:**
+
+The `redis` service in `docker-compose.yml` set no password and published port 6379 on all interfaces (`0.0.0.0` and `[::]`). In the running container `requirepass` was empty and `protected-mode` was `no`, so any client that reached the port was accepted. The API could not have used a password anyway: `src/config.ts` had no Redis password, both `ioredis` clients connected without one, and `k8s/deployment.yaml` passed only `REDIS_HOST`. Redis holds the `GET /users` cache (id, name and e-mail) and, since RATE-01, the rate-limit counters, so anyone who reached it could read the cached users, delete the `rl:login:*` keys to reset the brute-force limit, or flush everything.
+
+**Root cause:**
+
+Redis was treated as an internal cache that needed no credentials, while PostgreSQL and RabbitMQ were already moved to environment credentials (CRED-04, CRED-05).
+
+**Remediation applied:**
+
+- `src/config.ts`: `REDIS_PASSWORD` is required, with no default, so the API refuses to start without it. A shared `redisConnection` object (host, port and password) is the only way the code builds Redis clients: the users cache in `UserController` and the rate-limit client in `src/app.ts`.
+- `docker-compose.yml`: `redis-server` starts with `--requirepass` from `REDIS_PASSWORD` in `.env`. The variable is expanded inside the container, so the value is written neither in the file nor in the container command. Port 6379 is published on `127.0.0.1` only.
+- `k8s/deployment.yaml` passes `REDIS_PASSWORD` from `maestro-api-secret`; `k8s/secret.yaml.example` and `.env.example` document it. `SECURITY.md` was updated.
+- The local container was recreated with a random password kept only in `.env`.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › `Redis clients -> connect with the REDIS_PASSWORD from src/config.ts`: the fake Redis records the options of every client created (the cache and one per `createApp`), and each must carry the password. Against the previous code it failed with `Received: undefined`.
+- `tests/config.spec.ts` › `rejects a missing or empty REDIS_PASSWORD` (new suite): the environment schema must reject both cases on that variable. Against the previous code the suite could not run, because the schema had no such rule and was not exported.
+- Manual check against the recreated container: `redis-cli ping` without a password answers `NOAUTH Authentication required`, with the container's password answers `PONG`; a client built from `redisConnection` gets `PONG`, an anonymous one gets `NOAUTH`; `docker port` shows `127.0.0.1:6379`.
+- `npx tsc --noEmit` passes; `npm test` passes (6 suites, 47 tests).
+
+**Evidence:**
+
+- Commit `d49c239` — `src/config.ts`, `src/app.ts`, `src/controllers/UserController.ts`, `tests/userRoutes.spec.ts`, `tests/config.spec.ts`, `tests/helpers/fakeRedis.ts`, `tests/setupEnv.ts`.
+- Commit `17499b7` — `docker-compose.yml`, `k8s/deployment.yaml`, `k8s/secret.yaml.example`, `.env.example`.
+- Commit `91e1924` — `SECURITY.md`.
+- Issue #106.

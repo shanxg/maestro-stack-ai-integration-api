@@ -35,7 +35,7 @@ import { errorHandler } from './middlewares/errorHandler.js'; // Central JSON er
 import { createUserSchema, listUsersSchema } from './schemas/userSchema.js';
 import { loginSchema } from './schemas/authSchema.js';
 import { chatSchema } from './schemas/aiSchema.js';
-import { env, settings } from './config.js'; // Validated environment and fixed limits (also loads .env)
+import { env, settings, redisConnection } from './config.js'; // Validated environment, fixed limits and the Redis connection (also loads .env)
 
 // 4. GRAPHQL (APOLLO SERVER) IMPORTS
 import { ApolloServer } from '@apollo/server';
@@ -101,8 +101,7 @@ export async function createApp(customUserService?: any) {
   // Without an offline queue, commands fail at once while Redis is down, and the stores
   // switch to per-process memory counters instead of holding requests until Redis returns.
   const rateLimitRedis = new Redis({
-    host: env.REDIS_HOST,
-    port: env.REDIS_PORT,
+    ...redisConnection, // Host, port and REDIS_PASSWORD from src/config.ts (CWE-306)
     enableOfflineQueue: false,
     maxRetriesPerRequest: 1,
   });

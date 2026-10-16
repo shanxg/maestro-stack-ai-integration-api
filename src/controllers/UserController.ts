@@ -4,15 +4,14 @@ import { type Request, type Response } from 'express';
 import { UserService } from '../services/UserService.js';
 import { EventBrokerService } from '../services/EventBrokerService.js';
 import { listUsersSchema } from '../schemas/userSchema.js';
-import { env, settings } from '../config.js';
+import { settings, redisConnection } from '../config.js';
 import { AppError } from '../errors/AppError.js'; // Expected failures answered by the central errorHandler
 
 // Redis client library
 import { Redis } from 'ioredis'; 
-const redis = new Redis({
-  host: env.REDIS_HOST, // Redis server address
-  port: env.REDIS_PORT, // Defaults in src/config.ts
-});
+// Host, port and password come from src/config.ts (redisConnection): Redis requires
+// authentication, so the cache client always sends REDIS_PASSWORD (CWE-306).
+const redis = new Redis({ ...redisConnection });
 
 // 2. CONTROLLER CLASS: This layer is the API's gateway.
 // It receives requests, calls the service, and returns an HTTP response.

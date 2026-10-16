@@ -109,6 +109,13 @@ spec:
             - name: REDIS_HOST
               value: "redis-service"
 
+            # Required by src/config.ts: Redis must require a password (CRED-06).
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: maestro-api-secret
+                  key: redis-password
+
             - name: RABBIT_HOST
               value: "rabbitmq-service"
 
