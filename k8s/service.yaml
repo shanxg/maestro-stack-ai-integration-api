@@ -23,7 +23,7 @@ spec:
     app: maestro-api             # Route requests to Pods with this label
 
   ports:
-    - name: http-rest            # Identifier for the REST and GraphQL API channel
+    - name: http-rest            # Identifier for the REST API channel
       protocol: TCP              # Reliable packet transmission protocol
       
       # 🚪 SERVICE PORT: Port used by other internal components to communicate

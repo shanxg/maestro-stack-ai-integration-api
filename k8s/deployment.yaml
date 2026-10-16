@@ -45,7 +45,7 @@ spec:
           imagePullPolicy: IfNotPresent
           
           # 🛡️ CONTAINER SECURITY CONTEXT: No privilege escalation, no Linux capabilities,
-          # and a read-only filesystem (the API only reads dist/ and schema.graphql at runtime).
+          # and a read-only filesystem (the API only reads dist/ at runtime).
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

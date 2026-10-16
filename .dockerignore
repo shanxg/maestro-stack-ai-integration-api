@@ -5,6 +5,6 @@
 !package.json
 !package-lock.json
 
-# TypeScript build: compiler config and source (includes src/graphql/schema.graphql)
+# TypeScript build: compiler config and source
 !tsconfig.json
 !src
