@@ -45,7 +45,7 @@ The passed rules include SQL injection (several engines, time based included), r
    await import(pathToFileURL(root + 'src/server.ts').href);
    ```
 
-3. Register a throwaway account with `POST /api/v1/users`, log in with `POST /auth/login`, and write `ZAP_AUTH_HEADER_VALUE=Bearer <token>` to an env file. Do not pass the token on the command line, where it would stay in the shell history.
+3. Register a throwaway account with `POST /api/v1/users`, log in with `POST /auth/login`, take the JWT from the `maestro_session` cookie in the `Set-Cookie` response header (the login no longer returns it in the body), and write `ZAP_AUTH_HEADER_VALUE=Bearer <token>` to an env file. Do not pass the token on the command line, where it would stay in the shell history.
 4. Copy `openapi.yaml` to the scan folder, set `servers` to `http://host.docker.internal:3000`, and remove `/events`.
 5. Run the scan:
 
