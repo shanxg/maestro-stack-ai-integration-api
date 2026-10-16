@@ -33,13 +33,10 @@ export const validateMiddleware = (schema: ZodObject) => {
         return;
       }
 
-      // Step E: Generic fallback for any other unexpected runtime errors.
-      res.status(500).json({
-        error: {
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Erro interno ao processar a validação.'
-        }
-      });
+      // Step E: Any other error is unexpected (for example, a bug inside a schema refinement).
+      // Hand it to the central errorHandler (src/middlewares/errorHandler.ts), which logs it
+      // and answers the same generic 500 as every other route, without internal details (CWE-209).
+      next(error);
     }
   };
 };

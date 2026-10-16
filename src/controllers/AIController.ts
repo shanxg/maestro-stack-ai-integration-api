@@ -12,38 +12,28 @@ export class AIController {
   * then pass it to the local model for processing.
    */
   async chat(req: Request, res: Response): Promise<Response> {
-    try {
-      const { prompt } = req.body;
+    // No try/catch: if the local Ollama service fails or cannot be reached, the rejected promise
+    // goes to the central errorHandler (src/middlewares/errorHandler.ts), which logs the failure
+    // and answers the same generic 500 as every other route (CWE-209).
+    const { prompt } = req.body;
 
-      // 📝 VALIDATION: Check that the prompt exists in the JSON payload.
-      // If the prompt field is missing, immediately return HTTP 400 (Bad Request).
-      if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
-        return res.status(400).json({
-          error: {
-            code: 'VALIDATION_FAILURE',
-            message: 'O campo "prompt" é obrigatório e precisa ser uma string de texto válida.'
-          }
-        });
-      }
-
-      // Pass trimmed text to the service layer.
-      const aiResponse = await this.aiService.generateResponse(prompt.trim());
-
-      // Return the response processed by Llama 3 with HTTP 200 (OK).
-      return res.status(200).json({
-        response: aiResponse
-      });
-
-    } catch (error) {
-      console.error('❌ Error caught in AIController.chat:', error);
-      
-      // Return HTTP 500 (Internal Server Error) if communication with Ollama fails.
-      return res.status(500).json({
+    // 📝 VALIDATION: Check that the prompt exists in the JSON payload.
+    // If the prompt field is missing, immediately return HTTP 400 (Bad Request).
+    if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
+      return res.status(400).json({
         error: {
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'Falha interna ao processar a resposta do assistente de inteligência artificial.'
+          code: 'VALIDATION_FAILURE',
+          message: 'O campo "prompt" é obrigatório e precisa ser uma string de texto válida.'
         }
       });
     }
+
+    // Pass trimmed text to the service layer.
+    const aiResponse = await this.aiService.generateResponse(prompt.trim());
+
+    // Return the response processed by Llama 3 with HTTP 200 (OK).
+    return res.status(200).json({
+      response: aiResponse
+    });
   }
 }
