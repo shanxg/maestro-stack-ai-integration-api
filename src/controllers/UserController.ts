@@ -6,12 +6,23 @@ import { EventBrokerService } from '../services/EventBrokerService.js';
 import { listUsersSchema } from '../schemas/userSchema.js';
 import { settings, redisConnection } from '../config.js';
 import { AppError } from '../errors/AppError.js'; // Expected failures answered by the central errorHandler
+import { type AccessTokenClaims } from '../auth/accessToken.js';
+import { canListUsers, canReadUser } from '../auth/userPolicy.js'; // Who may read which user records (issue #36)
 
 // Redis client library
 import { Redis } from 'ioredis'; 
 // Host, port and password come from src/config.ts (redisConnection): Redis requires
 // authentication, so the cache client always sends REDIS_PASSWORD (CWE-306).
 const redis = new Redis({ ...redisConnection });
+
+// The verified token claims of the caller. authMiddleware runs before every route that calls this, so
+// req.user is always set; a missing value would mean a route was wired without it, so fail closed with 401.
+function requesterOf(req: Request): AccessTokenClaims {
+  if (!req.user) {
+    throw new AppError(401, 'UNAUTHORIZED', 'Token não fornecido');
+  }
+  return req.user;
+}
 
 // 2. CONTROLLER CLASS: This layer is the API's gateway.
 // It receives requests, calls the service, and returns an HTTP response.
@@ -33,6 +44,12 @@ export class UserController {
     // hands it to the central errorHandler (src/middlewares/errorHandler.ts). The handler logs
     // the full error and answers a generic 500, so internal text such as a database address
     // never reaches the client. The other methods below follow the same rule.
+
+    // ACCESS RULE (BFLA, OWASP API5:2023): listing every account is for admins only. The check runs
+    // before the cache read, so a cached page is never served to an account that may not see it.
+    if (!canListUsers(requesterOf(req))) {
+      throw new AppError(403, 'FORBIDDEN', 'Apenas administradores podem listar os usuários.');
+    }
 
     // Read pagination from the query string. validateMiddleware(listUsersSchema) has already
     // answered 400 for invalid values, so this parse only turns the text into numbers
@@ -89,6 +106,12 @@ export class UserController {
       return;
     }
 
+    // ACCESS RULE (BOLA, OWASP API1:2023): a record is visible to its owner and to admins. The check
+    // runs before the lookup, so another account's id gets 403 whether that account exists or not.
+    if (!canReadUser(requesterOf(req), id.trim())) {
+      throw new AppError(403, 'FORBIDDEN', 'Você só pode consultar o seu próprio cadastro.');
+    }
+
     // Forward the lookup to the service layer.
     const user = await this.userService.getUserById(id.trim());
 
@@ -104,6 +127,28 @@ export class UserController {
     }
 
     // Return the structured, typed User object.
+    res.status(200).json(user);
+  };
+
+  /**
+  * 📡 ENDPOINT 2B (GET /users/me): Read the caller's own record.
+  * The id comes from the verified token, never from the URL, so there is nothing to tamper with.
+   */
+  getCurrentUser = async (req: Request, res: Response): Promise<void> => {
+    // No try/catch: a database failure reaches the central errorHandler (see getUsers above).
+    const user = await this.userService.getUserById(requesterOf(req).id);
+
+    // The token can outlive its account (for example, a deleted user): answer 404 like any missing record.
+    if (!user) {
+      res.status(404).json({
+        error: {
+          code: 'NOT_FOUND',
+          message: 'O usuário solicitado não foi localizado na base de dados relacional.'
+        }
+      });
+      return;
+    }
+
     res.status(200).json(user);
   };
 

@@ -230,7 +230,9 @@ export async function createApp(customUserService?: any) {
       id: userRecord.id,
       user: userRecord.name,
       email: userRecord.email,
-      role: 'USER' // Enforce application role hierarchy assignment mapping
+      // The account's access level from the users table (USER unless promoted to ADMIN in the
+      // database). The access rules in src/auth/userPolicy.ts read it from the verified token.
+      role: userRecord.role ?? 'USER'
     };
 
     // Sign the final cryptographic token: HS256 with the issuer, audience and lifetime from
@@ -245,6 +247,8 @@ export async function createApp(customUserService?: any) {
   // 🗺️ MAESTRO REST ENDPOINTS
   // ==========================================
   app.get('/users', authMiddleware, validateMiddleware(listUsersSchema), (req: Request, res: Response) => userController.getUsers(req, res));
+  // /users/me is registered before /users/:id, otherwise Express would read "me" as an id.
+  app.get('/users/me', authMiddleware, (req: Request, res: Response) => userController.getCurrentUser(req, res));
   app.get('/users/:id', authMiddleware, (req: Request, res: Response) => userController.getUserById(req, res));
   app.post('/api/v1/users', validateMiddleware(createUserSchema), (req: Request, res: Response) => userController.createUser(req, res));
 
