@@ -1,6 +1,6 @@
 // 1. IMPORTS: Express lifecycle types and the list of trusted browser origins.
 import { type Request, type Response, type NextFunction } from 'express';
-import { settings } from '../config.js';
+import { env } from '../config.js';
 
 // Methods that only read data. Browsers can send them cross-site in ways CORS does not stop
 // (links, images), so they must never change state; this API's GET routes do not.
@@ -11,7 +11,7 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * Since the session lives in a cookie (src/auth/sessionCookie.ts), the browser attaches it to
  * requests on its own. SameSite=Strict already keeps it off requests started by other sites; this
  * middleware is the second layer, as OWASP recommends: every state-changing request that comes
- * from a browser page must come from one of settings.allowedOrigins.
+ * from a browser page must come from one of the ALLOWED_ORIGINS validated in src/config.ts.
  *
  * Browsers always send the Origin header on cross-origin requests and on POST requests, and a page
  * cannot forge it. Requests without an Origin header come from non-browser clients (curl, scripts,
@@ -20,10 +20,7 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export function originCheck(req: Request, res: Response, next: NextFunction): void {
   const origin = req.headers.origin;
 
-  // The settings list is a readonly tuple of literal strings; widen it to compare any incoming Origin.
-  const allowedOrigins: readonly string[] = settings.allowedOrigins;
-
-  if (SAFE_METHODS.has(req.method) || origin === undefined || allowedOrigins.includes(origin)) {
+  if (SAFE_METHODS.has(req.method) || origin === undefined || env.ALLOWED_ORIGINS.includes(origin)) {
     next();
     return;
   }

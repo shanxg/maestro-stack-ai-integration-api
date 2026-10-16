@@ -131,4 +131,10 @@ spec:
                 secretKeyRef:
                   name: maestro-api-secret
                   key: rabbit-password
+
+            # Browser origins trusted for CORS and the CSRF Origin check (issue #120): set the deployed
+            # frontend's origin here. Without it the API trusts only the local development origins, so
+            # the browser frontend is refused (fail closed). Wildcards and paths are rejected at boot.
+            # - name: ALLOWED_ORIGINS
+            #   value: "https://maestro.example.com"
               

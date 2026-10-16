@@ -173,7 +173,7 @@ export class EventBrokerService {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     // No 'Access-Control-Allow-Origin: *' here any more (CWE-942): the global cors middleware in
-    // app.ts already answers with the requesting origin only when it is on settings.allowedOrigins,
+    // app.ts already answers with the requesting origin only when it is on ALLOWED_ORIGINS,
     // together with Allow-Credentials, which the cookie-authenticated stream needs.
 
     // Send an initial heartbeat to establish the connection with the frontend.

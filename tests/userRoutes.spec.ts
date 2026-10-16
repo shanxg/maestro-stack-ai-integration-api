@@ -646,7 +646,7 @@ describe('User routes (integration tests)', () => {
   });
 
   // TEST 30: Verify a state-changing request from a foreign page is refused (CSRF, CWE-352).
-  // Condition: A POST whose Origin is not in settings.allowedOrigins gets 403 before the route runs;
+  // Condition: A POST whose Origin is not in ALLOWED_ORIGINS (src/config.ts) gets 403 before the route runs;
   // the same request from the frontend's origin goes through.
   it('POST /auth/login -> returns 403 for a foreign Origin and accepts the frontend origin', async () => {
     mockUserService.getUserByEmail.mockClear();

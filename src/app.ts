@@ -60,12 +60,12 @@ export async function createApp(customUserService?: any) {
   // production only to let the Apollo Sandbox page run, and GraphQL was retired (ADR 0001).
   app.use(helmet());
 
-  // B. CORS: Restrict request origins to traffic from the Next.js frontend (settings.allowedOrigins).
+  // B. CORS: Restrict request origins to traffic from the Next.js frontend (ALLOWED_ORIGINS in src/config.ts).
   // The cors middleware also answers every preflight (OPTIONS) request itself, echoing an origin only
   // when it is on the list. The old hand-written OPTIONS handler, which echoed any Origin (or '*'),
   // was removed (CWE-942).
   app.use(cors({ 
-    origin: [...settings.allowedOrigins],
+    origin: [...env.ALLOWED_ORIGINS],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true, // Let the browser send and receive the HttpOnly session cookie

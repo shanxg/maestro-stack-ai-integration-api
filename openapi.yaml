@@ -412,7 +412,7 @@ components:
     ForeignOrigin:
       description: >
         State-changing request sent by a browser page whose Origin is not one of the API's allowed
-        origins (CSRF protection, CWE-352). Requests without an Origin header, such as those from
+        origins (the ALLOWED_ORIGINS setting; CSRF protection, CWE-352). Requests without an Origin header, such as those from
         API clients, are not affected.
       content:
         application/json:
