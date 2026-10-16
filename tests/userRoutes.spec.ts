@@ -480,6 +480,18 @@ describe('User routes (integration tests)', () => {
     expect(response.body.error.details).toBeUndefined();
   });
 
+  // TEST 21: Verify every Redis client authenticates with REDIS_PASSWORD (CWE-306, issue #106).
+  // Condition: The users cache (created when UserController loads) and the rate-limit client
+  // (created by createApp) must both receive the password; the fake records their options.
+  it('Redis clients -> connect with the REDIS_PASSWORD from src/config.ts', () => {
+    // At least two clients exist by now: the UserController cache and one per createApp() call.
+    expect(FakeRedis.connectionOptions.length).toBeGreaterThanOrEqual(2);
+
+    for (const options of FakeRedis.connectionOptions) {
+      expect(options.password).toBe(process.env.REDIS_PASSWORD);
+    }
+  });
+
 });
 
 describe('AI chat route (integration tests)', () => {

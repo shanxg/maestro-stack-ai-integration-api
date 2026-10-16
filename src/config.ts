@@ -8,7 +8,8 @@ import { z } from 'zod';
 // A TCP port: a whole number between 1 and 65535 (strings from .env are converted).
 const port = z.coerce.number().int().min(1).max(65535);
 
-const envSchema = z.object({
+// Exported so tests/config.spec.ts can check the rules without restarting the process.
+export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: port.default(3000),
 
@@ -24,6 +25,9 @@ const envSchema = z.object({
 
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: port.default(6379),
+  // Redis holds the users cache and the rate-limit counters, so it must require a password
+  // (CWE-306). There is no default: docker-compose.yml starts Redis with this same value.
+  REDIS_PASSWORD: z.string().min(1),
   RABBIT_HOST: z.string().default('localhost'),
   RABBIT_PORT: port.default(5672),
 
@@ -56,6 +60,14 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+
+// Connection settings shared by every ioredis client (the users cache in UserController and the
+// rate-limit counters in app.ts), so no client can be created without the password.
+export const redisConnection = {
+  host: env.REDIS_HOST,
+  port: env.REDIS_PORT,
+  password: env.REDIS_PASSWORD,
+};
 
 // Fixed values that do not change between environments.
 export const settings = {
