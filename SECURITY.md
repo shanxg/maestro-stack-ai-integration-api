@@ -71,7 +71,7 @@ Out of scope:
 | **Dependencies**     | Dependabot alerts and weekly version-update PRs (npm, GitHub Actions, Docker).                                                                                                                                                           |
 | **DAST**             | OWASP ZAP API scan of the local API, driven by `openapi.yaml` (passive and active rules); reports and triage in `docs/security/dast/`. Not run in CI.                                                                                    |
 | **Container**        | Runs as the unprivileged `node` user; Node 24 LTS base image; dependencies installed from the lockfile (`npm ci`). An allowlist `.dockerignore` keeps `.env`, `node_modules` and `frontend/` out of the build context.                   |
-| **Infrastructure**   | Kubernetes manifests do not carry secrets — `secret.yaml` is gitignored and only `secret.yaml.example` is committed. PostgreSQL, RabbitMQ and Redis all require credentials from the environment, and the local Redis port is published on 127.0.0.1 only.                                                                                                                     |
+| **Infrastructure**   | Kubernetes manifests do not carry secrets — `secret.yaml` is gitignored and only `secret.yaml.example` is committed. PostgreSQL, RabbitMQ and Redis all require credentials from the environment, and `docker-compose.yml` publishes every local port on 127.0.0.1 only (a test checks it).                                                                                                                     |
 
 A full list of remediations performed on this codebase is kept in
 [`docs/security/remediation-log.md`](docs/security/remediation-log.md),

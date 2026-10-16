@@ -9,7 +9,9 @@ services:
       # Read from .env: no default password in the repository (CRED-04). Compose stops if it is unset.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
     ports:
-      - "5433:5432" # 👈 Keep host port 5433 to avoid conflicting with PostgreSQL on Windows
+      # Host only (127.0.0.1): other machines on the network cannot reach the database (CWE-1327).
+      # Host port 5433 avoids a conflict with a PostgreSQL installed on Windows.
+      - "127.0.0.1:5433:5432"
 
   # 2. In-memory cache service
   redis:
@@ -33,5 +35,7 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBIT_USER:?Set RABBIT_USER in .env (see .env.example)}
       RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD:?Set RABBIT_PASSWORD in .env (see .env.example)}
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      # Host only (127.0.0.1): the broker (5672) and its management web UI (15672) are not
+      # reachable from other machines on the network (CWE-1327).
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
