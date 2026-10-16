@@ -8,6 +8,28 @@ import { z } from 'zod';
 // A TCP port: a whole number between 1 and 65535 (strings from .env are converted).
 const port = z.coerce.number().int().min(1).max(65535);
 
+// A bare web origin, exactly as browsers send it in the Origin header: http or https, a host and an
+// optional port, and nothing else. A path, a trailing slash, a query or a wildcard ("*", or a
+// "*.example.com" host) is rejected, because the list must name each trusted origin precisely
+// (CWE-942). new URL() normalizes the value, so comparing it with url.origin catches every extra part.
+const webOrigin = z.string().refine((value) => {
+  if (value.includes('*')) return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.origin === value;
+  } catch {
+    return false;
+  }
+}, 'each entry must be a bare http(s) origin such as https://app.example.com (no path, trailing slash or wildcard)');
+
+// The origins of the local frontend (Next.js on 3001) and of the API itself (3000), on both host names.
+export const LOCAL_DEVELOPMENT_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3001',
+];
+
 // Exported so tests/config.spec.ts can check the rules without restarting the process.
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -40,6 +62,16 @@ export const envSchema = z.object({
   OPENAI_API_KEY: z.string().default('local-ollama-free-key-maestro'),
   // Model name sent to the server above (for example "gpt-4o-mini" on the OpenAI platform).
   OPENAI_MODEL: z.string().default('llama3'),
+
+  // Browser origins trusted with credentials (issue #120): the CORS allowlist and the CSRF Origin
+  // check (src/middlewares/originCheck.ts) both read this list (CWE-352 / CWE-942). A comma-separated
+  // list such as "https://app.example.com,https://admin.example.com"; without it, only the local
+  // development origins are trusted, so a deployment that forgets it fails closed.
+  ALLOWED_ORIGINS: z
+    .string()
+    .default(LOCAL_DEVELOPMENT_ORIGINS.join(','))
+    .transform((list) => list.split(',').map((origin) => origin.trim()).filter((origin) => origin !== ''))
+    .pipe(z.array(webOrigin).min(1, 'must list at least one origin')),
 });
 
 // An empty value in .env (for example "PORT=") counts as not set:
@@ -85,14 +117,6 @@ export const settings = {
     name: 'maestro_session',
     maxAgeSeconds: 60 * 60,
   },
-  // Browser origins allowed to call the API with credentials: the CORS allowlist and the CSRF
-  // Origin check (src/middlewares/originCheck.ts) both read this list (CWE-352 / CWE-942).
-  allowedOrigins: [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:3001',
-  ],
   bcryptSaltRounds: 12,
   usersCacheTtlSeconds: 60,
   // GET /users page size: the default when no limit is sent, and the largest accepted.

@@ -33,4 +33,42 @@ describe('Environment configuration (src/config.ts)', () => {
       expect(result.error?.issues.map((issue) => issue.path.join('.'))).toContain('REDIS_PASSWORD');
     }
   });
+
+  // TEST 3: Verify the trusted browser origins come from ALLOWED_ORIGINS (issue #120).
+  // Condition: A comma-separated list with spaces around the entries becomes a clean list, so a
+  // deployed frontend is trusted through configuration instead of a code change.
+  it('reads ALLOWED_ORIGINS as a list of origins', () => {
+    const result = envSchema.safeParse({
+      ...validEnvironment,
+      ALLOWED_ORIGINS: 'https://app.maestro.example, https://admin.maestro.example:8443'
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.ALLOWED_ORIGINS).toEqual(['https://app.maestro.example', 'https://admin.maestro.example:8443']);
+  });
+
+  // TEST 4: Verify ALLOWED_ORIGINS rejects anything but a bare http(s) origin (CWE-942).
+  // Condition: A wildcard, a wildcard subdomain, a path, a trailing slash, another scheme or an
+  // empty list must each stop the boot with an error on ALLOWED_ORIGINS.
+  it('rejects wildcards, paths, trailing slashes, other schemes and an empty list in ALLOWED_ORIGINS', () => {
+    for (const value of ['*', 'https://*.maestro.example', 'https://app.maestro.example/chat', 'https://app.maestro.example/', 'ftp://files.maestro.example', ' , ']) {
+      const result = envSchema.safeParse({ ...validEnvironment, ALLOWED_ORIGINS: value });
+
+      expect({ value, success: result.success }).toEqual({ value, success: false });
+      expect(result.error?.issues.some((issue) => issue.path[0] === 'ALLOWED_ORIGINS')).toBe(true);
+    }
+  });
+
+  // TEST 5: Verify that without ALLOWED_ORIGINS only the local development origins are trusted.
+  // Condition: The variable is not set, as in local development; a deployment that forgets it fails closed.
+  it('trusts only the local development origins when ALLOWED_ORIGINS is not set', () => {
+    const result = envSchema.safeParse(validEnvironment);
+
+    expect(result.data?.ALLOWED_ORIGINS).toEqual([
+      'http://localhost:3000',
+      'http://localhost:3001',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:3001'
+    ]);
+  });
 });
