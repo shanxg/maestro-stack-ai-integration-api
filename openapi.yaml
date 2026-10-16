@@ -55,7 +55,7 @@ paths:
                 properties:
                   token:
                     type: string
-                    description: HS256 JWT, valid for 1 hour, with the claims id, user, email and role, plus iss and aud set to maestro-api.
+                    description: HS256 JWT, valid for 1 hour, with the claims id, user, email and role (USER or ADMIN, from the database), plus iss and aud set to maestro-api.
         '400':
           description: >
             The username or password field is missing, blank or not a string (for example, a number).
@@ -81,9 +81,11 @@ paths:
 
   /users:
     get:
-      summary: List users with pagination
+      summary: List users with pagination (admins only)
       description: >
         Retrieves slices of the user array with dynamic Cache-Aside support on Redis.
+        Only accounts with the ADMIN role (set in the database and carried in the JWT) may list
+        users; any other account gets 403 before the cache or the database is read.
         Invalid pagination values are rejected with 400 before the database is queried.
       parameters:
         - name: limit
@@ -127,6 +129,30 @@ paths:
                       message: "O limit deve ser no máximo 100."
         '401':
           description: Access denied because the JWT is missing or invalid.
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /users/me:
+    get:
+      summary: Get the caller's own user record
+      description: >
+        Reads the record of the account in the JWT. The id comes from the verified token, never
+        from the URL. The password hash is never returned.
+      responses:
+        '200':
+          description: The caller's record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Access denied because the JWT is missing, expired or invalid.
+        '404':
+          description: The account in the token no longer exists.
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '500':
@@ -134,8 +160,11 @@ paths:
 
   /users/{id}:
     get:
-      summary: Get a user by ID
-      description: Reads a single user from PostgreSQL. The password hash is never returned.
+      summary: Get a user by ID (own record, or any record for admins)
+      description: >
+        Reads a single user from PostgreSQL. A regular account may read only its own id
+        (GET /users/me does the same without the id); admins may read any id. Another account's
+        id gets 403 whether that account exists or not. The password hash is never returned.
       parameters:
         - name: id
           in: path
@@ -155,8 +184,10 @@ paths:
           description: The ID is blank.
         '401':
           description: Access denied because the JWT is missing, expired or invalid.
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
-          description: No user exists with this ID.
+          description: No user exists with this ID (only an admin or the owner gets this far).
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '500':
@@ -320,6 +351,19 @@ components:
         or an expired "exp" claim, always with the same 401 INVALID_TOKEN response.
 
   responses:
+    Forbidden:
+      description: >
+        The account in the JWT is valid but may not perform this operation: listing users is for
+        admins only, and a regular account may read only its own record (OWASP API1:2023 and API5:2023).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: FORBIDDEN
+              message: "Apenas administradores podem listar os usuários."
+
     TooManyRequests:
       description: >
         Rate limit exceeded. Every route shares a global limit of 100 requests per IP every
