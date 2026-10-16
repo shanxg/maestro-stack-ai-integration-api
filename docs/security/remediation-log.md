@@ -1207,3 +1207,42 @@ The session was designed for a token held by JavaScript, and the stream was adde
 - Commit `6b650f1` — `frontend/app/login/page.tsx`, `frontend/app/chat/page.tsx`, `frontend/app/utils/session.ts`.
 - Commit `7fd5bc6` — `openapi.yaml`, `README.md`, `SECURITY.md`, `docs/security/dast/README.md`.
 - Issues #34 and #35.
+
+---
+
+## 🔵 [NET-01] PostgreSQL and RabbitMQ were published on every network interface
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 1.15, issue #119; found while closing #106)
+
+**Severity:** Low
+
+**References:** CWE-1327, OWASP A02:2025
+
+**Finding:**
+
+`docker-compose.yml` published PostgreSQL as `"5433:5432"` and RabbitMQ as `"5672:5672"` and `"15672:15672"`, with no host address, so Docker bound them to every interface: `docker ps` showed `0.0.0.0` and `[::]` on 5433, 5672 and 15672 (the RabbitMQ management web UI). Any machine on the same network could reach the database and the broker and try passwords against them. Both already require credentials from `.env` (CRED-04, CRED-05), which keeps the severity low; Redis had been moved to `127.0.0.1` in CRED-06, and these two services were left as they were.
+
+**Root cause:**
+
+The short port syntax in Compose binds to all interfaces when no address is given, and the local services were never meant to be reached from other machines.
+
+**Remediation applied:**
+
+- `docker-compose.yml` publishes `127.0.0.1:5433`, `127.0.0.1:5672` and `127.0.0.1:15672`, like `127.0.0.1:6379` for Redis.
+- `tests/dockerCompose.spec.ts` reads `docker-compose.yml` and fails if any published port has no host address or a non-loopback one, so a new service cannot be exposed by accident.
+- The local containers were recreated with `docker compose up -d postgres rabbitmq`. Compose reattached their existing volumes (created on 2026-10-14): the `users` table kept its row and the `maestro` broker account was still there. RabbitMQ needed a second start because the old container had not released port 15672 yet.
+- `SECURITY.md` covers every local port.
+
+**Regression test:**
+
+- `tests/dockerCompose.spec.ts` › `publishes every port on 127.0.0.1 only`. Against the previous code it failed listing `postgres` `5433:5432`, `rabbitmq` `5672:5672` and `rabbitmq` `15672:15672` as bound to all interfaces.
+- Manual check after the recreation: `docker ps` shows only `127.0.0.1` bindings; the management UI answers `200` on `127.0.0.1:15672`, while connections to the machine's network address on 15672 and 5433 are refused.
+- `npx tsc --noEmit` passes; `npm test` passes (7 suites, 65 tests).
+
+**Evidence:**
+
+- Commit `0eb0aa4` — `docker-compose.yml`, `tests/dockerCompose.spec.ts`.
+- Commit `f6d6ead` — `SECURITY.md`.
+- Issue #119.
