@@ -2,8 +2,6 @@
 
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
-// 1. APPSEC IMPORT: Inject the brand new application security engine helper at the top
-import { sanitizeClientOutput } from '../utils/security';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -158,36 +156,29 @@ export default function ChatPage() {
 
      {/* PAINEL DE MENSAGENS */}
       <section className="flex-1 overflow-y-auto px-4 py-6 space-y-6 max-w-4xl w-full mx-auto scrollbar-thin">
-        {messages.map((msg, index) => {
-          
-          // 2. APPSEC RUNTIME FILTER: Purge malicious script tokens dynamically during render cascade
-          // This safely transforms rich context strings or Markdown inputs into vetted raw structural text primitives.
-          const safeMessageContent = sanitizeClientOutput(msg.content);
-
-          return (
-            <div 
-              key={index} 
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div className={`max-w-[80%] rounded-2xl px-5 py-3.5 text-sm leading-relaxed shadow-xl border ${
-                msg.role === 'user' 
-                  ? 'bg-indigo-600 border-indigo-500 text-white rounded-br-none shadow-indigo-600/10' 
-                  : 'bg-gray-900 border-gray-800 text-gray-100 rounded-bl-none'
-              }`}>
-                {/* 
-                  CRITICAL APPSEC REMEDIATION: 
-                  dangerouslySetInnerHTML is heavily tracked by DAST/SAST checkers (SonarQube/Snyk).
-                  By parsing 'safeMessageContent' instead of the raw variable block, we eliminate 
-                  DOM-based XSS vectors (CWE-79) while securely rendering allowed layouts.
-                */}
-                <div 
-                  className="whitespace-pre-wrap break-words"
-                  dangerouslySetInnerHTML={{ __html: safeMessageContent }}
-                />
-              </div>
+        {messages.map((msg, index) => (
+          <div
+            key={index}
+            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+          >
+            <div className={`max-w-[80%] rounded-2xl px-5 py-3.5 text-sm leading-relaxed shadow-xl border ${
+              msg.role === 'user'
+                ? 'bg-indigo-600 border-indigo-500 text-white rounded-br-none shadow-indigo-600/10'
+                : 'bg-gray-900 border-gray-800 text-gray-100 rounded-bl-none'
+            }`}>
+              {/*
+                APPSEC REMEDIATION (CWE-79 / OWASP LLM05:2025, issue #42):
+                The model's answer is untrusted text, so it is rendered as text. React escapes it,
+                so any HTML or script in the answer shows up as literal characters and never runs.
+                This removes the raw HTML sink the page used before (React's "dangerous" inner HTML
+                prop, fed by a sanitizer) instead of relying on a sanitizer to keep up with every
+                bypass; ESLint's react/no-danger rule keeps the sink out.
+                whitespace-pre-wrap keeps the line breaks and indentation of the answer.
+              */}
+              <div className="whitespace-pre-wrap break-words">{msg.content}</div>
             </div>
-          );
-        })}
+          </div>
+        ))}
         {loading && (
           <div className="flex justify-start">
             <div className="bg-gray-900 border border-gray-800 rounded-2xl rounded-bl-none px-5 py-4 flex items-center space-x-1.5 shadow-md">
