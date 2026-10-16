@@ -28,14 +28,30 @@ jest.unstable_mockModule('ioredis', () => {
 // 5 seconds when the broker is down. Replacing the class keeps the suite independent of
 // Docker and lets Jest exit without open handles.
 const publishEventMock = jest.fn<(action: string, data: object) => Promise<boolean>>();
+// The fake stream answers with the real stream's first message and closes at once, so a test
+// request to GET /events completes instead of staying open like a real Server-Sent Events stream.
+const registerSSEClientMock = jest.fn((_req: unknown, res: http.ServerResponse) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.end('data: {"status": "CONNECTED_TO_MAESTRO_STREAM"}\n\n');
+});
 jest.unstable_mockModule('../src/services/EventBrokerService.js', () => {
   return {
     EventBrokerService: class {
       publishEvent = publishEventMock;
-      registerSSEClient = jest.fn();
+      registerSSEClient = registerSSEClientMock;
     }
   };
 });
+
+// 🍪 SESSION COOKIE HELPER: POST /auth/login returns the JWT only in the HttpOnly session cookie.
+// Read it from the Set-Cookie header, as a non-browser API client would, to send it as a Bearer token.
+const SESSION_COOKIE = 'maestro_session';
+const sessionCookieOf = (response: { headers: Record<string, unknown> }): string | undefined => {
+  const cookies = (response.headers['set-cookie'] as string[] | undefined) ?? [];
+  return cookies.find((cookie) => cookie.startsWith(`${SESSION_COOKIE}=`));
+};
+const sessionTokenOf = (response: { headers: Record<string, unknown> }): string =>
+  decodeURIComponent(sessionCookieOf(response)?.split(';')[0]?.slice(SESSION_COOKIE.length + 1) ?? '');
 
 // 🐘 MOCK THE POSTGRESQL REPOSITORY: createApp() awaits userRepository.initialize(),
 // which would open a real connection pool. The routes receive the mock service below,
@@ -145,7 +161,7 @@ describe('User routes (integration tests)', () => {
       .post('/auth/login')
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
-    tokenAdmin = response.body.token;
+    tokenAdmin = sessionTokenOf(response);
 
     // A regular account (role USER), signed like the login signs tokens.
     tokenRegular = signAccessToken({ id: REGULAR_ID, user: 'Lucas Comum', email: 'comum@maestro.test', role: 'USER' });
@@ -164,7 +180,8 @@ describe('User routes (integration tests)', () => {
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
     expect(response.status).toBe(200);
-    expect(typeof response.body.token).toBe('string');
+    expect(sessionTokenOf(response)).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/); // header.payload.signature
+    expect(response.body.user).toMatchObject({ id: 'admin-id', email: ADMIN_EMAIL });
   });
 
   // TEST 2: Verify that a wrong password returns the generic 401 error (no user enumeration).
@@ -508,7 +525,7 @@ describe('User routes (integration tests)', () => {
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
     expect(response.status).toBe(200);
-    const decoded = jwt.decode(response.body.token, { complete: true }) as jwt.Jwt;
+    const decoded = jwt.decode(sessionTokenOf(response), { complete: true }) as jwt.Jwt;
     const claims = decoded.payload as jwt.JwtPayload;
 
     expect(claims.iss).toBeDefined();
@@ -588,7 +605,115 @@ describe('User routes (integration tests)', () => {
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
     expect(response.status).toBe(200);
-    expect(jwt.decode(response.body.token)).toMatchObject({ id: 'admin-id', role: 'ADMIN' });
+    expect(jwt.decode(sessionTokenOf(response))).toMatchObject({ id: 'admin-id', role: 'ADMIN' });
+  });
+
+  // Log in as the test administrator and return the "name=value" pair a browser would send back.
+  const loginCookiePair = async (): Promise<string> => {
+    const login = await request(serverTarget)
+      .post('/auth/login')
+      .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    return (sessionCookieOf(login) ?? '').split(';')[0] ?? '';
+  };
+
+  // TEST 28: Verify the login keeps the JWT out of reach of page scripts (CWE-922, issue #34).
+  // Condition: The session cookie must be HttpOnly, SameSite=Strict, Path=/ and expire with the token,
+  // and the response body must not carry the token.
+  it('POST /auth/login -> sets an HttpOnly, SameSite=Strict session cookie and keeps the token out of the body', async () => {
+    const response = await request(serverTarget)
+      .post('/auth/login')
+      .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+
+    expect(response.status).toBe(200);
+    const cookie = sessionCookieOf(response) ?? '';
+    expect(cookie).not.toBe('');
+    expect(cookie).toMatch(/;\s*HttpOnly/i);
+    expect(cookie).toMatch(/;\s*SameSite=Strict/i);
+    expect(cookie).toMatch(/;\s*Path=\//i);
+    expect(cookie).toMatch(new RegExp(`;\\s*Max-Age=${settings.sessionCookie.maxAgeSeconds}`, 'i'));
+    expect(JSON.stringify(response.body)).not.toContain(sessionTokenOf(response));
+  });
+
+  // TEST 29: Verify the session cookie alone authenticates a request, as the browser sends no header.
+  // Condition: Call GET /users/me with only the Cookie header returned by the login.
+  it('GET /users/me -> accepts the session cookie without an Authorization header', async () => {
+    const cookiePair = await loginCookiePair();
+
+    const response = await request(serverTarget).get('/users/me').set('Cookie', cookiePair);
+
+    expect(response.status).toBe(200);
+    expect(response.body.id).toBe('admin-id');
+  });
+
+  // TEST 30: Verify a state-changing request from a foreign page is refused (CSRF, CWE-352).
+  // Condition: A POST whose Origin is not in settings.allowedOrigins gets 403 before the route runs;
+  // the same request from the frontend's origin goes through.
+  it('POST /auth/login -> returns 403 for a foreign Origin and accepts the frontend origin', async () => {
+    mockUserService.getUserByEmail.mockClear();
+
+    const foreign = await request(serverTarget)
+      .post('/auth/login')
+      .set('Origin', 'https://evil.example')
+      .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    expect(foreign.status).toBe(403);
+    expect(foreign.body.error.code).toBe('CSRF_ORIGIN_REJECTED');
+    expect(mockUserService.getUserByEmail).not.toHaveBeenCalled();
+
+    const frontend = await request(serverTarget)
+      .post('/auth/login')
+      .set('Origin', 'http://localhost:3001')
+      .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    expect(frontend.status).toBe(200);
+  });
+
+  // TEST 31: Verify a CORS preflight from a foreign origin is not granted (CWE-942, issue #35).
+  // Condition: The removed OPTIONS handler echoed any Origin; the cors middleware must echo only
+  // an allowed origin, together with Allow-Credentials for the session cookie.
+  it('OPTIONS preflight -> echoes only an allowed origin', async () => {
+    const foreign = await request(serverTarget)
+      .options('/auth/login')
+      .set('Origin', 'https://evil.example')
+      .set('Access-Control-Request-Method', 'POST');
+    expect(foreign.headers['access-control-allow-origin']).toBeUndefined();
+
+    const allowed = await request(serverTarget)
+      .options('/auth/login')
+      .set('Origin', 'http://localhost:3001')
+      .set('Access-Control-Request-Method', 'POST');
+    expect(allowed.headers['access-control-allow-origin']).toBe('http://localhost:3001');
+    expect(allowed.headers['access-control-allow-credentials']).toBe('true');
+  });
+
+  // TEST 32: Verify the event stream requires a session (issue #35).
+  // Condition: Without a token the stream is refused before it opens; with the session cookie
+  // (what EventSource sends with withCredentials: true) it opens.
+  it('GET /events -> returns 401 without a session and opens the stream with the session cookie', async () => {
+    registerSSEClientMock.mockClear();
+
+    const anonymous = await request(serverTarget).get('/events');
+    expect(anonymous.status).toBe(401);
+    expect(registerSSEClientMock).not.toHaveBeenCalled();
+
+    // Log in first: Supertest starts and stops the shared server per request, so one request
+    // must not be built while another is still running.
+    const cookiePair = await loginCookiePair();
+    const withCookie = await request(serverTarget).get('/events').set('Cookie', cookiePair);
+    expect(withCookie.status).toBe(200);
+    expect(withCookie.headers['content-type']).toMatch(/text\/event-stream/);
+  });
+
+  // TEST 33: Verify the logout clears the session cookie with the same attributes it was set with.
+  // Condition: The browser only removes a cookie when name, path and flags match, so the clearing
+  // Set-Cookie must be an empty, already expired, HttpOnly cookie on Path=/.
+  it('POST /auth/logout -> clears the session cookie', async () => {
+    const response = await request(serverTarget).post('/auth/logout');
+
+    expect(response.status).toBe(204);
+    const cookie = sessionCookieOf(response) ?? '';
+    expect(cookie).toMatch(new RegExp(`^${SESSION_COOKIE}=;`));
+    expect(cookie).toMatch(/Expires=Thu, 01 Jan 1970/i);
+    expect(cookie).toMatch(/;\s*HttpOnly/i);
+    expect(cookie).toMatch(/;\s*Path=\//i);
   });
 
 });

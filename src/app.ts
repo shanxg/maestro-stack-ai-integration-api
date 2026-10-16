@@ -35,6 +35,9 @@ import { chatSchema } from './schemas/aiSchema.js';
 import { env, settings, redisConnection } from './config.js'; // Validated environment, fixed limits and the Redis connection (also loads .env)
 // Signs the login tokens. src/config.ts stops the boot if JWT_SECRET is missing or too short (CWE-798).
 import { signAccessToken } from './auth/accessToken.js';
+// The HttpOnly session cookie (CWE-922) and the CSRF Origin check that protects it (CWE-352).
+import { SESSION_COOKIE_NAME, sessionCookieOptions } from './auth/sessionCookie.js';
+import { originCheck } from './middlewares/originCheck.js';
 
 /**
  * 🏭 APPLICATION FACTORY (createApp):
@@ -57,30 +60,22 @@ export async function createApp(customUserService?: any) {
   // production only to let the Apollo Sandbox page run, and GraphQL was retired (ADR 0001).
   app.use(helmet());
 
-  // B. CORS: Restrict request origins to traffic from the Next.js frontend.
+  // B. CORS: Restrict request origins to traffic from the Next.js frontend (settings.allowedOrigins).
+  // The cors middleware also answers every preflight (OPTIONS) request itself, echoing an origin only
+  // when it is on the list. The old hand-written OPTIONS handler, which echoed any Origin (or '*'),
+  // was removed (CWE-942).
   app.use(cors({ 
-    origin: [
-      'http://localhost:3000', 
-      'http://localhost:3001',
-      'http://127.0.0.1:3000',
-      'http://127.0.0.1:3001'
-    ], // Support both local ports
+    origin: [...settings.allowedOrigins],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true, // Allow cookies and credentials to be sent
+    credentials: true, // Let the browser send and receive the HttpOnly session cookie
   }));
+
+  // C. CSRF ORIGIN CHECK (CWE-352): state-changing requests from a browser page must come from an
+  // allowed origin, a second layer on top of the SameSite=Strict session cookie (originCheck.ts).
+  app.use(originCheck);
   
-  // APPSEC REMEDIATION - GLOBAL OPTIONS PRE-FLIGHT INTERCEPTOR (OWASP TOP 10)
-  // Forces the Express architecture to immediately resolve and return HTTP 204 (No Content)
-  // to browser pre-flight handshake validations before they hit specific route validations.
-  app.options('/*splat', (req: Request, res: Response) => {
-    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.sendStatus(204);
-  });
-  
-  // C. SHARED RATE-LIMIT COUNTERS (CWE-770): Kubernetes runs two API replicas, so the three
+  // D. SHARED RATE-LIMIT COUNTERS (CWE-770): Kubernetes runs two API replicas, so the three
   // limiters below keep their counters in Redis (src/middlewares/redisRateLimitStore.ts).
   // Without an offline queue, commands fail at once while Redis is down, and the stores
   // switch to per-process memory counters instead of holding requests until Redis returns.
@@ -93,7 +88,7 @@ export async function createApp(customUserService?: any) {
   // the stores already log when Redis becomes unavailable and when it comes back.
   rateLimitRedis.on('error', () => {});
 
-  // D. RATE LIMITER: Protect the API from malicious request floods (DDoS).
+  // E. RATE LIMITER: Protect the API from malicious request floods (DDoS).
   const limiter = rateLimit({
     windowMs: settings.rateLimits.global.windowMs, // Window and cap live in src/config.ts
     max: settings.rateLimits.global.max,
@@ -240,7 +235,24 @@ export async function createApp(customUserService?: any) {
     const token = signAccessToken(sessionPayload);
 
     console.log(`✅ [Auth] Handshake verified successfully. JWT token issued for user ID: ${userRecord.id}`);
-    res.status(200).json({ token });
+
+    // SESSION COOKIE (CWE-922): the token goes into an HttpOnly, SameSite=Strict cookie that page
+    // scripts cannot read, and it is no longer returned in the body, so the frontend never holds it.
+    // API clients that need a Bearer token can take it from the Set-Cookie header.
+    res.cookie(SESSION_COOKIE_NAME, token, sessionCookieOptions());
+    res.status(200).json({ user: sessionPayload });
+  });
+
+  // =========================================================================
+  // 🚪 LOGOUT: POST /auth/logout
+  // =========================================================================
+  // Clears the session cookie with the same attributes it was set with, otherwise the browser keeps
+  // it. The JWT inside stays valid until it expires (at most settings.jwt.expiresIn), but the
+  // browser no longer sends it. Answering without a session is fine: logging out twice is harmless.
+  app.post('/auth/logout', (req: Request, res: Response) => {
+    const { maxAge: _lifetime, ...clearOptions } = sessionCookieOptions();
+    res.clearCookie(SESSION_COOKIE_NAME, clearOptions);
+    res.sendStatus(204);
   });
 
   // ==========================================
@@ -266,7 +278,9 @@ export async function createApp(customUserService?: any) {
   // ==========================================
   // 🔥 Route directly through the broker's registerSSEClient method.
   // Turn a standard HTTP connection into a reactive stream connected to the queue.
-  app.get('/events', (req: Request, res: Response) => {
+  // AUTHENTICATED STREAM (issue #35): authMiddleware runs first. The browser's EventSource cannot set
+  // an Authorization header, so it sends the session cookie (new EventSource(url, { withCredentials: true })).
+  app.get('/events', authMiddleware, (req: Request, res: Response) => {
     eventBrokerService.registerSSEClient(req, res);
   });
 

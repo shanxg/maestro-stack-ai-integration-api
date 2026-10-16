@@ -76,4 +76,53 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
 
     logSpy.mockRestore();
   });
+
+  // A stand-in for the Express response of one open /events connection.
+  const fakeStream = () => ({ setHeader: jest.fn(), write: jest.fn(), on: jest.fn() });
+
+  // TEST 3: Verify the event stream no longer opens itself to every website (CWE-942, issue #35).
+  // Condition: registerSSEClient sets the stream headers but no 'Access-Control-Allow-Origin';
+  // the global cors middleware in app.ts answers with an allowed origin only.
+  it('opens the event stream without a wildcard Access-Control-Allow-Origin header', async () => {
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const broker = new EventBrokerService();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const stream = fakeStream();
+    broker.registerSSEClient({} as never, stream as never);
+
+    expect(stream.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
+    expect(stream.setHeader).not.toHaveBeenCalledWith('Access-Control-Allow-Origin', expect.anything());
+
+    logSpy.mockRestore();
+  });
+
+  // TEST 4: Verify a new account is announced on the stream by its id only (issue #35).
+  // Condition: Every signed-in account receives the stream, but only admins may read other records
+  // (AUTHZ-01), so the user_created event must not carry the name or the e-mail.
+  it('broadcasts user_created with the new id only, never the name or e-mail', async () => {
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const userService = {
+      createUserWithPasswordHash: jest.fn(async () => ({ id: 'queued-id', name: 'Lucas Fila', email: 'lucas.fila@maestro.com' }))
+    };
+    fakeChannel.consume.mockClear();
+
+    const broker = new EventBrokerService(userService as never);
+    await new Promise((resolve) => setImmediate(resolve));
+    const stream = fakeStream();
+    broker.registerSSEClient({} as never, stream as never);
+
+    const onMessage = fakeChannel.consume.mock.calls[0]?.[1] as MessageHandler;
+    await onMessage({
+      content: Buffer.from(JSON.stringify({
+        action: 'user_created',
+        data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
+      }))
+    });
+
+    const sent = stream.write.mock.calls.map((call) => String(call[0])).filter((text) => text.startsWith('event:'));
+    expect(sent).toEqual(['event: user_created\ndata: {"id":"queued-id"}\n\n']);
+
+    logSpy.mockRestore();
+  });
 });
