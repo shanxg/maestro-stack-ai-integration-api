@@ -213,6 +213,7 @@ The repository enforces secret scanning at two layers, both using the same `.git
 `.gitleaks.toml` extends the default ruleset and only allowlists documentation placeholders (e.g. `YOUR_TOKEN_HERE`, `REPLACE_ME`), matched against the detected value. There is no file allowlist, so `.env` or `k8s/secret.yaml` are blocked even if force-added (see SCAN-01).
 
 Every remediation performed on this repository is logged in [`docs/security/remediation-log.md`](docs/security/remediation-log.md), with root cause, fix, regression test, and evidence.
+Checkout secutiry policies wether in the [`SECURITY.md`](/SECURITY.md) file in the root folder or at end of this document in the Security Policies section, where both [`docs/security/remediation-log.md`](docs/security/remediation-log.md) and [`SECURITY.md`](/SECURITY.md) are updated autonomously whenever these documents are updated.
 
 ---
 
@@ -237,3 +238,20 @@ Decisions that change the shape of the API are recorded in [`docs/adr/`](docs/ad
 ## ⚖️ Architectural Trade-offs: CAP Theorem Dynamics
 
 The Maestro architecture deliberately prioritizes **Availability & Partition Tolerance (AP)** within its streaming communication layer. Rather than holding the critical HTTP request pipeline hostage to complex analytical writes, data signals are dispatched asynchronously into **RabbitMQ** event queues. The platform favors **Eventual Consistency**, allowing backing consumers to batch write telemetries and auditing data blocks without adding a single millisecond of overhead to the user experience.
+
+---
+
+## 🕵️ Security Policies
+
+<!-- md:include start path="SECURITY.md" -->
+<!-- md:include end -->
+
+<details>
+<summary style="font-size: 20px; margin: 25px; font-weight: bold"> 
+   🛡️Remediation Log: <span style="font-style: italic; font-size: 16px;"> (click to open) </span> 
+   </summary>
+
+<!-- md:include start path="docs/security/remediation-log.md" -->
+<!-- md:include end -->
+
+</details>

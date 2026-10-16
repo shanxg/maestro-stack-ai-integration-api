@@ -1,0 +1,39 @@
+name: Sync README with Security Documents
+
+on:
+  push:
+    branches: [ main ] # Change to your default branch if needed (e.g., master)
+    paths:
+      # Only run when these source files change
+      - 'SECURITY.md'
+      - 'docs/security/remediation-log.md'
+      # Also watch the README in case the markers themselves are edited
+      - 'README.md'
+
+# Required permission so the workflow can push the updated README
+permissions:
+  contents: write
+
+jobs:
+  sync-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Readme Weaver
+        uses: devops-roast/readme-weaver@v1
+        env:
+          # Base directory used to resolve include paths.
+          # The repository root (./) is the most common value.
+          README_WEAVER_BASE: ./
+          LOG_LEVEL: DEBUG # Optional, useful for initial debugging
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          # The following command only commits if there are staged changes
+          git diff --staged --quiet || git commit -m "docs: sync README with security documents"
+          git push
