@@ -1,5 +1,5 @@
 // 1. FACTORY IMPORT: Brings the modular initializer of the Express ecosystem
-// that sets up the RESTful API and GraphQL, as well as connecting Redis and RabbitMQ.
+// that sets up the RESTful API, as well as connecting Redis and RabbitMQ.
 import { createApp } from './app.js';
 
 // 2. ASYNCHRONOUS ENGINE TRIGGER:

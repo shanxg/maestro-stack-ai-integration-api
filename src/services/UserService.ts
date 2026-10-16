@@ -56,7 +56,8 @@ export class UserService {
    /**
    * APPSEC SECURE WORKFLOW - CRYPTOGRAPHIC USER PROVISIONING (CWE-256 / CWE-338 / CWE-916)
    *
-   * Entry point for passwords that come from outside the API (the GraphQL mutation):
+   * Entry point for passwords that come from outside the API (any caller other than the
+   * registration queue; the retired GraphQL mutation was one, see ADR 0001):
    * 1. Cryptographically strong UUID generation instead of predictable PRNG.
    * 2. The password is ALWAYS hashed with bcrypt, even when it looks like a bcrypt hash.
    *    A caller could otherwise store a ready-made hash with a weak cost, skip the password

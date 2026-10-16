@@ -8,7 +8,7 @@
  *
  * COMPATIBILITY WITH THE CURRENT API:
  * - CORS mirrors the origin allowlist in app.ts instead of the old wildcard ('*').
- * - Every handshake must carry the same JWT that the REST and GraphQL firewalls verify.
+ * - Every handshake must carry the same JWT that the REST firewall (authMiddleware) verifies.
  * - Broadcasts carry only public user fields, never the password hash.
  */
 
@@ -34,7 +34,7 @@ export let io: Server | undefined;
 /**
  * 🔐 HANDSHAKE FIREWALL FACTORY (createHandshakeAuthenticator):
  * Build a Socket.io middleware that runs once per connection attempt, before the
- * 'connection' event, mirroring the JWT check of authMiddleware and the GraphQL context.
+ * 'connection' event, mirroring the JWT check of authMiddleware.
  * Clients send the token with: io(url, { auth: { token } }).
  */
 export function createHandshakeAuthenticator(secret: string) {
