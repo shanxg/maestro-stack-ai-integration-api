@@ -981,3 +981,47 @@ Redis was treated as an internal cache that needed no credentials, while Postgre
 - Commit `17499b7` — `docker-compose.yml`, `k8s/deployment.yaml`, `k8s/secret.yaml.example`, `.env.example`.
 - Commit `91e1924` — `SECURITY.md`.
 - Issue #106.
+
+---
+
+## 🟡 [SURFACE-01] Unused GraphQL endpoint duplicated every REST security rule
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 1.12, issue #45)
+
+**Severity:** Medium
+
+**References:** OWASP API9:2023, ADR 0001 (`docs/adr/0001-retire-the-graphql-endpoint.md`)
+
+**Finding:**
+
+The API served a GraphQL endpoint (`/graphql`, Apollo Server) next to the REST routes, over the same user domain: the `users` and `user(id)` queries and the `createUser` mutation. No client used it (the frontend calls only REST, and the README never documented it), yet every edge rule had to be implemented twice, once in the Express middleware chain and again in the Apollo context and resolvers. Two earlier findings came from that drift: the mutation skipped the Zod validation (VAL-01) and could store a password shaped like a bcrypt hash without hashing it (PWD-01). The two paths still behaved differently: the mutation wrote straight to PostgreSQL instead of going through the RabbitMQ registration queue; its pagination was fixed at 100 instead of `settings.pagination`; and a request without a token answered `500` with the message `Context creation failed: UNAUTHORIZED: ...`, plus a stack trace with server file paths outside production, instead of `401`. GraphQL also needed controls of its own that were missing: aliases let one HTTP request run many `createUser` operations (each one a bcrypt hash with cost 12) past the per-request rate limits, and the Apollo Sandbox page required the Content Security Policy to be turned off outside production.
+
+**Root cause:**
+
+GraphQL was added in the first version to evaluate a flexible query interface, and it stayed after that without a consumer or an owner of its security rules.
+
+**Remediation applied:**
+
+- GraphQL was retired, as recorded in ADR 0001: `src/app.ts` no longer creates or mounts Apollo Server; the schema, the resolvers and their tests were removed, together with the `@apollo/server`, `@as-integrations/express5` and `graphql` dependencies, the schema copy in the `Dockerfile` and the Dependabot exception for `graphql` 17.
+- Helmet's Content Security Policy now applies in every environment.
+- The legacy Socket.IO blueprint moved from `src/graphql/` to `src/realtime/`, with only its comments updated.
+- `openapi.yaml`, `SECURITY.md` and the Kubernetes comments describe a REST-only API; the README links the ADR.
+- The application core stays independent of the delivery mechanism (controllers, `UserService`, `UserRepository` behind `IUserRepository`), so a GraphQL adapter can be added back if a client needs one, reusing the shared token verification and service-level authorization.
+
+**Regression test:**
+
+- No automated test could fail against the previous code: it mounted `/graphql` only when `NODE_ENV` was not `test`, so the suites never saw the endpoint. Two contract tests now guard the inventory instead, in `tests/userRoutes.spec.ts`:
+  - `every Express route is in openapi.yaml and every documented operation is served`: the route list of the Express app and the operations in `openapi.yaml` must be the same set (OWASP API9:2023), so an undocumented endpoint cannot be added without updating the spec.
+  - `every operation documented as protected answers 401 without a token`.
+- Manual check with the API started in development against the local containers: before the change, `POST /graphql` without a token answered `500` with a stack trace and `GET /graphql` served the Apollo Sandbox page (`200 text/html`); after it, both answer `404` with the JSON error envelope, and `GET /users` still answers `401`.
+- `npm ls @apollo/server @as-integrations/express5 graphql` lists nothing.
+- `npx tsc --noEmit` passes; `npm test` passes (5 suites, 47 tests; the GraphQL resolver suite was removed with the code it tested).
+
+**Evidence:**
+
+- Commit `ebf0c0f` — `src/app.ts`, `src/graphql/` (removed), `src/realtime/socket-deprecated.ts`, `src/worker-deprecated.ts`, `src/server.ts`, `src/services/UserService.ts`, `src/services/UserService.spec.ts`, `tests/userResolvers.spec.ts` (removed), `tests/userRoutes.spec.ts`, `package.json`, `package-lock.json`.
+- Commit `9f1be1e` — `Dockerfile`, `.dockerignore`, `k8s/deployment.yaml`, `k8s/service.yaml`, `.github/dependabot.yml`.
+- Commit `fe2a4d1` — `docs/adr/0001-retire-the-graphql-endpoint.md`, `README.md`, `openapi.yaml`, `SECURITY.md`.
+- Issue #45.
