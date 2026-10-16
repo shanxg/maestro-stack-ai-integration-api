@@ -1,39 +1,53 @@
-name: Sync README with Security Documents
+name: Sync README with security documents
 
+# Copies SECURITY.md and docs/security/remediation-log.md into the "Security Policies" section at the
+# end of README.md (between the md:include markers) whenever one of them changes on main.
 on:
   push:
-    branches: [ main ] # Change to your default branch if needed (e.g., master)
+    branches: [main]
     paths:
-      # Only run when these source files change
       - 'SECURITY.md'
       - 'docs/security/remediation-log.md'
-      # Also watch the README in case the markers themselves are edited
+      # The README itself (if the markers are edited) and the sync tooling.
       - 'README.md'
+      - 'scripts/sync-readme.mjs'
+      - '.github/workflows/sync-readme.yml'
+  # Allows running it by hand from the Actions tab.
+  workflow_dispatch:
 
-# Required permission so the workflow can push the updated README
+# Read-only by default; only the job below may push.
 permissions:
-  contents: write
+  contents: read
+
+# One sync at a time, so two quick pushes to main cannot race to push README.md.
+concurrency:
+  group: sync-readme
+  cancel-in-progress: false
 
 jobs:
   sync-readme:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to push the updated README.md
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      - name: Run Readme Weaver
-        uses: devops-roast/readme-weaver@v1
-        env:
-          # Base directory used to resolve include paths.
-          # The repository root (./) is the most common value.
-          README_WEAVER_BASE: ./
-          LOG_LEVEL: DEBUG # Optional, useful for initial debugging
+      # The sync is a dependency-free script kept in this repository (no third-party action, no npm install).
+      - name: Copy the security documents into README.md
+        run: node scripts/sync-readme.mjs
 
-      - name: Commit and push changes
+      # Commits only when the copy changed. A push made with the workflow's GITHUB_TOKEN does not start
+      # new workflow runs, so this commit cannot trigger the sync again.
+      - name: Commit and push README.md
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add README.md
-          # The following command only commits if there are staged changes
-          git diff --staged --quiet || git commit -m "docs: sync README with security documents"
-          git push
+          if git diff --staged --quiet; then
+            echo "README.md is already in sync; nothing to commit."
+            exit 0
+          fi
+          git commit -m "docs(readme): sync the security sections"
+          git pull --rebase origin main
+          git push origin HEAD:main
