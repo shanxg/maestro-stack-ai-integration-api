@@ -253,5 +253,4 @@ The Maestro architecture deliberately prioritizes **Availability & Partition Tol
 
 <!-- md:include start path="docs/security/remediation-log.md" -->
 <!-- md:include end -->
-
 </details>
