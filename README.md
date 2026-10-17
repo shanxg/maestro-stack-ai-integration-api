@@ -414,9 +414,7 @@ evidence for each entry.
 <!-- md:include end -->
 
 <details>
-<summary style="font-size: 20px; margin: 25px; font-weight: bold"> 
-   🛡️Remediation Log: <span style="font-style: italic; font-size: 16px;"> (click to open) </span> 
-   </summary>
+<summary><h2>🛡️ Remediation Log <sub><em>(click to open)</em></sub></h2></summary>
 
 <!-- md:include start path="docs/security/remediation-log.md" -->
 
