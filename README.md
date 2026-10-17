@@ -39,13 +39,13 @@ Every endpoint within the AI orchestration layer is guarded by a cryptographic J
 
 To meet microservices decoupling standards, the user registration process operates entirely asynchronously through an event-driven architecture, avoiding bottlenecks in the primary thread:
 
-- **The Producer (Express API):** When a client hits `POST /users`, the payload is instantly validated via Zod. Instead of opening a blocking I/O stream directly to the database, the `UserController` serializes the metadata and publishes a persistent event packet (`user_created`) to the RabbitMQ broker, immediately returning an **`HTTP 202 Accepted`** response to the client within milliseconds.
+- **The Producer (Express API):** When a client hits `POST /api/v1/users`, the payload is instantly validated via Zod. Instead of opening a blocking I/O stream directly to the database, the `UserController` serializes the metadata and publishes a persistent event packet (`user_created`) to the RabbitMQ broker, immediately returning an **`HTTP 202 Accepted`** response to the client within milliseconds.
 - **The Consumer (Background Worker):** An autonomous worker thread continuously polls the RabbitMQ `user_events` queue. Once an event is intercepted, it decodes the binary buffer, processes the domain logic, and safely persists the record into the **PostgreSQL** cluster.
-- **The Stream (Server-Sent Events):** Upon successful database write, the worker hands the data to the `EventBrokerService`'s internal SSE bridge. The server loops through the active pool of connection channels (`GET /events`) and pushes the notification to all active browser interfaces via a memory-efficient, unidirectional text-event stream, causing the front-end to reactively paint the updated state without repetitive HTTP polling loops.
+- **The Stream (Server-Sent Events):** Upon successful database write, the worker hands the data to the `EventBrokerService`'s internal SSE bridge. The server loops through the active pool of connection channels (`GET /api/v1/events`) and pushes the notification to all active browser interfaces via a memory-efficient, unidirectional text-event stream, causing the front-end to reactively paint the updated state without repetitive HTTP polling loops.
 
 ### 5. LLM Security Boundaries (OWASP Top 10 for LLM Applications 2025)
 
-`POST /ai/chat` treats the model as an untrusted, expensive dependency:
+`POST /api/v1/ai/chat` treats the model as an untrusted, expensive dependency:
 
 - **Unbounded consumption (LLM10:2025):** the prompt is limited to 2000 characters (Zod), the answer to 512 tokens (`max_tokens`), and the model server gets 60 seconds, without automatic retries, before the API answers `503 AI_SERVICE_UNAVAILABLE`. Each account may send 10 prompts per minute. The values live in `src/config.ts` (`settings.aiChat` and `settings.rateLimits.aiChat`).
 - **Prompt injection (LLM01:2025):** a user can always try to override the system prompt. The model holds no data and has no tools or function calls, so a successful injection can only change the text of the answer returned to that same user.
@@ -147,13 +147,13 @@ The login does not return the JWT in its body: it sets the `maestro_session` coo
 
 ```powershell
 # 1. Log in with an account you registered; -c saves the session cookie in a local cookie jar
-curl.exe -i -c maestro-cookies.txt -X POST http://localhost:3000/auth/login -H "Content-Type: application/json" -d "{\""username\"": \""you@example.com\"", \""password\"": \""<your password>\""}"
+curl.exe -i -c maestro-cookies.txt -X POST http://localhost:3000/api/v1/auth/login -H "Content-Type: application/json" -d "{\""username\"": \""you@example.com\"", \""password\"": \""<your password>\""}"
 
 # 2. Send a prompt to the local Llama 3 model with the saved session cookie (-b)
-curl.exe -i -b maestro-cookies.txt -X POST http://localhost:3000/ai/chat -H "Content-Type: application/json" -d "{\""prompt\"": \""Hello Maestro, explain the benefits of distributed caching.\""}"
+curl.exe -i -b maestro-cookies.txt -X POST http://localhost:3000/api/v1/ai/chat -H "Content-Type: application/json" -d "{\""prompt\"": \""Hello Maestro, explain the benefits of distributed caching.\""}"
 
 # 3. End the session and delete the cookie jar
-curl.exe -i -b maestro-cookies.txt -X POST http://localhost:3000/auth/logout
+curl.exe -i -b maestro-cookies.txt -X POST http://localhost:3000/api/v1/auth/logout
 Remove-Item maestro-cookies.txt
 ```
 
