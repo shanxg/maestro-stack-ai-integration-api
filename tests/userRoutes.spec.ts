@@ -716,6 +716,37 @@ describe('User routes (integration tests)', () => {
     expect(cookie).toMatch(/;\s*Path=\//i);
   });
 
+  // TEST 34: Verify no user route returns the password hash, the role or any other internal field (issue #48).
+  // Condition: The service returns records that carry a bcrypt hash, the role and an extra column, as a
+  // future query could; the list, the lookup by id and /users/me must answer only id, name and email.
+  it('GET /users, /users/:id and /users/me -> answer only the public fields of a user', async () => {
+    const internalRecord = {
+      id: 'abc-777',
+      name: 'Lucas Interno',
+      email: 'interno@maestro.test',
+      password: adminPasswordHash,
+      role: 'ADMIN',
+      created_at: '2026-10-16T21:00:00.000Z'
+    };
+    const publicView = { id: 'abc-777', name: 'Lucas Interno', email: 'interno@maestro.test' };
+    mockUserService.getAllUsers.mockResolvedValueOnce([internalRecord] as never);
+    mockUserService.getUserById
+      .mockResolvedValueOnce(internalRecord as never)
+      .mockResolvedValueOnce({ ...internalRecord, id: 'admin-id' } as never);
+
+    const list = await request(serverTarget).get('/users').set('Authorization', `Bearer ${tokenAdmin}`);
+    const byId = await request(serverTarget).get('/users/abc-777').set('Authorization', `Bearer ${tokenAdmin}`);
+    const me = await request(serverTarget).get('/users/me').set('Authorization', `Bearer ${tokenAdmin}`);
+
+    // Exact equality: any extra property (hash, role, timestamps) fails the test, not only the password.
+    expect(list.body).toEqual([publicView]);
+    expect(byId.body).toEqual(publicView);
+    expect(me.body).toEqual({ ...publicView, id: 'admin-id' });
+    for (const response of [list, byId, me]) {
+      expect(response.text).not.toContain(adminPasswordHash);
+    }
+  });
+
 });
 
 describe('AI chat route (integration tests)', () => {

@@ -495,7 +495,10 @@ components:
   schemas:
     User:
       type: object
-      description: Public view of a user. The password hash is never included.
+      description: >
+        Public view of a user, built by an allowlist (src/dtos/userResponse.ts): only id, name and
+        email leave the API. The password hash, the role and any other column are never included.
+      additionalProperties: false
       required:
         - id
         - name

@@ -8,6 +8,7 @@ import { settings, redisConnection } from '../config.js';
 import { AppError } from '../errors/AppError.js'; // Expected failures answered by the central errorHandler
 import { type AccessTokenClaims } from '../auth/accessToken.js';
 import { canListUsers, canReadUser } from '../auth/userPolicy.js'; // Who may read which user records (issue #36)
+import { toUserResponse } from '../dtos/userResponse.js'; // The only public shape of a user record (issue #48)
 
 // Redis client library
 import { Redis } from 'ioredis'; 
@@ -80,12 +81,17 @@ export class UserController {
       offset: offsetNumber
     });
 
+    // PUBLIC VIEW (issue #48): map every record to the response DTO before it is cached or sent,
+    // so neither the client nor the Redis cache ever holds a hash, a role or any column a future
+    // query might select. Cache hits (Step B) therefore replay data that was already filtered.
+    const publicUsers = users.map(toUserResponse);
+
     // Step D: Store the result as JSON in Redis with the TTL from src/config.ts
     // to limit how long stale data can remain cached.
-    await redis.set(cacheKey, JSON.stringify(users), 'EX', settings.usersCacheTtlSeconds);
+    await redis.set(cacheKey, JSON.stringify(publicUsers), 'EX', settings.usersCacheTtlSeconds);
 
     // Step E: Return the consolidated data to the client.
-    res.status(200).json(users);
+    res.status(200).json(publicUsers);
   };
 
   /**
@@ -128,8 +134,8 @@ export class UserController {
       return;
     }
 
-    // Return the structured, typed User object.
-    res.status(200).json(user);
+    // Return only the public fields (issue #48): the record from the service may carry more.
+    res.status(200).json(toUserResponse(user));
   };
 
   /**
@@ -151,7 +157,8 @@ export class UserController {
       return;
     }
 
-    res.status(200).json(user);
+    // Same public view as GET /users/{id} (issue #48).
+    res.status(200).json(toUserResponse(user));
   };
 
    /**

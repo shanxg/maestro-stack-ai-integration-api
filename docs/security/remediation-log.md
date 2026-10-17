@@ -1379,3 +1379,41 @@ The read methods treated "the database failed" and "nothing was found" as the sa
 - Commit `86a15e9` — `src/repositories/databaseErrors.ts`, `src/repositories/UserRepository.ts`, `src/config.ts`, `src/controllers/UserController.ts`, `tests/userRepository.spec.ts`.
 - Commit `6f691e4` — `openapi.yaml`.
 - Issue #93.
+
+---
+
+## 🔵 [DTO-01] User routes returned whatever columns the query selected
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 2.03, issue #48)
+
+**Severity:** Informational
+
+**References:** CWE-201, OWASP API3:2023
+
+**Finding:**
+
+`GET /users`, `GET /users/{id}` and `GET /users/me` sent the service's records to the client as they were, and `GET /users` also stored them in Redis. No response carried the password hash at the time of the review, but only because `findAll` and `findById` happened to select `id, name, email`. `findByEmail` already selects the bcrypt hash and the role for the login, so reusing it in a route, or adding a column to one of the other queries, would have published that data with no other change.
+
+**Root cause:**
+
+There was no explicit public shape for a user: the response contract was a side effect of each SQL query.
+
+**Remediation applied:**
+
+- `src/dtos/userResponse.ts` defines the public view of a user and `toUserResponse()`, an allowlist that copies only `id`, `name` and `email`.
+- The three user routes map every record through it, and `GET /users` caches the mapped page, so cache hits replay data that was already filtered.
+- The `User` schema in `openapi.yaml` is closed to those three fields (`additionalProperties: false`), and `SECURITY.md` gained a "Response data" row.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › TEST 34 `GET /users, /users/:id and /users/me -> answer only the public fields of a user`: the service returns records with a bcrypt hash, the role and a timestamp column, and each route must answer exactly `id`, `name` and `email`. Against the previous code it failed: the responses held `password`, `role` and `created_at`.
+- `npx tsc --noEmit` passes; `npm test` passes (9 suites, 78 tests).
+
+**Evidence:**
+
+- Commit `f7f8972` — `src/dtos/userResponse.ts`, `src/controllers/UserController.ts`, `tests/userRoutes.spec.ts`.
+- Commit `ff794bb` — `openapi.yaml`.
+- Commit `78bf618` — `SECURITY.md`.
+- Issue #48.
