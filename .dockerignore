@@ -8,3 +8,6 @@
 # TypeScript build: compiler config and source
 !tsconfig.json
 !src
+
+# Versioned system prompt of /ai/chat, read when the API starts (issue #59)
+!prompts/chat-system.md

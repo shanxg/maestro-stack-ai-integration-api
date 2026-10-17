@@ -128,6 +128,7 @@ jest.unstable_mockModule('amqplib', () => {
 const { createApp } = await import('../src/app.js');
 const { env, settings } = await import('../src/config.js');
 const { signAccessToken } = await import('../src/auth/accessToken.js');
+const { loadPrompt, parsePromptFile } = await import('../src/ai/promptFile.js');
 // The shared logger (issue #53): tests that check what is logged spy on its methods.
 const { logger } = await import('../src/logger.js');
 
@@ -1076,6 +1077,25 @@ describe('AI chat route (integration tests)', () => {
 
     const servedB = await sendPrompt(tokenB, 'Primeira pergunta de outra conta');
     expect(servedB.status).toBe(200);
+  });
+
+  // TEST 5: Verify the model gets the versioned system prompt, and a malformed prompt file is refused (issue #59).
+  // Condition: The system message must be the text of prompts/chat-system.md (it was a string literal
+  // in AIService); a prompt file without a version must stop the API instead of reaching the model.
+  it('POST /api/v1/ai/chat -> sends the system prompt versioned in prompts/chat-system.md', async () => {
+    const prompt = loadPrompt('chat-system');
+    expect(prompt.version).toMatch(/^\d+\.\d+\.\d+$/);
+
+    const response = await sendPrompt(tokenFor('user-a'), 'Olá?');
+    expect(response.status).toBe(200);
+
+    const [body] = createCompletionMock.mock.calls[0] as [Record<string, unknown>];
+    const messages = body.messages as Array<{ role: string; content: string }>;
+    expect(messages[0]).toEqual({ role: 'system', content: prompt.text });
+
+    expect(() => parsePromptFile('---\nid: chat-system\n---\nYou are Maestro.', 'chat-system')).toThrow(
+      "missing 'version'"
+    );
   });
 });
 
