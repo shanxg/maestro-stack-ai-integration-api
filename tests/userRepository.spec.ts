@@ -189,4 +189,24 @@ describe('UserRepository database failures (integration tests)', () => {
       connectionTimeoutMillis: settings.database.connectionTimeoutMs
     });
   });
+
+  // TEST 6: Verify a duplicate e-mail is reported as DuplicateEmailError, apart from real failures (issue #50).
+  // Condition: PostgreSQL answers unique_violation (23505) with a detail quoting the e-mail; before,
+  // create() turned every failure into the same generic Error, so the consumer could not tell them apart.
+  it('create() throws DuplicateEmailError for unique_violation and keeps other failures distinct', async () => {
+    const { DuplicateEmailError } = await import('../src/errors/DuplicateEmailError.js');
+    const repository = new UserRepository();
+    const user = { id: 'abc-777', name: 'Lucas Duplicado', email: 'duplicado@maestro.test', password: '$2b$12$' + 'a'.repeat(53) };
+
+    poolQueryMock.mockRejectedValueOnce(Object.assign(new FakeDatabaseError('duplicate key value violates unique constraint "users_email_key"', '23505'), {
+      detail: 'Key (email)=(duplicado@maestro.test) already exists.'
+    }));
+    const duplicate = await repository.create(user).catch((error: unknown) => error);
+    expect(duplicate).toBeInstanceOf(DuplicateEmailError);
+    expect(String((duplicate as Error).message)).not.toContain('duplicado@maestro.test');
+
+    const queryError = new FakeDatabaseError('relation "users" does not exist', '42P01');
+    poolQueryMock.mockRejectedValueOnce(queryError);
+    await expect(repository.create(user)).rejects.toBe(queryError);
+  });
 });

@@ -24,9 +24,11 @@ import { logger } from '../logger.js'; // Structured logger without personal dat
 const RABBIT_HOST = process.env.RABBIT_HOST || 'localhost';
 const RABBIT_URL = `amqp://${RABBIT_HOST}:5672`;
 
-// 📮 SHARED QUEUE CONTRACT: Must match the queue name used by EventBrokerService,
-// otherwise the API would publish to one queue while this worker listens to another.
-export const QUEUE_NAME = 'user_events';
+// 📮 SHARED QUEUE CONTRACT: the queue name and its declaration (with the dead-letter queue) come
+// from src/queue/topology.ts, the module EventBrokerService uses too (issue #50). RabbitMQ refuses
+// a second declaration with different arguments, so both must declare it the same way.
+import { QUEUE_NAME, assertUserEventsTopology } from './topology.js';
+export { QUEUE_NAME };
 
 // 🔌 PROCESS-WIDE SINGLETONS:
 // 'connection' is the TCP link to the broker; 'channelPromise' is the pending or ready
@@ -57,10 +59,9 @@ async function openRabbitChannel(): Promise<Channel> {
     // 2. Create a data transmission channel on this connection.
     const channel = await connection.createChannel();
 
-    // 3. Ensure the queue exists; RabbitMQ creates it if necessary.
-    // 'durable: true' ensures the queue survives a broker restart, and it must stay
-    // identical to the declaration in EventBrokerService (see the header comment).
-    await channel.assertQueue(QUEUE_NAME, { durable: true });
+    // 3. Ensure the queue and its dead-letter queue exist; RabbitMQ creates them if necessary.
+    // The shared declaration keeps the arguments identical to EventBrokerService's (issue #50).
+    await assertUserEventsTopology(channel);
 
     return channel;
   } catch (error) {

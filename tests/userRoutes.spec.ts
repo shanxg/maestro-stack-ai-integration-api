@@ -90,6 +90,9 @@ jest.unstable_mockModule('openai', () => {
 // 'amqplib' directly now. The fake connection and channel record calls instead of
 // opening TCP sockets to a broker.
 const fakeChannel = {
+  // The shared topology (src/queue/topology.ts): dead-letter exchange and queue, binding, main queue.
+  assertExchange: jest.fn<(exchange: string, type: string, options?: object) => Promise<object>>(async () => ({})),
+  bindQueue: jest.fn<(queue: string, exchange: string, pattern: string) => Promise<object>>(async () => ({})),
   assertQueue: jest.fn<(queue: string, options?: object) => Promise<object>>(async () => ({}))
 };
 const fakeConnection = {
@@ -1048,7 +1051,10 @@ describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', (
 
     expect(second).toBe(first);
     expect(connectMock).toHaveBeenCalledTimes(1);
-    expect(fakeChannel.assertQueue).toHaveBeenCalledWith('user_events', { durable: true });
+    expect(fakeChannel.assertQueue).toHaveBeenCalledWith('user_events', {
+      durable: true,
+      arguments: { 'x-dead-letter-exchange': 'user_events.dlx' }
+    });
   });
 
   // TEST 2: Verify the graceful shutdown closes the connection and allows a clean reconnect.
