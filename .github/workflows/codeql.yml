@@ -1,0 +1,53 @@
+# 🔍 CODEQL STATIC ANALYSIS (SAST, issue #57)
+# GitHub's CodeQL engine reads the code as a database and runs its security queries over it: SQL or
+# command injection, path traversal, unsafe deserialization, weak crypto, workflow script injection
+# and more. Findings appear in the repository's Security tab (code scanning) and on pull requests.
+# It complements ESLint (npm run lint), which checks patterns file by file, with whole-program
+# data-flow analysis from sources (request input) to sinks (SQL, file system, HTML...).
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Weekly run, so new CodeQL queries also check code that has not changed.
+  schedule:
+    - cron: '27 4 * * 1'
+  workflow_dispatch:
+
+# Read-only by default; the job below adds only what uploading results needs.
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # Upload the results to code scanning
+      actions: read # Read the workflow run the results belong to
+    strategy:
+      fail-fast: false
+      matrix:
+        # The API and the frontend (TypeScript), the workflows in .github/ (GitHub Actions) and the
+        # backlog sync tool (Python, sync_backlog.py), which handles GitHub tokens.
+        language: [javascript-typescript, actions, python]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # build-mode none: these languages are analyzed from the source, with no build step.
+      # security-extended adds the lower-precision security queries to the default suite.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: '/language:${{ matrix.language }}'
