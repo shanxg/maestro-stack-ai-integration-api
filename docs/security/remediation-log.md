@@ -1603,3 +1603,49 @@ Tests were written primarily for feature delivery. When the JWT verification was
 - Commit `d4e514f` — `tests/userRoutes.spec.ts` (TEST 40 and TEST 41 aligned with the suite and hardened).
 - Pull requests #134 and #135.
 - Issue #56.
+
+---
+
+## 🔵 [CI-02] Secret Scanning ran an unpinned third-party action with undeclared token permissions
+
+**Date:** 2026-10-17
+
+**Detected by:** Author (CodeQL code scanning alerts 1 and 2, raised once `codeql.yml` started analyzing the workflows in #57)
+
+**Severity:** Low
+
+**References:** CWE-829, CWE-250, OWASP A03:2025
+
+**Finding:**
+
+`.github/workflows/secret-scan.yml` had two problems, both rated Medium by CodeQL:
+
+- It ran `gitleaks/gitleaks-action@v3`, a third-party action referenced by a tag. A tag can be moved to any commit, so whoever controls that repository, or an attacker who takes it over, could change the code this job runs without any change in this repository. The step receives the workflow's `GITHUB_TOKEN` and the full Git history (`actions/unpinned-tag`, alert 2).
+- It declared no `permissions`, so the token got the repository's default. That default is read-only (`default_workflow_permissions: read`), which is why the severity here is Low, but it is a repository setting outside code review: changing it would have given this job write access without any change in the workflow (`actions/missing-workflow-permissions`, alert 1).
+
+The CI/CD row of `SECURITY.md` also stated that the workflows used only official GitHub actions, which this action contradicted.
+
+**Root cause:**
+
+The workflow predates the rule the later workflows follow (top-level read-only permissions, as in CI-01), and nothing checked third-party action references until CodeQL's `actions` analysis was added.
+
+**Remediation applied:**
+
+- `gitleaks/gitleaks-action` is pinned to `e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e`, the commit both the `v3` and `v3.0.0` tags of `gitleaks/gitleaks-action` point to, with `# v3.0.0` in a comment so Dependabot's github-actions updates keep the pin current.
+- The workflow declares `contents: read` and `pull-requests: read`. `GITLEAKS_ENABLE_COMMENTS` is `false`: pull request comments need `pull-requests: write`, which the read-only token never had. A leak still fails the job and is listed in its summary.
+- GitHub-owned actions (`actions/*`, `github/*`) stay on major-version tags, as CodeQL's rule allows.
+- The CI/CD row of `SECURITY.md` names the pinned action and the read-only token rule.
+
+**Regression test:**
+
+- `tests/workflowSecurity.spec.ts`, TEST 1: every workflow declares top-level `permissions` that grant no write access (write scopes go on the job that needs them, as in `sync-readme.yml` and `codeql.yml`).
+- `tests/workflowSecurity.spec.ts`, TEST 2: every third-party action, in a step or as a reusable workflow, is pinned to a 40-character commit SHA.
+- Both tests failed on the previous `secret-scan.yml` ("no top-level permissions block" and the unpinned `gitleaks/gitleaks-action@v3`) and pass after the fix.
+- `npm run typecheck` and `npm run lint` pass; `npm test` passes (15 suites, 117 tests).
+
+**Evidence:**
+
+- Commit `4aa1ca2` — `.github/workflows/secret-scan.yml`, `tests/workflowSecurity.spec.ts`.
+- Commit `417fe29` — `SECURITY.md`.
+- Pull request #144.
+- Issue #143.
