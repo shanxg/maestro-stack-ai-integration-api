@@ -43,6 +43,46 @@ User registration is asynchronous: the API queues the request and a consumer cre
 - **The Consumer (inside the API process):** `EventBrokerService` subscribes to `user_events`, and RabbitMQ pushes each message to it. The consumer validates the message with Zod, saves the account in **PostgreSQL**, invalidates the users cache and acknowledges the message. A malformed message or a failed insert is rejected without requeue and moves to the `user_events.dead` dead-letter queue.
 - **The Stream (Server-Sent Events):** after the insert, the consumer sends a `user_created` event that carries only the new account's id to every client connected to the authenticated `GET /api/v1/events` stream, so a client learns about new accounts without polling. The bundled Next.js pages do not open this stream yet; a browser client can with `new EventSource(url, { withCredentials: true })`.
 
+The diagram follows one registration from the request to the stream, including the outcomes that do not create an account:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant API as Express API<br/>(UserController)
+    participant Q as RabbitMQ<br/>user_events
+    participant W as Consumer<br/>(EventBrokerService)
+    participant DB as PostgreSQL
+    participant R as Redis
+    participant S as SSE clients<br/>GET /api/v1/events
+
+    C->>API: POST /api/v1/users (name, email, password)
+    API->>API: Zod validation and bcrypt hash
+    alt RabbitMQ unreachable
+        API-->>C: 503 SERVICE_UNAVAILABLE
+    else message queued
+        API->>Q: user_created (persistent, hashed password)
+        API-->>C: 202 Accepted
+    end
+    Q->>W: deliver user_created
+    alt not JSON or fails the Zod schema
+        W->>Q: nack without requeue → user_events.dead
+    else valid registration
+        W->>DB: INSERT the account (hash stored as is)
+        alt account saved
+            W->>R: INCR the users cache version
+            W-->>S: event user_created with the new id only
+            W->>Q: ack
+        else e-mail already has an account
+            W->>Q: ack, nothing saved (the client got the same 202)
+        else database error
+            W->>Q: nack without requeue → user_events.dead
+        end
+    end
+```
+
+> Diagram drawn by Lucas Rivaldo and applied with Claude as co-author.
+
 ### 5. LLM Security Boundaries (OWASP Top 10 for LLM Applications 2025)
 
 `POST /api/v1/ai/chat` treats the model as an untrusted, expensive dependency:
