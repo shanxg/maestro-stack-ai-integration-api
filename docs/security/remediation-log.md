@@ -1509,3 +1509,51 @@ Cache invalidation was implemented as a pattern scan, and it was placed in the H
 - Commit `04dac84` — `src/cache/usersCache.ts`, `src/controllers/UserController.ts`, `src/services/EventBrokerService.ts`, `src/app.ts`, `tests/helpers/fakeRedis.ts`, `tests/usersCache.spec.ts`, `tests/userRoutes.spec.ts`, `tests/eventBroker.spec.ts`.
 - Commit `d231c42` — `openapi.yaml`.
 - Issue #52.
+
+---
+
+## 🟡 [MSG-01] Failed registrations were deleted from the queue, and duplicate e-mails failed silently
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 2.05, issue #50)
+
+**Severity:** Medium
+
+**References:** CWE-390, OWASP A10:2025
+
+**Finding:**
+
+`POST /api/v1/users` answers `202` and publishes the registration to RabbitMQ; the queue consumer saves the account later. When saving failed, the consumer logged the error and rejected the message with `nack(requeue=false)`. The `user_events` queue had no dead-letter exchange, so RabbitMQ deleted the message: the client had been told its request was accepted, and the registration was gone without a trace.
+
+- `UserRepository.create()` turned every database error into the same generic `Error`, so a registration for an e-mail that already had an account (a normal outcome of an asynchronous flow) was handled exactly like a database outage, and both were dropped.
+- The consumer passed the output of `JSON.parse` (typed `any`) straight to the service, so a message published by anything else that could reach the queue was not checked before the save.
+
+**Root cause:**
+
+The consumer detected failures but had no outcome for them other than deletion, and the repository erased the information needed to tell an expected duplicate from a real failure.
+
+**Remediation applied:**
+
+- `src/queue/topology.ts` declares `user_events` with the dead-letter exchange `user_events.dlx`, bound to the durable queue `user_events.dead`. The API and the legacy worker blueprint share this declaration.
+- The consumer validates every message with Zod (`userCreatedEventSchema`: the REST name and e-mail rules and a complete bcrypt hash). A message that is not JSON, fails validation or cannot be saved is rejected without requeue and kept in the dead-letter queue for an operator, instead of being deleted or redelivered forever.
+- `UserRepository.create()` throws `DuplicateEmailError` for `unique_violation` (SQLSTATE 23505) and keeps the cause of any other failure. The consumer acknowledges a duplicate without changing the existing account, the cache or the event stream. The registration route still answers the same `202` for a new and an existing e-mail, so it does not reveal which e-mails have accounts (CWE-204).
+- A broker that already has `user_events` without these arguments refuses the new declaration (`PRECONDITION_FAILED`); the old queue is deleted once, after checking it is empty. The local broker was migrated this way.
+- `openapi.yaml` describes the `202` behavior and `SECURITY.md` gained a "Messaging" row.
+
+**Regression test:**
+
+- `tests/eventBroker.spec.ts`:
+  - TEST 9 `declares user_events with a dead-letter exchange bound to user_events.dead`. Against the previous code it failed: no exchange was declared.
+  - TEST 10 `acknowledges a duplicate e-mail registration and changes nothing`. Against the previous code it failed: the error class did not exist and the message was rejected.
+  - TEST 11 `dead-letters malformed registrations without calling the service`. Against the previous code it failed: the service was called with an invalid e-mail.
+  - TEST 12 `dead-letters a registration whose save fails`: the rejection itself is unchanged, and TEST 9 makes it a dead-letter instead of a deletion.
+- `tests/userRepository.spec.ts` › TEST 6 `create() throws DuplicateEmailError for unique_violation and keeps other failures distinct`. Against the previous code it failed.
+- Local run against the Docker services: the same registration sent twice got `202` both times; one account was created, the second message was acknowledged as a duplicate, `user_events.dead` stayed empty, `user_events` carried `x-dead-letter-exchange`, and no log line held the e-mail.
+- `npx tsc --noEmit` passes; `npm test` passes (13 suites, 106 tests).
+
+**Evidence:**
+
+- Commit `421656f` — `src/queue/topology.ts`, `src/schemas/eventSchema.ts`, `src/errors/DuplicateEmailError.ts`, `src/services/EventBrokerService.ts`, `src/repositories/UserRepository.ts`, `src/services/UserService.ts`, `src/queue/rabbit-deprecated.ts`, `tests/eventBroker.spec.ts`, `tests/userRepository.spec.ts`, `tests/userRoutes.spec.ts`.
+- Commit `fac192f` — `openapi.yaml`, `SECURITY.md`.
+- Issue #50.
