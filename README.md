@@ -217,6 +217,8 @@ installs the ESLint toolchain once (it lives in `tools/lint/` with its own `pack
 | `npm run format:check` | Prettier style (`.prettierrc.json`); `npm run format` applies it. |
 | `npm run lint` in `frontend/` | Next.js rules plus `eslint-plugin-no-unsanitized` and `react/no-danger`. |
 
+The `CI` workflow (`.github/workflows/ci.yml`) runs all of them, the tests, both builds and `npm audit` on every pull request and every push to `main`; `codeql.yml` adds CodeQL analysis.
+
 ### Secret Scanning: Gitleaks + pre-commit
 
 The repository enforces secret scanning at two layers, both using the same `.gitleaks.toml`:
