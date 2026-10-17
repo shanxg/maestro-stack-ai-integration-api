@@ -1812,5 +1812,49 @@ There was no logging policy: each module wrote free text to the console, and not
 - Commit `ae8c774` — `SECURITY.md`.
 - Issue #53.
 
+---
+
+#### 🔵 [CACHE-01] Every registration ran a blocking `KEYS` scan on Redis, at the wrong time
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 2.07, issue #52)
+
+**Severity:** Low
+
+**References:** OWASP API4:2023 (no CWE assigned: the closest entries, CWE-405 and CWE-407, are marked "Allowed-with-Review" by MITRE)
+
+**Finding:**
+
+`POST /api/v1/users`, a public route, ran `redis.keys('users:*')` and deleted the matches to invalidate the cached `GET /users` pages. `KEYS` walks the whole keyspace in one command, and Redis runs commands one at a time, so the scan blocks every other client while it runs. The same Redis holds the rate-limit counters, one key per client IP and limiter, so the cost of each registration grew with the number of clients and stalled the counters of every API replica.
+
+The invalidation also ran when the API answered `202`, before the queue consumer saved the account. The next `GET /users` cached a page without the new account, and that page was served for the full 60-second TTL.
+
+**Root cause:**
+
+Cache invalidation was implemented as a pattern scan, and it was placed in the HTTP route instead of after the write it depends on.
+
+**Remediation applied:**
+
+- `src/cache/usersCache.ts` keeps a version counter (`users:cache-version`) and puts it in every page key (`users:v<N>:limit=..:offset=..`). Invalidating is one `INCR` (O(1)); old pages are never read again and expire with their TTL.
+- `GET /users` reads the version once, before the query, and stores the page under that version, so a page computed during an invalidation can never be served as current.
+- The queue consumer (`EventBrokerService`) invalidates right after it saves the account; the registration route no longer touches the cache.
+- The cache is best effort: its Redis client fails fast while Redis is down (no offline queue), reads fall back to PostgreSQL, and failed writes or invalidations only log a warning.
+- `openapi.yaml` describes the cache lifetime and invalidation on `GET /users`.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › TEST 36 `POST /api/v1/users -> queues the registration without a KEYS scan of Redis`. Against the previous code it failed: `keys` was called once.
+- `tests/userRoutes.spec.ts` › TEST 37 `GET /users -> serves the cached page, and reads the database again after the version changes`. Against the previous code it failed: the page stayed cached (`getAllUsers` called 1 time instead of 2).
+- `tests/eventBroker.spec.ts` › TEST 6 `invalidates the users cache after saving a queued account, and not when saving fails`. Against the previous code it failed: the consumer never invalidated (0 calls).
+- `tests/usersCache.spec.ts` › TEST 1-3: one `INCR` and no `KEYS` per invalidation, a page stored after an invalidation stays under the old version, and a Redis outage never throws. It cannot run against the previous code, which had no such module.
+- `npx tsc --noEmit` passes; `npm test` passes (11 suites, 87 tests).
+
+**Evidence:**
+
+- Commit `04dac84` — `src/cache/usersCache.ts`, `src/controllers/UserController.ts`, `src/services/EventBrokerService.ts`, `src/app.ts`, `tests/helpers/fakeRedis.ts`, `tests/usersCache.spec.ts`, `tests/userRoutes.spec.ts`, `tests/eventBroker.spec.ts`.
+- Commit `d231c42` — `openapi.yaml`.
+- Issue #52.
+
 <!-- md:include end -->
 </details>
