@@ -43,7 +43,9 @@ export class UserController {
     // NO TRY/CATCH (CWE-209): a Redis or PostgreSQL failure rejects this promise, and Express 5
     // hands it to the central errorHandler (src/middlewares/errorHandler.ts). The handler logs
     // the full error and answers a generic 500, so internal text such as a database address
-    // never reaches the client. The other methods below follow the same rule.
+    // never reaches the client. A database outage arrives as a 503 AppError from the repository
+    // (issue #93), and since it is thrown before Step D, a failed query is never cached.
+    // The other methods below follow the same rule.
 
     // ACCESS RULE (BFLA, OWASP API5:2023): listing every account is for admins only. The check runs
     // before the cache read, so a cached page is never served to an account that may not see it.

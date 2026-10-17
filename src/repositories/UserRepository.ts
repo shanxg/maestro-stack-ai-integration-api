@@ -2,7 +2,8 @@
 import { type IUserRepository } from "../interfaces/IUserRepository.js";
 import { type User } from "../models/User.js";
 import pg from 'pg'; // Use the official 'pg' driver to connect to the relational database.
-import { env } from '../config.js'; // Validated database settings (no default password)
+import { env, settings } from '../config.js'; // Validated database settings (no default password) and pool limits
+import { databaseReadFailure } from './databaseErrors.js'; // Outage -> 503, query error -> 500 (CWE-392)
 
 // 2. CLASS: 'implements IUserRepository' tells TypeScript that this class
 // must implement the four methods required by the contract (findAll, findById, findByEmail, create).
@@ -17,8 +18,19 @@ constructor() {
       password: env.POSTGRES_PASSWORD, // Required: no hardcoded fallback (CWE-1392)
       database: env.POSTGRES_DB,
       port: env.POSTGRES_PORT,
-      max: 10, 
-      idleTimeoutMillis: 30000 
+      // Pool size and timeouts live in src/config.ts (settings.database). The connection timeout
+      // makes a request fail fast with a 503 when the database host does not answer (issue #93).
+      max: settings.database.poolMax,
+      idleTimeoutMillis: settings.database.idleTimeoutMs,
+      connectionTimeoutMillis: settings.database.connectionTimeoutMs
+    });
+
+    // 🧯 IDLE CONNECTION ERRORS (CWE-248, issue #93): when PostgreSQL restarts or the network drops,
+    // the pool emits 'error' for the idle connections it holds. Node.js turns an 'error' event with
+    // no listener into an uncaught exception, which stopped the whole API. The pool already discards
+    // the broken connection and opens a new one on the next query, so logging is all that is needed.
+    this.pool.on('error', (error) => {
+      console.error('❌ [PostgreSQL] An idle connection failed and was discarded:', error.message);
     });
 
     // 🛑 REMEDIATION - ANTI-RACE CONDITION BLOCK (OWASP CORE):
@@ -84,8 +96,10 @@ constructor() {
       const result = await this.pool.query(queryConfig);
       return result.rows; // Return the rows retrieved from the relational database.
     } catch (error) {
-      console.error('❌ Error executing the findAll query in PostgreSQL:', error);
-      return [];
+      // REPORT, DO NOT HIDE (CWE-392, issue #93): returning [] here made an outage look like an
+      // empty table, and UserController cached that [] for 60 s. Throwing stops the route before
+      // the cache write; a database outage becomes a 503, any other failure a generic 500.
+      throw databaseReadFailure('findAll', error);
     }
   }
 
@@ -108,8 +122,8 @@ constructor() {
       const result = await this.pool.query(queryConfig);
       return result.rows.length > 0 ? result.rows[0] : null;  // Return the matching user, or null if none exists.
     } catch (error) {
-      console.error(`❌ Error fetching user with ID ${id} from PostgreSQL:`, error);
-      return null;
+      // null means "no such user" (404), so it must not stand for "the database failed" (CWE-392).
+      throw databaseReadFailure('findById', error);
     }
   }
 
@@ -129,8 +143,9 @@ constructor() {
       const result = await this.pool.query(queryConfig);
       return result.rows.length > 0 ? result.rows[0] : null;
     } catch (error) {
-      console.error(`❌ Error fetching user with email ${email} from PostgreSQL:`, error);
-      return null;
+      // null made the login answer 401 "invalid credentials" during an outage, so users were told
+      // their password was wrong (CWE-392). The log line no longer carries the e-mail (CWE-532).
+      throw databaseReadFailure('findByEmail', error);
     }
   }
 

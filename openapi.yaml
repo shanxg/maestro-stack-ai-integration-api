@@ -101,6 +101,8 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DatabaseUnavailable'
 
   /auth/logout:
     post:
@@ -179,6 +181,8 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DatabaseUnavailable'
 
   /users/me:
     get:
@@ -201,6 +205,8 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DatabaseUnavailable'
 
   /users/{id}:
     get:
@@ -236,6 +242,8 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '500':
           $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DatabaseUnavailable'
 
   /api/v1/users:
     post:
@@ -457,8 +465,8 @@ components:
 
     InternalError:
       description: >
-        Unexpected internal failure, for example PostgreSQL, Redis or the local Ollama service
-        failing. The central error handler logs the full error on the server and answers this
+        Unexpected internal failure, for example Redis failing or PostgreSQL rejecting a query.
+        The central error handler logs the full error on the server and answers this
         fixed envelope, without the internal error message or any details (CWE-209).
       content:
         application/json:
@@ -468,6 +476,21 @@ components:
             error:
               code: INTERNAL_SERVER_ERROR
               message: "Erro interno no servidor. Tente novamente mais tarde."
+
+    DatabaseUnavailable:
+      description: >
+        PostgreSQL cannot be reached or cannot serve requests right now (connection refused or
+        timed out, server restarting, too many connections). The request was not served and
+        nothing was cached; the client can send it again later. Before issue #93 these failures
+        were hidden as an empty list (200), a missing user (404) or wrong credentials (401).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error:
+              code: DATABASE_UNAVAILABLE
+              message: "O banco de dados está temporariamente indisponível. Tente novamente em instantes."
 
   schemas:
     User:

@@ -1330,3 +1330,52 @@ The workflow delegated a write-capable step to an unvetted external action, and 
 - Commit `313d939` — `.github/workflows/sync-readme.yml`.
 - Commit `f4f9279` — `SECURITY.md`.
 - Pull requests #123 and #124.
+
+---
+
+## 🔵 [ERR-02] Database failures were reported as empty results, missing users or wrong passwords
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 2.11, issue #93; found while documenting the routes for #61)
+
+**Severity:** Low
+
+**References:** CWE-392, CWE-248, OWASP A10:2025
+
+**Finding:**
+
+`UserRepository.findAll`, `findById` and `findByEmail` caught every database error, logged it and returned `[]` or `null`. Callers could not tell an outage from an empty result:
+
+- `GET /users` answered `200 []` and stored that empty page in Redis for 60 seconds, so the API kept serving it after PostgreSQL came back.
+- `GET /users/{id}` and `GET /users/me` answered `404`, as if the account did not exist.
+- `POST /auth/login` answered `401` "invalid credentials", so users were told their password was wrong during an outage.
+
+The connection pool also had no listener for its `error` event. When PostgreSQL restarts, `pg` emits that event for its idle connections, and Node.js turns an unhandled `error` event into an uncaught exception that stops the process. The pool had no connection timeout either, so a database host that did not answer held each request until the operating system's TCP timeout.
+
+**Root cause:**
+
+The read methods treated "the database failed" and "nothing was found" as the same result, and the pool lifecycle events were left to Node.js defaults.
+
+**Remediation applied:**
+
+- `src/repositories/databaseErrors.ts` classifies each failure. No answer from the server (refused or reset connection, pool timeout, terminated connection) or a PostgreSQL error of SQLSTATE class 08, 53 or 57 becomes `AppError 503 DATABASE_UNAVAILABLE`, with the cause logged on the server without query values. Any other SQL error is rethrown and the central error handler answers its generic 500.
+- The three read methods rethrow instead of returning `[]` or `null`; `create()` already did. The failure stops `GET /users` before the cache write, so no failed query is cached.
+- The pool logs and discards a broken idle connection (`pool.on('error')`), and `settings.database` in `src/config.ts` holds the pool size, the idle timeout and a 5-second connection timeout.
+- `openapi.yaml` documents the `DatabaseUnavailable` response on `POST /auth/login`, `GET /users`, `GET /users/me` and `GET /users/{id}`.
+
+**Regression test:**
+
+- `tests/userRepository.spec.ts` runs the real repository, service and routes over a fake `pg` driver. Against the previous code all five tests failed:
+  - TEST 1 (each read method rejects with 503 for a refused connection, a pool timeout and SQLSTATE 57P01): `findAll` resolved with `[]`.
+  - TEST 2 (a SQL error such as 42P01 is rethrown unchanged): `Received promise resolved instead of rejected`.
+  - TEST 3 (the four routes answer 503 and nothing is cached): `GET /users` answered `200`.
+  - TEST 4 (the pool's `error` event is handled): `emit('error')` threw `Unhandled error`.
+  - TEST 5 (the pool gets the size and timeouts from `src/config.ts`): `settings.database` did not exist.
+- `npx tsc --noEmit` passes; `npm test` passes (9 suites, 77 tests).
+
+**Evidence:**
+
+- Commit `86a15e9` — `src/repositories/databaseErrors.ts`, `src/repositories/UserRepository.ts`, `src/config.ts`, `src/controllers/UserController.ts`, `tests/userRepository.spec.ts`.
+- Commit `6f691e4` — `openapi.yaml`.
+- Issue #93.
