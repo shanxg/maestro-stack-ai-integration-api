@@ -1910,39 +1910,45 @@ The consumer detected failures but had no outcome for them other than deletion, 
 
 #### ℹ️ [TEST-01] Missing regression tests for JWT edge cases and outdated route names
 
-**Date:** 2026-10-16
+**Date:** 2026-10-17
 
 **Detected by:** Author (backlog item 3.01, issue #56)
 
 **Severity:** Informational
 
-**References:** CWE-347, CWE-639, OWASP API2:2023, OWASP API1:2023
+**References:** CWE-347, CWE-209, OWASP API2:2023, OWASP A07:2025
 
 **Finding:**
 
-The test suite lacked explicit regression tests for specific JWT edge cases: a token signed with the correct key but expired, and an unsigned token with `alg: none`. Additionally, test names referenced old routes (`POST /users`) instead of the current API routes (`/api/v1/users`). XSS coverage relied solely on static checks (no component-test runtime), and IDOR was tested dynamically, but JWT algorithm and expiry boundaries were untested.
+The test suite lacked explicit regression tests for two JWT edge cases: a token signed with the correct key but expired, and an unsigned token with `alg: none`. Test names also referenced old routes (`POST /users`) instead of the routes the API serves.
+
+This was a coverage gap, not a vulnerability: `verifyAccessToken` (`src/auth/accessToken.ts`, AUTH-02) already pinned HS256, the issuer and the audience, and `jsonwebtoken` already rejected expired and unsigned tokens. Without tests, though, a later change (for example an `ignoreExpiration` option, or `jwt.decode` used where `jwt.verify` belongs) would have passed the suite unnoticed.
 
 **Root cause:**
 
-Tests were written primarily for feature delivery. When the JWT verification was centralized and pinned to HS256 (AUTH-02), edge cases for cryptographic failures (expiry, algorithm downgrade) were not added to the automated test suite.
+Tests were written primarily for feature delivery. When the JWT verification was centralized and pinned to HS256 (AUTH-02), edge cases for cryptographic failures (expiry, an unsigned token) were not added to the automated test suite.
 
 **Remediation applied:**
 
-- Added TEST 40 in `tests/userRoutes.spec.ts` to assert that an expired JWT signed with the correct secret returns `401 INVALID_TOKEN`.
-- Added TEST 41 to assert that a JWT with `alg: none` (unsigned) is rejected with `401 INVALID_TOKEN`.
-- Verified that all existing test names now reference the real routes (`/api/v1/...`), superseding the old `POST /users` naming.
-- Documented that XSS coverage is provided via static checks (absence of `dangerouslySetInnerHTML` + CSP headers) in `tests/frontendSecurity.spec.ts`.
+- Added TEST 40 in `tests/userRoutes.spec.ts`: an expired JWT signed with the correct secret, algorithm, issuer and audience gets `401 INVALID_TOKEN`, so the expiry is the only check that can fail.
+- Added TEST 41: a hand-built JWT with `alg: none` and an empty signature gets `401 INVALID_TOKEN`. With a secret configured, `jsonwebtoken` rejects it with "jwt signature is required" before comparing the algorithm with the pinned HS256.
+- Both tokens carry the `ADMIN` role, so the tests show that even the highest role gets nothing once its token is expired or unsigned. Both also check that the response has no details and no "expired", "signature" or "algorithm" text (CWE-209), and that the request never reaches the service.
+- Verified that all test names reference the real routes (`/api/v1/...`) since issue #49, superseding the old `POST /users` naming.
+- Documented that XSS coverage is provided by static checks in `tests/frontendSecurity.spec.ts` (no `dangerouslySetInnerHTML`, CSP and security headers on every route), because the frontend has no component-test runtime.
+- Coverage map for the cases issue #56 asked for: tampered JWT, TEST 18 (another key) and TEST 23 (no issuer or audience, HS512, another audience); expired JWT, TEST 40; `alg: none`, TEST 41; ownership (IDOR), TEST 25; admin-only listing, TEST 24; event stream without a session, TEST 32; login with a non-text field, TEST 13; XSS on render, `tests/frontendSecurity.spec.ts`.
 
 **Regression test:**
 
-- `tests/userRoutes.spec.ts` › TEST 40: `rejects an expired access token signed with the correct key`.
-- `tests/userRoutes.spec.ts` › TEST 41: `rejects an unsigned token with alg "none"`.
-- Both tests assert `401` with `error.code === 'INVALID_TOKEN'`, ensuring the API does not leak which check failed (CWE-209).
+- `tests/userRoutes.spec.ts` › TEST 40 `GET /api/v1/users -> returns 401 for an expired token signed with the correct key`.
+- `tests/userRoutes.spec.ts` › TEST 41 `GET /api/v1/users -> returns 401 for an unsigned token with alg "none"`.
+- Both pass against the previous code by design, since the protections already existed. Mutation check, to show they would catch a regression: with `ignoreExpiration: true` added to `verifyAccessToken`, TEST 40 failed (`Expected: 401`, `Received: 200`); with `jwt.decode` in place of `jwt.verify`, both tests failed the same way.
+- `npx tsc --noEmit` passes; `npm test` passes (13 suites, 108 tests).
 
 **Evidence:**
 
-- Commit `fb4c3fe` â€” `tests/userRoutes.spec.ts` (TEST 40 and TEST 41 added).
-- Pull Request #134.
+- Commit `fb4c3fe` — `tests/userRoutes.spec.ts` (TEST 40 and TEST 41 added).
+- Commit `d4e514f` — `tests/userRoutes.spec.ts` (TEST 40 and TEST 41 aligned with the suite and hardened).
+- Pull requests #134 and #135.
 - Issue #56.
 
 <!-- md:include end -->
