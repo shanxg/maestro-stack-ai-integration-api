@@ -1417,3 +1417,51 @@ There was no explicit public shape for a user: the response contract was a side 
 - Commit `ff794bb` — `openapi.yaml`.
 - Commit `78bf618` — `SECURITY.md`.
 - Issue #48.
+
+---
+
+## 🟡 [LOG-01] Login attempts and new accounts were logged with their e-mail addresses
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 2.08, issue #53)
+
+**Severity:** Medium
+
+**References:** CWE-532, OWASP A09:2025
+
+**Finding:**
+
+The API logged with `console.*` and interpolated personal data into the messages:
+
+- `POST /auth/login` printed the e-mail of every attempt, including failed ones, so the log kept a list of the addresses people tried, valid or not.
+- The queue consumer printed the e-mail of every new account before creating it.
+- Failures were printed with whole error objects. A duplicate registration fails in PostgreSQL with a `detail` field that quotes the e-mail (`Key (email)=(...) already exists.`), which ended up in the log as well.
+
+Logs are kept longer, copied to more systems and read by more people than the database, so personal data there widens its exposure.
+
+**Root cause:**
+
+There was no logging policy: each module wrote free text to the console, and nothing kept personal fields out.
+
+**Remediation applied:**
+
+- `src/logger.ts` creates one pino logger for the whole API. Lines are JSON with a `service` and a `component` field instead of emoji text prefixes. The level comes from `LOG_LEVEL`, validated in `src/config.ts`.
+- Every `console.*` call in `src/` now goes through it, and messages identify accounts by id only.
+- A redaction list replaces `password`, `email`, `username`, `name`, `token`, `authorization`, `cookie` and PostgreSQL error `detail` fields with `[REDACTED]` if a call ever passes them, at the top level or one level deep.
+- `SECURITY.md` gained a "Logging" row; `.env.example` documents `LOG_LEVEL`.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › TEST 35 `POST /auth/login and POST /api/v1/users -> log no e-mail, name or password`: a failed login, a successful login and a registration must leave no personal value in any logger or console call.
+- `tests/eventBroker.spec.ts` › TEST 5 `logs the account created from the queue without its e-mail or name`.
+- Against the previous code (no logger module, so the same checks were run on the console output alone), both failed: the login output held `nobody@maestro.test`, and the consumer printed `Persistent entity write initiated for: lucas.fila@maestro.com`.
+- `tests/logging.spec.ts` › TEST 1: a registration body, a nested user, request headers and a duplicate-key error are written as `[REDACTED]`. It cannot run against the previous code, which had no logger.
+- `npx tsc --noEmit` passes; `npm test` passes (10 suites, 81 tests).
+
+**Evidence:**
+
+- Commit `1f377bd` — `src/logger.ts`, `src/config.ts`, `package.json`, `package-lock.json`, `.env.example`, `tests/setupEnv.ts`, `tests/logging.spec.ts`.
+- Commit `a914b86` — every module in `src/` that logged, `tests/helpers/logCapture.ts`, `tests/userRoutes.spec.ts`, `tests/eventBroker.spec.ts`, `tests/userRepository.spec.ts`, `tests/redisRateLimitStore.spec.ts`.
+- Commit `ae8c774` — `SECURITY.md`.
+- Issue #53.
