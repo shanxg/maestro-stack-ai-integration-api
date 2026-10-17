@@ -404,6 +404,57 @@ paths:
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
+  /api/v1/health:
+    get:
+      summary: Liveness probe
+      description: >
+        Answers while the process is up and its event loop responds. No dependency is checked, so a
+        database outage does not make Kubernetes restart every replica. Public and outside the rate
+        limits, because the probes call it every few seconds from the node's IP.
+      security: []
+      responses:
+        '200':
+          description: The process is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+
+  /api/v1/health/ready:
+    get:
+      summary: Readiness probe
+      description: >
+        Answers 200 when this replica can serve traffic: PostgreSQL answers and the RabbitMQ channel
+        is open, and the replica is not shutting down. The result is reused for 2 seconds, so the
+        public, unthrottled endpoint queries the database at most once per interval. Which check
+        failed is logged on the server, not returned.
+      security: []
+      responses:
+        '200':
+          description: Ready to serve traffic.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ready]
+        '503':
+          description: A dependency is unavailable or the replica is shutting down.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [not_ready]
+
 components:
   securitySchemes:
     SessionCookie:
