@@ -31,15 +31,13 @@ export class UserService {
 
    /**
    * 🎯 RESOLVE IDENTITY BY EMAIL (getUserByEmail)
-   * Fetches user identity boundaries mapping the unique email index address.
+   * Returns the account with this e-mail, including the password hash and role the login needs.
+   * findByEmail is part of IUserRepository (issue #47), so the call is type-checked: the old
+   * 'any' cast and runtime probe are gone, and a repository without the method no longer
+   * compiles instead of silently answering null (which turned every login into a 401).
    */
   async getUserByEmail(email: string): Promise<User | null> {
-    // Add type-safety casting to adapt the contract execution boundary
-    const repositoryWithEmail = this.userRepository as any;
-    if (typeof repositoryWithEmail.findByEmail === 'function') {
-      return repositoryWithEmail.findByEmail(email);
-    }
-    return null;
+    return this.userRepository.findByEmail(email);
   }
 
   /**
