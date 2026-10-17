@@ -14,8 +14,8 @@ export function createAuthRouter(authController: AuthController, loginLimiter: R
 
   // Order: the brute-force limiter counts the attempt first (CWE-307), then the body is validated
   // (CWE-1287), then the controller checks the credentials.
-  router.post('/auth/login', loginLimiter, validateMiddleware(loginSchema), authController.login);
-  router.post('/auth/logout', authController.logout);
+  router.post('/api/v1/auth/login', loginLimiter, validateMiddleware(loginSchema), authController.login);
+  router.post('/api/v1/auth/logout', authController.logout);
 
   return router;
 }

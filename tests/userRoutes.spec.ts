@@ -30,7 +30,7 @@ jest.unstable_mockModule('ioredis', () => {
 // Docker and lets Jest exit without open handles.
 const publishEventMock = jest.fn<(action: string, data: object) => Promise<boolean>>();
 // The fake stream answers with the real stream's first message and closes at once, so a test
-// request to GET /events completes instead of staying open like a real Server-Sent Events stream.
+// request to GET /api/v1/events completes instead of staying open like a real Server-Sent Events stream.
 const registerSSEClientMock = jest.fn((_req: unknown, res: http.ServerResponse) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.end('data: {"status": "CONNECTED_TO_MAESTRO_STREAM"}\n\n');
@@ -44,7 +44,7 @@ jest.unstable_mockModule('../src/services/EventBrokerService.js', () => {
   };
 });
 
-// 🍪 SESSION COOKIE HELPER: POST /auth/login returns the JWT only in the HttpOnly session cookie.
+// 🍪 SESSION COOKIE HELPER: POST /api/v1/auth/login returns the JWT only in the HttpOnly session cookie.
 // Read it from the Set-Cookie header, as a non-browser API client would, to send it as a Bearer token.
 const SESSION_COOKIE = 'maestro_session';
 const sessionCookieOf = (response: { headers: Record<string, unknown> }): string | undefined => {
@@ -122,7 +122,7 @@ describe('User routes (integration tests)', () => {
   let tokenRegular: string;
   const REGULAR_ID = 'regular-id';
 
-  // 🔑 TEST ACCOUNT: POST /auth/login now looks the account up by e-mail and compares the
+  // 🔑 TEST ACCOUNT: POST /api/v1/auth/login now looks the account up by e-mail and compares the
   // password with bcrypt. The password is random per run and its hash is built in beforeAll.
   const ADMIN_EMAIL = 'admin@maestro.test';
   const ADMIN_PASSWORD = crypto.randomUUID();
@@ -161,7 +161,7 @@ describe('User routes (integration tests)', () => {
 
     // Log in through the real route and capture a valid JWT for the protected routes.
     const response = await request(serverTarget)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
     tokenAdmin = sessionTokenOf(response);
@@ -177,9 +177,9 @@ describe('User routes (integration tests)', () => {
 
   // TEST 1: Verify that a correct e-mail and password produce a signed JWT.
   // Condition: The mock returns the administrator with a bcrypt hash of the sent password.
-  it('POST /auth/login -> returns 200 and a JWT when the credentials are valid', async () => {
+  it('POST /api/v1/auth/login -> returns 200 and a JWT when the credentials are valid', async () => {
     const response = await request(serverTarget)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
     expect(response.status).toBe(200);
@@ -189,9 +189,9 @@ describe('User routes (integration tests)', () => {
 
   // TEST 2: Verify that a wrong password returns the generic 401 error (no user enumeration).
   // Condition: The e-mail exists, but bcrypt.compare fails for the sent password.
-  it('POST /auth/login -> returns 401 when the password is wrong', async () => {
+  it('POST /api/v1/auth/login -> returns 401 when the password is wrong', async () => {
     const response = await request(serverTarget)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({ username: ADMIN_EMAIL, password: 'wrong-password' });
 
     expect(response.status).toBe(401);
@@ -212,8 +212,8 @@ describe('User routes (integration tests)', () => {
 
   // TEST 4: Verify that authMiddleware rejects requests without credentials.
   // Condition: Attempt anonymous access without an Authorization Bearer token.
-  it('GET /users -> returns 401 when no JWT is sent', async () => {
-    const response = await request(serverTarget).get('/users');
+  it('GET /api/v1/users -> returns 401 when no JWT is sent', async () => {
+    const response = await request(serverTarget).get('/api/v1/users');
 
     expect(response.status).toBe(401);
     expect(response.body.error.code).toBe('UNAUTHORIZED');
@@ -221,9 +221,9 @@ describe('User routes (integration tests)', () => {
 
   // TEST 5: Verify a successful authenticated request.
   // Condition: Send a valid JWT and pagination parameters, then expect a user list.
-  it('GET /users -> returns 200 and the paginated user list with a valid JWT', async () => {
+  it('GET /api/v1/users -> returns 200 and the paginated user list with a valid JWT', async () => {
     const response = await request(serverTarget)
-      .get('/users')
+      .get('/api/v1/users')
       .set('Authorization', `Bearer ${tokenAdmin}`)
       .query({ limit: 5, offset: 0 });
 
@@ -233,9 +233,9 @@ describe('User routes (integration tests)', () => {
 
   // TEST 6: Verify a successful lookup by ID.
   // Condition: Send an existing user ID with a valid JWT and expect the mapped object.
-  it('GET /users/:id -> returns 200 and the matching user when the ID exists', async () => {
+  it('GET /api/v1/users/:id -> returns 200 and the matching user when the ID exists', async () => {
     const response = await request(serverTarget)
-      .get('/users/abc-777')
+      .get('/api/v1/users/abc-777')
       .set('Authorization', `Bearer ${tokenAdmin}`);
 
     expect(response.status).toBe(200);
@@ -245,9 +245,9 @@ describe('User routes (integration tests)', () => {
 
   // TEST 7: Verify that a missing ID returns HTTP 404.
   // Condition: The mock returns null for ID "999", so the controller should return 404 (Not Found).
-  it('GET /users/:id -> returns 404 when the user does not exist', async () => {
+  it('GET /api/v1/users/:id -> returns 404 when the user does not exist', async () => {
     const response = await request(serverTarget)
-      .get('/users/999')
+      .get('/api/v1/users/999')
       .set('Authorization', `Bearer ${tokenAdmin}`);
 
     expect(response.status).toBe(404);
@@ -296,11 +296,11 @@ describe('User routes (integration tests)', () => {
 
   // TEST 10: Verify that the login limiter from src/config.ts blocks brute force (CWE-307).
   // Condition: The app accepts exactly settings.rateLimits.login.max attempts; the next one gets 429.
-  it('POST /auth/login -> returns 429 after the configured number of attempts', async () => {
+  it('POST /api/v1/auth/login -> returns 429 after the configured number of attempts', async () => {
     // The shared counters are reset before each test, so the logins in the tests above do not count.
     const freshServer = await createApp(mockUserService);
     const attempt = () => request(freshServer)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({ username: ADMIN_EMAIL, password: 'wrong-password' });
 
     for (let i = 0; i < settings.rateLimits.login.max; i++) {
@@ -312,9 +312,9 @@ describe('User routes (integration tests)', () => {
     expect(blocked.body.error.code).toBe('AUTH_FLOOD_DETECTED');
   });
 
-  // TEST 11: Verify GET /users rejects pagination that breaks the listUsersSchema rules.
+  // TEST 11: Verify GET /api/v1/users rejects pagination that breaks the listUsersSchema rules.
   // Condition: Non-numeric, fractional, zero, negative and above-the-cap values never reach the service.
-  it('GET /users -> returns 400 when limit or offset is not a whole number in range', async () => {
+  it('GET /api/v1/users -> returns 400 when limit or offset is not a whole number in range', async () => {
     mockUserService.getAllUsers.mockClear();
     const invalidQueries = [
       { limit: 'abc' },
@@ -326,7 +326,7 @@ describe('User routes (integration tests)', () => {
 
     for (const query of invalidQueries) {
       const response = await request(serverTarget)
-        .get('/users')
+        .get('/api/v1/users')
         .set('Authorization', `Bearer ${tokenAdmin}`)
         .query(query);
 
@@ -339,15 +339,15 @@ describe('User routes (integration tests)', () => {
 
   // TEST 12: Verify valid pagination reaches the service as numbers, with the defaults from src/config.ts.
   // Condition: The cap itself is accepted, and a request without parameters gets the default page.
-  it('GET /users -> passes the cap and the default page to the service as numbers', async () => {
+  it('GET /api/v1/users -> passes the cap and the default page to the service as numbers', async () => {
     mockUserService.getAllUsers.mockClear();
 
     const atCap = await request(serverTarget)
-      .get('/users')
+      .get('/api/v1/users')
       .set('Authorization', `Bearer ${tokenAdmin}`)
       .query({ limit: settings.pagination.maxLimit, offset: 20 });
     const withoutQuery = await request(serverTarget)
-      .get('/users')
+      .get('/api/v1/users')
       .set('Authorization', `Bearer ${tokenAdmin}`);
 
     expect(atCap.status).toBe(200);
@@ -358,7 +358,7 @@ describe('User routes (integration tests)', () => {
 
   // TEST 13: Verify the login rejects fields that are missing, blank or not text (CWE-1287).
   // Condition: The app gets four malformed bodies (counters reset before each test); none reaches the database.
-  it('POST /auth/login -> returns 400 when username or password is missing, blank or not text', async () => {
+  it('POST /api/v1/auth/login -> returns 400 when username or password is missing, blank or not text', async () => {
     const freshServer = await createApp(mockUserService);
     mockUserService.getUserByEmail.mockClear();
     const invalidBodies = [
@@ -369,7 +369,7 @@ describe('User routes (integration tests)', () => {
     ];
 
     for (const body of invalidBodies) {
-      const response = await request(freshServer).post('/auth/login').send(body);
+      const response = await request(freshServer).post('/api/v1/auth/login').send(body);
 
       expect(response.status).toBe(400);
       expect(response.body.error.code).toBe('VALIDATION_FAILURE');
@@ -379,13 +379,13 @@ describe('User routes (integration tests)', () => {
 
   // TEST 14: Verify an unknown e-mail still pays the bcrypt cost, so timing does not reveal accounts (CWE-208).
   // Condition: The mock finds no account; bcrypt.compare must still run once, against a hash with the real cost.
-  it('POST /auth/login -> runs bcrypt with the configured cost when the e-mail is unknown', async () => {
+  it('POST /api/v1/auth/login -> runs bcrypt with the configured cost when the e-mail is unknown', async () => {
     const freshServer = await createApp(mockUserService);
     const compareSpy = jest.spyOn(bcrypt, 'compare');
 
     try {
       const response = await request(freshServer)
-        .post('/auth/login')
+        .post('/api/v1/auth/login')
         .send({ username: 'nobody@maestro.test', password: 'any-password' });
 
       expect(response.status).toBe(401);
@@ -400,11 +400,11 @@ describe('User routes (integration tests)', () => {
 
   // TEST 15: Verify two API replicas enforce one login limit together, not one each (issue #65).
   // Condition: Two app instances share the fake Redis; attempts on both count toward the same limit.
-  it('POST /auth/login -> two replicas share one login limit through Redis', async () => {
+  it('POST /api/v1/auth/login -> two replicas share one login limit through Redis', async () => {
     const replicaA = await createApp(mockUserService);
     const replicaB = await createApp(mockUserService);
     const attempt = (server: http.Server) => request(server)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({ username: ADMIN_EMAIL, password: 'wrong-password' });
 
     // Split the allowed attempts between the replicas, as a load balancer would.
@@ -443,8 +443,8 @@ describe('User routes (integration tests)', () => {
     const logs = captureLogs(logger);
 
     const responses = [
-      await request(serverTarget).get('/users').set('Authorization', `Bearer ${tokenAdmin}`),
-      await request(serverTarget).get('/users/abc-777').set('Authorization', `Bearer ${tokenAdmin}`),
+      await request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${tokenAdmin}`),
+      await request(serverTarget).get('/api/v1/users/abc-777').set('Authorization', `Bearer ${tokenAdmin}`),
       await request(serverTarget)
         .post('/api/v1/users')
         .send({ name: 'Lucas Falha', email: 'lucas.falha@maestro.com', password: crypto.randomUUID() })
@@ -467,11 +467,11 @@ describe('User routes (integration tests)', () => {
 
   // TEST 18: Verify a rejected JWT does not reveal which verification check failed (CWE-209).
   // Condition: Send a token signed with another secret; jsonwebtoken reports "invalid signature".
-  it('GET /users -> returns 401 without the JWT verification error', async () => {
+  it('GET /api/v1/users -> returns 401 without the JWT verification error', async () => {
     const forgedToken = jwt.sign({ id: 'attacker', role: 'USER' }, crypto.randomUUID());
 
     const response = await request(serverTarget)
-      .get('/users')
+      .get('/api/v1/users')
       .set('Authorization', `Bearer ${forgedToken}`);
 
     expect(response.status).toBe(401);
@@ -523,9 +523,9 @@ describe('User routes (integration tests)', () => {
 
   // TEST 22: Verify the login issues HS256 tokens that name this API as issuer and audience (CWE-347).
   // Condition: Log in with the test account and decode the token header and claims (without verifying).
-  it('POST /auth/login -> issues an HS256 token with the issuer and audience from src/config.ts', async () => {
+  it('POST /api/v1/auth/login -> issues an HS256 token with the issuer and audience from src/config.ts', async () => {
     const response = await request(serverTarget)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
     expect(response.status).toBe(200);
@@ -540,12 +540,12 @@ describe('User routes (integration tests)', () => {
   // TEST 23: Verify a token signed with the API secret is still rejected when it breaks a pinned rule.
   // Condition: Three tokens signed with the real JWT_SECRET: one without issuer and audience (as every
   // token was before), one with another HMAC algorithm (HS512) and one issued for another audience.
-  it('GET /users -> returns 401 for tokens without iss/aud, with another algorithm or for another audience', async () => {
+  it('GET /api/v1/users -> returns 401 for tokens without iss/aud, with another algorithm or for another audience', async () => {
     const claims = { id: 'admin-id', user: 'Maestro Admin', email: ADMIN_EMAIL, role: 'USER' };
 
     // Send the token to a protected route and expect the generic 401, naming the case on failure.
     const expectRejected = async (name: string, token: string) => {
-      const response = await request(serverTarget).get('/users').set('Authorization', `Bearer ${token}`);
+      const response = await request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${token}`);
 
       expect({ token: name, status: response.status, code: response.body.error?.code })
         .toEqual({ token: name, status: 401, code: 'INVALID_TOKEN' });
@@ -564,38 +564,38 @@ describe('User routes (integration tests)', () => {
 
   // TEST 24: Verify a regular account cannot list every user (BFLA, OWASP API5:2023, issue #36).
   // Condition: A USER token gets 403 before the cache or the service is touched; the admin still gets the list.
-  it('GET /users -> returns 403 for a regular account and 200 for an admin', async () => {
+  it('GET /api/v1/users -> returns 403 for a regular account and 200 for an admin', async () => {
     mockUserService.getAllUsers.mockClear();
 
-    const regular = await request(serverTarget).get('/users').set('Authorization', `Bearer ${tokenRegular}`);
+    const regular = await request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${tokenRegular}`);
     expect(regular.status).toBe(403);
     expect(regular.body.error.code).toBe('FORBIDDEN');
     expect(mockUserService.getAllUsers).not.toHaveBeenCalled();
 
-    const admin = await request(serverTarget).get('/users').set('Authorization', `Bearer ${tokenAdmin}`);
+    const admin = await request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${tokenAdmin}`);
     expect(admin.status).toBe(200);
   });
 
   // TEST 25: Verify a regular account reads only its own record (BOLA, OWASP API1:2023, issue #36).
   // Condition: Another account's id gets 403 without a lookup, existing or not; its own id gets 200.
-  it('GET /users/:id -> returns 403 for another account and 200 for its own id', async () => {
+  it('GET /api/v1/users/:id -> returns 403 for another account and 200 for its own id', async () => {
     mockUserService.getUserById.mockClear();
 
     for (const otherId of ['abc-777', '999']) {
-      const other = await request(serverTarget).get(`/users/${otherId}`).set('Authorization', `Bearer ${tokenRegular}`);
+      const other = await request(serverTarget).get(`/api/v1/users/${otherId}`).set('Authorization', `Bearer ${tokenRegular}`);
       expect({ id: otherId, status: other.status, code: other.body.error?.code }).toEqual({ id: otherId, status: 403, code: 'FORBIDDEN' });
     }
     expect(mockUserService.getUserById).not.toHaveBeenCalled();
 
-    const own = await request(serverTarget).get(`/users/${REGULAR_ID}`).set('Authorization', `Bearer ${tokenRegular}`);
+    const own = await request(serverTarget).get(`/api/v1/users/${REGULAR_ID}`).set('Authorization', `Bearer ${tokenRegular}`);
     expect(own.status).toBe(200);
     expect(own.body.id).toBe(REGULAR_ID);
   });
 
-  // TEST 26: Verify GET /users/me returns the caller's own record, with the id taken from the token.
-  // Condition: A regular account calls /users/me and must get its own record, not a user whose id is "me".
-  it('GET /users/me -> returns the record of the account in the token', async () => {
-    const response = await request(serverTarget).get('/users/me').set('Authorization', `Bearer ${tokenRegular}`);
+  // TEST 26: Verify GET /api/v1/users/me returns the caller's own record, with the id taken from the token.
+  // Condition: A regular account calls /api/v1/users/me and must get its own record, not a user whose id is "me".
+  it('GET /api/v1/users/me -> returns the record of the account in the token', async () => {
+    const response = await request(serverTarget).get('/api/v1/users/me').set('Authorization', `Bearer ${tokenRegular}`);
 
     expect(response.status).toBe(200);
     expect(response.body.id).toBe(REGULAR_ID);
@@ -603,9 +603,9 @@ describe('User routes (integration tests)', () => {
 
   // TEST 27: Verify the login copies the account's role from the database into the token.
   // Condition: The test administrator's record has role ADMIN, so its token must say ADMIN.
-  it('POST /auth/login -> puts the account role from the database in the token', async () => {
+  it('POST /api/v1/auth/login -> puts the account role from the database in the token', async () => {
     const response = await request(serverTarget)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
     expect(response.status).toBe(200);
@@ -615,7 +615,7 @@ describe('User routes (integration tests)', () => {
   // Log in as the test administrator and return the "name=value" pair a browser would send back.
   const loginCookiePair = async (): Promise<string> => {
     const login = await request(serverTarget)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
     return (sessionCookieOf(login) ?? '').split(';')[0] ?? '';
   };
@@ -623,9 +623,9 @@ describe('User routes (integration tests)', () => {
   // TEST 28: Verify the login keeps the JWT out of reach of page scripts (CWE-922, issue #34).
   // Condition: The session cookie must be HttpOnly, SameSite=Strict, Path=/ and expire with the token,
   // and the response body must not carry the token.
-  it('POST /auth/login -> sets an HttpOnly, SameSite=Strict session cookie and keeps the token out of the body', async () => {
+  it('POST /api/v1/auth/login -> sets an HttpOnly, SameSite=Strict session cookie and keeps the token out of the body', async () => {
     const response = await request(serverTarget)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
     expect(response.status).toBe(200);
@@ -639,11 +639,11 @@ describe('User routes (integration tests)', () => {
   });
 
   // TEST 29: Verify the session cookie alone authenticates a request, as the browser sends no header.
-  // Condition: Call GET /users/me with only the Cookie header returned by the login.
-  it('GET /users/me -> accepts the session cookie without an Authorization header', async () => {
+  // Condition: Call GET /api/v1/users/me with only the Cookie header returned by the login.
+  it('GET /api/v1/users/me -> accepts the session cookie without an Authorization header', async () => {
     const cookiePair = await loginCookiePair();
 
-    const response = await request(serverTarget).get('/users/me').set('Cookie', cookiePair);
+    const response = await request(serverTarget).get('/api/v1/users/me').set('Cookie', cookiePair);
 
     expect(response.status).toBe(200);
     expect(response.body.id).toBe('admin-id');
@@ -652,11 +652,11 @@ describe('User routes (integration tests)', () => {
   // TEST 30: Verify a state-changing request from a foreign page is refused (CSRF, CWE-352).
   // Condition: A POST whose Origin is not in ALLOWED_ORIGINS (src/config.ts) gets 403 before the route runs;
   // the same request from the frontend's origin goes through.
-  it('POST /auth/login -> returns 403 for a foreign Origin and accepts the frontend origin', async () => {
+  it('POST /api/v1/auth/login -> returns 403 for a foreign Origin and accepts the frontend origin', async () => {
     mockUserService.getUserByEmail.mockClear();
 
     const foreign = await request(serverTarget)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .set('Origin', 'https://evil.example')
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
     expect(foreign.status).toBe(403);
@@ -664,7 +664,7 @@ describe('User routes (integration tests)', () => {
     expect(mockUserService.getUserByEmail).not.toHaveBeenCalled();
 
     const frontend = await request(serverTarget)
-      .post('/auth/login')
+      .post('/api/v1/auth/login')
       .set('Origin', 'http://localhost:3001')
       .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
     expect(frontend.status).toBe(200);
@@ -675,13 +675,13 @@ describe('User routes (integration tests)', () => {
   // an allowed origin, together with Allow-Credentials for the session cookie.
   it('OPTIONS preflight -> echoes only an allowed origin', async () => {
     const foreign = await request(serverTarget)
-      .options('/auth/login')
+      .options('/api/v1/auth/login')
       .set('Origin', 'https://evil.example')
       .set('Access-Control-Request-Method', 'POST');
     expect(foreign.headers['access-control-allow-origin']).toBeUndefined();
 
     const allowed = await request(serverTarget)
-      .options('/auth/login')
+      .options('/api/v1/auth/login')
       .set('Origin', 'http://localhost:3001')
       .set('Access-Control-Request-Method', 'POST');
     expect(allowed.headers['access-control-allow-origin']).toBe('http://localhost:3001');
@@ -691,17 +691,17 @@ describe('User routes (integration tests)', () => {
   // TEST 32: Verify the event stream requires a session (issue #35).
   // Condition: Without a token the stream is refused before it opens; with the session cookie
   // (what EventSource sends with withCredentials: true) it opens.
-  it('GET /events -> returns 401 without a session and opens the stream with the session cookie', async () => {
+  it('GET /api/v1/events -> returns 401 without a session and opens the stream with the session cookie', async () => {
     registerSSEClientMock.mockClear();
 
-    const anonymous = await request(serverTarget).get('/events');
+    const anonymous = await request(serverTarget).get('/api/v1/events');
     expect(anonymous.status).toBe(401);
     expect(registerSSEClientMock).not.toHaveBeenCalled();
 
     // Log in first: Supertest starts and stops the shared server per request, so one request
     // must not be built while another is still running.
     const cookiePair = await loginCookiePair();
-    const withCookie = await request(serverTarget).get('/events').set('Cookie', cookiePair);
+    const withCookie = await request(serverTarget).get('/api/v1/events').set('Cookie', cookiePair);
     expect(withCookie.status).toBe(200);
     expect(withCookie.headers['content-type']).toMatch(/text\/event-stream/);
   });
@@ -709,8 +709,8 @@ describe('User routes (integration tests)', () => {
   // TEST 33: Verify the logout clears the session cookie with the same attributes it was set with.
   // Condition: The browser only removes a cookie when name, path and flags match, so the clearing
   // Set-Cookie must be an empty, already expired, HttpOnly cookie on Path=/.
-  it('POST /auth/logout -> clears the session cookie', async () => {
-    const response = await request(serverTarget).post('/auth/logout');
+  it('POST /api/v1/auth/logout -> clears the session cookie', async () => {
+    const response = await request(serverTarget).post('/api/v1/auth/logout');
 
     expect(response.status).toBe(204);
     const cookie = sessionCookieOf(response) ?? '';
@@ -722,8 +722,8 @@ describe('User routes (integration tests)', () => {
 
   // TEST 34: Verify no user route returns the password hash, the role or any other internal field (issue #48).
   // Condition: The service returns records that carry a bcrypt hash, the role and an extra column, as a
-  // future query could; the list, the lookup by id and /users/me must answer only id, name and email.
-  it('GET /users, /users/:id and /users/me -> answer only the public fields of a user', async () => {
+  // future query could; the list, the lookup by id and /api/v1/users/me must answer only id, name and email.
+  it('GET /api/v1/users, /api/v1/users/:id and /api/v1/users/me -> answer only the public fields of a user', async () => {
     const internalRecord = {
       id: 'abc-777',
       name: 'Lucas Interno',
@@ -738,9 +738,9 @@ describe('User routes (integration tests)', () => {
       .mockResolvedValueOnce(internalRecord as never)
       .mockResolvedValueOnce({ ...internalRecord, id: 'admin-id' } as never);
 
-    const list = await request(serverTarget).get('/users').set('Authorization', `Bearer ${tokenAdmin}`);
-    const byId = await request(serverTarget).get('/users/abc-777').set('Authorization', `Bearer ${tokenAdmin}`);
-    const me = await request(serverTarget).get('/users/me').set('Authorization', `Bearer ${tokenAdmin}`);
+    const list = await request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${tokenAdmin}`);
+    const byId = await request(serverTarget).get('/api/v1/users/abc-777').set('Authorization', `Bearer ${tokenAdmin}`);
+    const me = await request(serverTarget).get('/api/v1/users/me').set('Authorization', `Bearer ${tokenAdmin}`);
 
     // Exact equality: any extra property (hash, role, timestamps) fails the test, not only the password.
     expect(list.body).toEqual([publicView]);
@@ -754,15 +754,15 @@ describe('User routes (integration tests)', () => {
   // TEST 35: Verify the login and the registration log no e-mail, name or password (CWE-532, issue #53).
   // Condition: A failed login, a successful login and a registration, each with a recognizable value;
   // before, the login printed the e-mail of every attempt.
-  it('POST /auth/login and POST /api/v1/users -> log no e-mail, name or password', async () => {
+  it('POST /api/v1/auth/login and POST /api/v1/users -> log no e-mail, name or password', async () => {
     const freshServer = await createApp(mockUserService);
     const registration = { name: 'Lucas Rastreavel', email: 'rastreavel@maestro.test', password: crypto.randomUUID() };
     publishEventMock.mockResolvedValueOnce(true);
 
     const logs = captureLogs(logger);
     try {
-      expect((await request(freshServer).post('/auth/login').send({ username: 'nobody@maestro.test', password: 'wrong-password' })).status).toBe(401);
-      expect((await request(freshServer).post('/auth/login').send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD })).status).toBe(200);
+      expect((await request(freshServer).post('/api/v1/auth/login').send({ username: 'nobody@maestro.test', password: 'wrong-password' })).status).toBe(401);
+      expect((await request(freshServer).post('/api/v1/auth/login').send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD })).status).toBe(200);
       expect((await request(freshServer).post('/api/v1/users').send(registration)).status).toBe(202);
 
       // The requests were logged (the success by account id), but no personal value was.
@@ -794,12 +794,12 @@ describe('User routes (integration tests)', () => {
     }
   });
 
-  // TEST 37: Verify GET /users serves a cached page until the cache version changes (issue #52).
+  // TEST 37: Verify GET /api/v1/users serves a cached page until the cache version changes (issue #52).
   // Condition: The same page is read twice, then the version is bumped (what the queue consumer does
   // after saving an account); the third read must reach the service again.
-  it('GET /users -> serves the cached page, and reads the database again after the version changes', async () => {
+  it('GET /api/v1/users -> serves the cached page, and reads the database again after the version changes', async () => {
     mockUserService.getAllUsers.mockClear();
-    const readPage = () => request(serverTarget).get('/users').set('Authorization', `Bearer ${tokenAdmin}`).query({ limit: 7, offset: 0 });
+    const readPage = () => request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${tokenAdmin}`).query({ limit: 7, offset: 0 });
 
     expect((await readPage()).status).toBe(200);
     expect((await readPage()).status).toBe(200);
@@ -811,19 +811,57 @@ describe('User routes (integration tests)', () => {
     expect(mockUserService.getAllUsers).toHaveBeenCalledTimes(2);
   });
 
+  // TEST 38: Verify every route lives under /api/v1 and the old unversioned paths are gone (issue #49).
+  // Condition: The login works at /api/v1/auth/login; /auth/login, /users, /users/me, /ai/chat and
+  // /events, which coexisted with /api/v1/users before, must answer the JSON 404 like any unknown path.
+  it('serves the API under /api/v1 and answers 404 on the old unversioned paths', async () => {
+    const login = await request(serverTarget).post('/api/v1/auth/login').send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    expect(login.status).toBe(200);
+
+    // Each request is built only when its turn comes: Supertest starts and stops the shared server
+    // per request, so two requests must not be in flight at once (see TEST 32).
+    const oldPaths: Array<[string, () => request.Test]> = [
+      ['POST /auth/login', () => request(serverTarget).post('/auth/login').send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD })],
+      ['GET /users', () => request(serverTarget).get('/users').set('Authorization', `Bearer ${tokenAdmin}`)],
+      ['GET /users/me', () => request(serverTarget).get('/users/me').set('Authorization', `Bearer ${tokenAdmin}`)],
+      ['POST /ai/chat', () => request(serverTarget).post('/ai/chat').set('Authorization', `Bearer ${tokenAdmin}`).send({ prompt: 'Olá' })],
+      ['GET /events', () => request(serverTarget).get('/events').set('Authorization', `Bearer ${tokenAdmin}`)]
+    ];
+    for (const [path, send] of oldPaths) {
+      const response = await send();
+      expect({ path, status: response.status, code: response.body.error?.code })
+        .toEqual({ path, status: 404, code: 'NOT_FOUND' });
+    }
+  });
+
+  // TEST 39: Verify the user id in the path is validated like every other input (issue #49).
+  // Condition: A blank id and a 51-character id; before, a blank id got a hand-written 400 BAD_REQUEST
+  // and an oversized one reached the database.
+  it('GET /api/v1/users/:id -> returns 400 VALIDATION_FAILURE for a blank or oversized id', async () => {
+    mockUserService.getUserById.mockClear();
+
+    for (const id of ['%20', 'a'.repeat(51)]) {
+      const response = await request(serverTarget).get(`/api/v1/users/${id}`).set('Authorization', `Bearer ${tokenAdmin}`);
+
+      expect({ id, status: response.status, code: response.body.error?.code, field: response.body.error?.details?.[0]?.field })
+        .toEqual({ id, status: 400, code: 'VALIDATION_FAILURE', field: 'params.id' });
+    }
+    expect(mockUserService.getUserById).not.toHaveBeenCalled();
+  });
+
 });
 
 describe('AI chat route (integration tests)', () => {
   let serverTarget: http.Server;
 
   // 🔑 TEST ACCOUNTS: tokens signed by src/auth/accessToken.ts with the same claims that
-  // POST /auth/login issues, so each test can act as a different account.
+  // POST /api/v1/auth/login issues, so each test can act as a different account.
   const tokenFor = (id: string) =>
     signAccessToken({ id, user: `User ${id}`, email: `${id}@maestro.test`, role: 'USER' });
 
-  // Send one prompt to /ai/chat as the given account.
+  // Send one prompt to /api/v1/ai/chat as the given account.
   const sendPrompt = (token: string, prompt: unknown) =>
-    request(serverTarget).post('/ai/chat').set('Authorization', `Bearer ${token}`).send({ prompt });
+    request(serverTarget).post('/api/v1/ai/chat').set('Authorization', `Bearer ${token}`).send({ prompt });
 
   beforeAll(async () => {
     // No custom user service: the chat route does not touch users, and the repository is mocked.
@@ -840,7 +878,7 @@ describe('AI chat route (integration tests)', () => {
   // TEST 1: Verify an oversized prompt is rejected before it reaches the model (CWE-770 / LLM10:2025).
   // Condition: A 50,000-character prompt, far above the limit, must answer 400; a prompt of exactly
   // settings.aiChat.maxPromptLength characters is still accepted.
-  it('POST /ai/chat -> returns 400 for a prompt over the length limit, without calling the model', async () => {
+  it('POST /api/v1/ai/chat -> returns 400 for a prompt over the length limit, without calling the model', async () => {
     const oversized = await sendPrompt(tokenFor('user-a'), 'a'.repeat(50_000));
 
     expect(oversized.status).toBe(400);
@@ -855,7 +893,7 @@ describe('AI chat route (integration tests)', () => {
   // TEST 2: Verify every model call carries the output and time ceilings from src/config.ts.
   // Condition: A valid prompt; the request sent to the SDK must hold max_tokens, the configured
   // model, the timeout and no automatic retries.
-  it('POST /ai/chat -> sends max_tokens, the configured model, a timeout and no retries to the model', async () => {
+  it('POST /api/v1/ai/chat -> sends max_tokens, the configured model, a timeout and no retries to the model', async () => {
     const response = await sendPrompt(tokenFor('user-a'), '  Explique o padrão Cache-Aside.  ');
 
     expect(response.status).toBe(200);
@@ -874,7 +912,7 @@ describe('AI chat route (integration tests)', () => {
 
   // TEST 3: Verify an unreachable or timed-out model server answers 503 without connection details.
   // Condition: The SDK fails with a connection error, as it does when Ollama is down or too slow.
-  it('POST /ai/chat -> returns 503 when the model server cannot be reached', async () => {
+  it('POST /api/v1/ai/chat -> returns 503 when the model server cannot be reached', async () => {
     createCompletionMock.mockRejectedValueOnce(new FakeAPIConnectionError('connect ECONNREFUSED 127.0.0.1:11434'));
     const warnSpy = jest.spyOn(logger, 'warn');
 
@@ -889,7 +927,7 @@ describe('AI chat route (integration tests)', () => {
   // TEST 4: Verify the prompt limit counts per account, not per IP address.
   // Condition: Two accounts behind the same IP (every Supertest request comes from 127.0.0.1).
   // Account A uses its whole budget and gets 429; account B must still be served.
-  it('POST /ai/chat -> limits each account separately, even from the same IP', async () => {
+  it('POST /api/v1/ai/chat -> limits each account separately, even from the same IP', async () => {
     const tokenA = tokenFor('user-a');
     const tokenB = tokenFor('user-b');
 
@@ -977,6 +1015,17 @@ describe('API contract (openapi.yaml)', () => {
 
       expect({ operation: `${method} ${path}`, status: response.status }).toEqual({ operation: `${method} ${path}`, status: 401 });
     }
+  });
+
+  // TEST 3: Verify every documented and served path lives under /api/v1 (issue #49).
+  // Condition: openapi.yaml listed /auth/login, /users, /ai/chat and /events next to /api/v1/users.
+  it('every documented and served path starts with /api/v1', () => {
+    const unversioned = [
+      ...documentedOperations.map(({ method, path }) => `${method} ${path}`),
+      ...registeredRoutes(serverTarget)
+    ].filter((operation) => !operation.split(' ')[1]?.startsWith('/api/v1/'));
+
+    expect(unversioned).toEqual([]);
   });
 
 });

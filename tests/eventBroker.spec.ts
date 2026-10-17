@@ -76,7 +76,7 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
     expect(fakeChannel.ack).toHaveBeenCalledWith(message);
   });
 
-  // A stand-in for the Express response of one open /events connection.
+  // A stand-in for the Express response of one open /api/v1/events connection.
   const fakeStream = () => ({ setHeader: jest.fn(), write: jest.fn(), on: jest.fn() });
 
   // TEST 3: Verify the event stream no longer opens itself to every website (CWE-942, issue #35).

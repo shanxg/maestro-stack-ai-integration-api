@@ -6,14 +6,14 @@ import { loginSchema } from '../schemas/authSchema.js';
 import { SESSION_COOKIE_NAME, sessionCookieOptions } from '../auth/sessionCookie.js';
 
 /**
- * 🔐 AUTH CONTROLLER (issue #46): the HTTP side of POST /auth/login and POST /auth/logout, moved
+ * 🔐 AUTH CONTROLLER (issue #46): the HTTP side of POST /api/v1/auth/login and POST /api/v1/auth/logout, moved
  * out of src/app.ts. AuthService holds the rules; this class only reads the request and writes
  * the response (status, cookie, body).
  */
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
-  // POST /auth/login
+  // POST /api/v1/auth/login
   login = async (req: Request, res: Response): Promise<void> => {
     // No try/catch here: Express 5 sends a rejected promise (for example, the database lookup
     // failing) to the central errorHandler. validateMiddleware(loginSchema) has already answered
@@ -42,7 +42,7 @@ export class AuthController {
     res.status(200).json({ user: session.user });
   };
 
-  // POST /auth/logout
+  // POST /api/v1/auth/logout
   // Clears the session cookie with the same attributes it was set with, otherwise the browser keeps
   // it. The JWT inside stays valid until it expires (at most settings.jwt.expiresIn), but the
   // browser no longer sends it. Answering without a session is fine: logging out twice is harmless.

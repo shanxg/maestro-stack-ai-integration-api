@@ -15,7 +15,7 @@ declare global {
 
 // 3. MIDDLEWARE: Acts as a firewall before the request reaches the controller.
 // The token comes from one of two places:
-// - the HttpOnly session cookie that POST /auth/login sets, used by the browser frontend, whose
+// - the HttpOnly session cookie that POST /api/v1/auth/login sets, used by the browser frontend, whose
 //   scripts can no longer read the token (CWE-922, src/auth/sessionCookie.ts);
 // - the 'Authorization: Bearer <jwt>' header, used by API clients such as scripts and the tests.
 // When a request carries both, the header wins, because the caller chose it explicitly.

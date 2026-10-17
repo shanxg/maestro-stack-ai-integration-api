@@ -131,14 +131,14 @@ export const settings = {
     idleTimeoutMs: 30_000,      // an idle connection is closed after this time
     connectionTimeoutMs: 5_000, // longest wait for a new connection before the query fails
   },
-  // GET /users page size: the default when no limit is sent, and the largest accepted.
+  // GET /api/v1/users page size: the default when no limit is sent, and the largest accepted.
   pagination: { defaultLimit: 10, maxLimit: 100 },
   rateLimits: {
     global: { windowMs: 15 * 60 * 1000, max: 100 }, // per client IP
     login: { windowMs: 5 * 60 * 1000, max: 5 },
     aiChat: { windowMs: 60 * 1000, max: 10 }, // per account (the user id in the JWT)
   },
-  // POST /ai/chat bounds (CWE-770 / OWASP LLM10:2025): every prompt costs model compute,
+  // POST /api/v1/ai/chat bounds (CWE-770 / OWASP LLM10:2025): every prompt costs model compute,
   // so the input, the output and the waiting time all have a ceiling.
   aiChat: {
     maxPromptLength: 2000, // characters accepted in the prompt field

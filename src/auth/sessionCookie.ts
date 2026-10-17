@@ -5,7 +5,7 @@ import { env, settings } from '../config.js';
 /**
  * 🍪 BROWSER SESSION COOKIE (CWE-922 / CWE-352):
  * The frontend used to keep the JWT in localStorage, where any script running on the page
- * (an XSS payload included) could read it and send it elsewhere. POST /auth/login now puts the
+ * (an XSS payload included) could read it and send it elsewhere. POST /api/v1/auth/login now puts the
  * token in a cookie that the browser stores and sends by itself:
  * - HttpOnly: page scripts cannot read it, so an XSS cannot steal the session;
  * - SameSite=Strict: the browser does not send it on requests started by another site,

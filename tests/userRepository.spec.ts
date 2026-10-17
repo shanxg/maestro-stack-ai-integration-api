@@ -132,19 +132,19 @@ describe('UserRepository database failures (integration tests)', () => {
   });
 
   // TEST 3: Verify the routes tell an outage apart from an empty or missing result.
-  // Condition: Every query is refused. Before, GET /users answered 200 [] and cached it, GET /users/{id}
-  // and GET /users/me answered 404, and POST /auth/login answered 401 "invalid credentials".
-  it('GET /users, GET /users/{id}, GET /users/me and POST /auth/login answer 503 when PostgreSQL is down', async () => {
+  // Condition: Every query is refused. Before, GET /api/v1/users answered 200 [] and cached it, GET /api/v1/users/{id}
+  // and GET /api/v1/users/me answered 404, and POST /api/v1/auth/login answered 401 "invalid credentials".
+  it('GET /api/v1/users, GET /api/v1/users/{id}, GET /api/v1/users/me and POST /api/v1/auth/login answer 503 when PostgreSQL is down', async () => {
     poolQueryMock.mockRejectedValue(refusedConnection());
     const cacheWriteSpy = jest.spyOn(FakeRedis.prototype, 'set');
     const logs = captureLogs(logger);
 
     try {
       const responses = {
-        'GET /users': await request(serverTarget).get('/users').set('Authorization', `Bearer ${adminToken}`),
-        'GET /users/{id}': await request(serverTarget).get('/users/abc-777').set('Authorization', `Bearer ${adminToken}`),
-        'GET /users/me': await request(serverTarget).get('/users/me').set('Authorization', `Bearer ${adminToken}`),
-        'POST /auth/login': await request(serverTarget).post('/auth/login').send({ username: 'admin@maestro.test', password: 'any-password' })
+        'GET /api/v1/users': await request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${adminToken}`),
+        'GET /api/v1/users/{id}': await request(serverTarget).get('/api/v1/users/abc-777').set('Authorization', `Bearer ${adminToken}`),
+        'GET /api/v1/users/me': await request(serverTarget).get('/api/v1/users/me').set('Authorization', `Bearer ${adminToken}`),
+        'POST /api/v1/auth/login': await request(serverTarget).post('/api/v1/auth/login').send({ username: 'admin@maestro.test', password: 'any-password' })
       };
 
       for (const [route, response] of Object.entries(responses)) {

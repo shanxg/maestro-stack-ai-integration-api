@@ -6,7 +6,7 @@ import http from 'node:http';   // Node module for managing network servers
 import { UserRepository } from './repositories/UserRepository.js';
 import { UserService } from './services/UserService.js';
 import { UserController } from './controllers/UserController.js';
-import { UsersCache } from './cache/usersCache.js'; // Versioned GET /users page cache (issue #52)
+import { UsersCache } from './cache/usersCache.js'; // Versioned GET /api/v1/users page cache (issue #52)
 
 // Authentication layers: the login rules and their HTTP controller (issue #46)
 import { AuthService } from './services/AuthService.js';
@@ -111,7 +111,7 @@ export async function createApp(customUserService?: UserService) {
   // Step B: The user domain service (CSPRNG ids, bcrypt hashing, persistence rules).
   const userService = customUserService || new UserService(userRepository);
 
-  // Step C: The GET /users page cache (issue #52). Its own Redis client uses the shared connection
+  // Step C: The GET /api/v1/users page cache (issue #52). Its own Redis client uses the shared connection
   // settings (REDIS_PASSWORD included, CWE-306) and, like the rate-limit client, fails at once while
   // Redis is down instead of queueing commands, so a request falls back to PostgreSQL immediately.
   const cacheRedis = new Redis({ ...redisConnection, enableOfflineQueue: false, maxRetriesPerRequest: 1 });

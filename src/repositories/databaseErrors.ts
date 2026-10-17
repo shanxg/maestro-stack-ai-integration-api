@@ -7,7 +7,7 @@ import { logger } from '../logger.js'; // Structured logger without personal dat
  * 🩺 DATABASE FAILURE CLASSIFICATION (CWE-392, issue #93):
  * Before, the read methods of UserRepository caught every database error, logged it and
  * returned [] or null. Callers could not tell an outage from an empty result: with PostgreSQL
- * down, GET /users answered 200 [] (and cached it for 60 s), GET /users/{id} answered 404 and
+ * down, GET /api/v1/users answered 200 [] (and cached it for 60 s), GET /api/v1/users/{id} answered 404 and
  * the login answered 401 "invalid credentials". The repository now reports the failure, and
  * this module decides how it reaches the client.
  */

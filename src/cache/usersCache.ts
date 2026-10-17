@@ -6,7 +6,7 @@ import { logger } from '../logger.js';
 
 /**
  * 🗃️ USERS PAGE CACHE WITH A VERSION COUNTER (issue #52):
- * GET /users caches each page (limit/offset combination) in Redis for settings.usersCacheTtlSeconds.
+ * GET /api/v1/users caches each page (limit/offset combination) in Redis for settings.usersCacheTtlSeconds.
  *
  * INVALIDATION WITHOUT KEYS: before, every registration ran redis.keys('users:*') and deleted the
  * matches. KEYS walks the WHOLE keyspace in one blocking command (Redis runs commands one at a
