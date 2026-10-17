@@ -5,7 +5,7 @@ import pg from 'pg'; // Use the official 'pg' driver to connect to the relationa
 import { env } from '../config.js'; // Validated database settings (no default password)
 
 // 2. CLASS: 'implements IUserRepository' tells TypeScript that this class
-// must implement the three methods required by the contract (findAll, findById, create).
+// must implement the four methods required by the contract (findAll, findById, findByEmail, create).
 export class UserRepository implements IUserRepository {
   private pool: pg.Pool;
   

@@ -1,6 +1,6 @@
 import amqp from 'amqplib';
 import type { Channel, ChannelModel } from 'amqplib';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { UserService } from './UserService.js'; // Ensure the user service is imported at the top layer
 import { env } from '../config.js';
 
@@ -167,7 +167,10 @@ export class EventBrokerService {
   * Handle the /events HTTP route, set Server-Sent Events headers,
   * and keep the response open as an active stream.
    */
-  registerSSEClient(req: Request | any, res: Response): void {
+  // The parameter types come from Express (issue #47). Before, 'Request | any' named the browser's
+  // fetch Request, not Express's, and the '| any' turned off type checking for the argument.
+  // The request is not read yet; it stays in the signature because the route passes both.
+  registerSSEClient(_req: Request, res: Response): void {
     // Required W3C headers for continuous one-way text streaming.
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -195,7 +198,9 @@ export class EventBrokerService {
   * 📢 5. BROADCAST (broadcastToSSEClients):
   * Send event data to every open response using the SSE syntax.
    */
-  private broadcastToSSEClients(event: string, data: any): void {
+  // 'object' instead of 'any' (issue #47): any JSON object is accepted, but a value that is not
+  // an object (or a typo such as passing the event name twice) is a compile error.
+  private broadcastToSSEClients(event: string, data: object): void {
     // SSE requires this syntax to trigger the browser's event listener: "event: name\ndata: {json}\n\n".
     const formattedData = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 

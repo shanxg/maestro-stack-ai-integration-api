@@ -3,7 +3,7 @@
 import { type Request, type Response } from 'express';
 import { UserService } from '../services/UserService.js';
 import { EventBrokerService } from '../services/EventBrokerService.js';
-import { listUsersSchema } from '../schemas/userSchema.js';
+import { createUserSchema, listUsersSchema } from '../schemas/userSchema.js';
 import { settings, redisConnection } from '../config.js';
 import { AppError } from '../errors/AppError.js'; // Expected failures answered by the central errorHandler
 import { type AccessTokenClaims } from '../auth/accessToken.js';
@@ -158,19 +158,11 @@ export class UserController {
    */
   createUser = async (req: Request, res: Response): Promise<void> => {
     // No try/catch: hashing, queue and Redis failures reach the central errorHandler (see getUsers above).
-    // APPSEC REMEDIATION: Safely extract the secret password credential from the validated request body
-    const { name, email, password } = req.body;
-
-    // 🛡️ REQUIRED INPUT VALIDATION: Reject the request if any core credential parameter is missing.
-    if (!name || !email || !password) {
-      res.status(400).json({
-        error: {
-          code: 'BAD_REQUEST',
-          message: 'Os campos nome, e-mail e senha são obrigatórios para registrar uma intenção de cadastro.'
-        }
-      });
-      return;
-    }
+    // TYPED BODY (issue #47): Express types req.body as 'any', so reading it directly let any value
+    // through unchecked by the compiler. validateMiddleware(createUserSchema) has already answered 400
+    // for a missing or invalid field, so this parse only returns the three fields as typed strings
+    // (the same pattern as the login and the AI chat routes); the old manual 400 check is no longer needed.
+    const { name, email, password } = createUserSchema.shape.body.parse(req.body);
 
     // =========================================================================
     // 🔐 IMMEDIATE CRYPTOGRAPHIC SHIELDING (CWE-256 / OWASP TOP 10 API Security)

@@ -13,6 +13,7 @@ import { settings } from '../config.js';
 const mockUserRepository: jest.Mocked<IUserRepository> = {
   findAll: jest.fn(),
   findById: jest.fn(),
+  findByEmail: jest.fn(),
   create: jest.fn(),
 };
 
@@ -116,5 +117,27 @@ describe('UserService (Testes Unitários)', () => {
       await expect(userService.createUserWithPasswordHash('Lucas Fila', 'lucas.fila@maestro.com', value)).rejects.toThrow();
     }
     expect(mockUserRepository.create).not.toHaveBeenCalled();
+  });
+
+  // TEST 7: Verify the login lookup goes through the IUserRepository contract (issue #47).
+  // Condition: The mock repository holds the account; then a repository without findByEmail is used.
+  it('reads an account by e-mail through IUserRepository and fails loudly when findByEmail is missing', async () => {
+    const account: User = { id: 'abc-777', name: 'Lucas Login', email: 'lucas.login@maestro.com', password: '$2b$12$hash', role: 'USER' };
+    mockUserRepository.findByEmail.mockResolvedValue(account);
+
+    // The service returns the repository's record as it is, hash and role included (the login needs both).
+    await expect(userService.getUserByEmail('lucas.login@maestro.com')).resolves.toBe(account);
+    expect(mockUserRepository.findByEmail).toHaveBeenCalledWith('lucas.login@maestro.com');
+
+    // COMPILE-TIME CHECK (npx tsc --noEmit): findByEmail is now part of the contract, so a repository
+    // without it is a type error. If the method ever leaves the interface again, this directive is
+    // unused and tsc fails with "Unused '@ts-expect-error' directive".
+    // @ts-expect-error findByEmail is required by IUserRepository
+    const incompleteRepository: IUserRepository = { findAll: jest.fn(), findById: jest.fn(), create: jest.fn() };
+
+    // RUNTIME CHECK: before, the service probed for the method through an 'any' cast and answered null
+    // when it was missing, so every login failed with a 401 that looked like wrong credentials.
+    // Now the missing method is a programming error that surfaces at once.
+    await expect(new UserService(incompleteRepository).getUserByEmail('lucas.login@maestro.com')).rejects.toThrow(TypeError);
   });
 });

@@ -43,8 +43,10 @@ import { originCheck } from './middlewares/originCheck.js';
  * 🏭 APPLICATION FACTORY (createApp):
  * Assembles the API and lets Jest inject service mocks,
  * so tests can run quickly without blocking on external services.
+ * The optional service is typed as UserService (issue #47): a replacement must offer the
+ * same methods the routes, the controller and the queue consumer call, instead of 'any'.
  */
-export async function createApp(customUserService?: any) {
+export async function createApp(customUserService?: UserService) {
 
   const app = express();
 
