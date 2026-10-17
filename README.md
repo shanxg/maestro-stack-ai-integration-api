@@ -297,9 +297,21 @@ Decisions that change the shape of the API are recorded in [`docs/adr/`](docs/ad
 
 ---
 
-## ⚖️ Architectural Trade-offs: CAP Theorem Dynamics
+## ⚖️ Decisions and Trade-offs
 
-The Maestro architecture deliberately prioritizes **Availability & Partition Tolerance (AP)** within its streaming communication layer. Rather than holding the critical HTTP request pipeline hostage to complex analytical writes, data signals are dispatched asynchronously into **RabbitMQ** event queues. The platform favors **Eventual Consistency**, allowing backing consumers to batch write telemetries and auditing data blocks without adding a single millisecond of overhead to the user experience.
+Each choice below solved a concrete problem and has a known cost. The findings behind them are in the remediation log (see **Security Policies** below).
+
+- **Registration through a queue.** The response does not wait for the database write, and a database outage does not lose accepted registrations: they wait in the queue or in the dead-letter queue. The cost is that `202` means "queued", not "created"; the client learns the outcome from the event stream or by signing in. The same `202` for a duplicate e-mail keeps the route from revealing which e-mails have accounts (MSG-01).
+- **Consumer inside the API process.** One image and one deployment, and RabbitMQ spreads the messages across the replicas. The cost is that the event stream is per process: with several replicas (`k8s/deployment.yaml` runs two), a stream only receives the events its own replica consumed. A shared fan-out, such as a RabbitMQ fanout exchange or Redis pub/sub, would remove that limit.
+- **Rate-limit counters in Redis, with an in-memory fallback.** Every replica counts the same hits (RATE-01). If Redis is unreachable, each replica counts in its own memory: requests are still served, but N replicas allow up to N times the configured limit until Redis returns. The store is custom (`src/middlewares/redisRateLimitStore.ts`) because `rate-limit-redis` keeps failing until a restart when Redis is down at boot.
+- **Eventually consistent users cache.** `GET /api/v1/users` pages are cached in Redis for 60 seconds under a version number, and the consumer increments the version after each new account: one `INCR` instead of a blocking `KEYS` scan (CACHE-01). A Redis failure never fails a request; reads fall back to PostgreSQL, and a missed invalidation leaves a page at most 60 seconds stale.
+- **Dead-letter queue, no automatic retry.** Invalid messages and failed inserts move to `user_events.dead` instead of being deleted, or requeued forever as poison messages. The cost is a manual replay by an operator, for example with the RabbitMQ management UI's "Move messages".
+
+### What was left out
+
+- **GraphQL:** retired by [ADR 0001](docs/adr/0001-retire-the-graphql-endpoint.md); REST, described by `openapi.yaml`, is the only API contract.
+- **High availability of the backing services:** PostgreSQL, Redis and RabbitMQ each run as a single instance, with no replica, Redis Cluster or broker cluster.
+- **Retry with backoff** for dead-lettered registrations, and an event stream consumer in the bundled frontend.
 
 ---
 
