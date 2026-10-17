@@ -119,6 +119,14 @@ export const settings = {
   },
   bcryptSaltRounds: 12,
   usersCacheTtlSeconds: 60,
+  // PostgreSQL connection pool (src/repositories/UserRepository.ts, issue #93). Without a
+  // connection timeout, a request waits for the operating system's TCP timeout (minutes) when
+  // the database host does not answer; with it, the request fails fast with a 503.
+  database: {
+    poolMax: 10,                // connections kept by each API replica
+    idleTimeoutMs: 30_000,      // an idle connection is closed after this time
+    connectionTimeoutMs: 5_000, // longest wait for a new connection before the query fails
+  },
   // GET /users page size: the default when no limit is sent, and the largest accepted.
   pagination: { defaultLimit: 10, maxLimit: 100 },
   rateLimits: {
