@@ -275,7 +275,7 @@ The repository enforces secret scanning at two layers, both using the same `.git
 `.gitleaks.toml` extends the default ruleset and only allowlists documentation placeholders (e.g. `YOUR_TOKEN_HERE`, `REPLACE_ME`), matched against the detected value. There is no file allowlist, so `.env` or `k8s/secret.yaml` are blocked even if force-added (see SCAN-01).
 
 Every remediation performed on this repository is logged in [`docs/security/remediation-log.md`](docs/security/remediation-log.md), with root cause, fix, regression test, and evidence.
-Check the security policies either in [`SECURITY.md`](SECURITY.md) at the repository root or in the **Security Policies** section at the end of this document, where the contents of [`SECURITY.md`](SECURITY.md) and [`docs/security/remediation-log.md`](docs/security/remediation-log.md) are copied automatically by the `sync-readme` workflow whenever those files change.
+Check the security policies either in [`SECURITY.md`](SECURITY.md) at the repository root or in the **Security Policies** section at the end of this document, where the contents of [`SECURITY.md`](SECURITY.md) and [`remediation-log.md`](docs/security/remediation-log.md) are copied automatically by the `sync-readme` workflow whenever those files change.
 
 ---
 
