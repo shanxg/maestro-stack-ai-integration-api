@@ -12,6 +12,7 @@ import { describe, beforeAll, beforeEach, afterAll, it, expect, jest } from '@je
 import request from 'supertest';
 import type { User } from '../src/models/User.js';
 import { FakeRedis } from './helpers/fakeRedis.js';
+import { captureLogs } from './helpers/logCapture.js';
 
 // 🚀 GLOBAL INTERCEPTION (MOCK REDIS TCP CONNECTIONS):
 // Whenever a file (UserController's cache, or the rate limiters in app.ts) calls 'new Redis()',
@@ -106,6 +107,8 @@ jest.unstable_mockModule('amqplib', () => {
 const { createApp } = await import('../src/app.js');
 const { env, settings } = await import('../src/config.js');
 const { signAccessToken } = await import('../src/auth/accessToken.js');
+// The shared logger (issue #53): tests that check what is logged spy on its methods.
+const { logger } = await import('../src/logger.js');
 
 // 3. LEGACY BLUEPRINT IMPORTS: The API never imports these modules (see README.md,
 // "Architectural Evolution"). They are loaded here only to test them in isolation.
@@ -436,8 +439,8 @@ describe('User routes (integration tests)', () => {
     mockUserService.getUserById.mockRejectedValueOnce(new Error(internalMessage));
     mockUserService.hashPassword.mockRejectedValueOnce(new Error(internalMessage));
 
-    // Silence the expected error logs, but keep them to check that the server still records the failure.
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    // Keep the expected error logs to check that the server still records the failure.
+    const logs = captureLogs(logger);
 
     const responses = [
       await request(serverTarget).get('/users').set('Authorization', `Bearer ${tokenAdmin}`),
@@ -447,8 +450,9 @@ describe('User routes (integration tests)', () => {
         .send({ name: 'Lucas Falha', email: 'lucas.falha@maestro.com', password: crypto.randomUUID() })
     ];
 
-    const loggedErrors = consoleErrorSpy.mock.calls.flat();
-    consoleErrorSpy.mockRestore();
+    // pino's error key is 'err': errorHandler logs { err: error, ... } for every unexpected failure.
+    const loggedErrors = logs.errorCalls().map((call) => (call[0] as { err?: unknown }).err);
+    logs.restore();
 
     for (const response of responses) {
       expect(response.status).toBe(500);
@@ -747,6 +751,30 @@ describe('User routes (integration tests)', () => {
     }
   });
 
+  // TEST 35: Verify the login and the registration log no e-mail, name or password (CWE-532, issue #53).
+  // Condition: A failed login, a successful login and a registration, each with a recognizable value;
+  // before, the login printed the e-mail of every attempt.
+  it('POST /auth/login and POST /api/v1/users -> log no e-mail, name or password', async () => {
+    const freshServer = await createApp(mockUserService);
+    const registration = { name: 'Lucas Rastreavel', email: 'rastreavel@maestro.test', password: crypto.randomUUID() };
+    publishEventMock.mockResolvedValueOnce(true);
+
+    const logs = captureLogs(logger);
+    try {
+      expect((await request(freshServer).post('/auth/login').send({ username: 'nobody@maestro.test', password: 'wrong-password' })).status).toBe(401);
+      expect((await request(freshServer).post('/auth/login').send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD })).status).toBe(200);
+      expect((await request(freshServer).post('/api/v1/users').send(registration)).status).toBe(202);
+
+      // The requests were logged (the success by account id), but no personal value was.
+      expect(logs.text()).toContain('admin-id');
+      for (const personal of ['nobody@maestro.test', ADMIN_EMAIL, ADMIN_PASSWORD, registration.email, registration.name, registration.password]) {
+        expect({ personal, logged: logs.text().includes(personal) }).toEqual({ personal, logged: false });
+      }
+    } finally {
+      logs.restore();
+    }
+  });
+
 });
 
 describe('AI chat route (integration tests)', () => {
@@ -812,10 +840,10 @@ describe('AI chat route (integration tests)', () => {
   // Condition: The SDK fails with a connection error, as it does when Ollama is down or too slow.
   it('POST /ai/chat -> returns 503 when the model server cannot be reached', async () => {
     createCompletionMock.mockRejectedValueOnce(new FakeAPIConnectionError('connect ECONNREFUSED 127.0.0.1:11434'));
-    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const warnSpy = jest.spyOn(logger, 'warn');
 
     const response = await sendPrompt(tokenFor('user-a'), 'Olá?');
-    consoleWarnSpy.mockRestore();
+    warnSpy.mockRestore();
 
     expect(response.status).toBe(503);
     expect(response.body.error.code).toBe('AI_SERVICE_UNAVAILABLE');

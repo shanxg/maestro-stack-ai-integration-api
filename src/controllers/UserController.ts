@@ -12,6 +12,7 @@ import { toUserResponse } from '../dtos/userResponse.js'; // The only public sha
 
 // Redis client library
 import { Redis } from 'ioredis'; 
+import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
 // Host, port and password come from src/config.ts (redisConnection): Redis requires
 // authentication, so the cache client always sends REDIS_PASSWORD (CWE-306).
 const redis = new Redis({ ...redisConnection });
@@ -68,12 +69,12 @@ export class UserController {
     // Step B: On a cache hit, parse the JSON and respond immediately,
     // avoiding additional processing and PostgreSQL I/O.
     if (cachedUsers) {
-      console.log(`⚡ [Redis] Cache hit for key: ${cacheKey}`);
+      logger.debug({ component: 'cache', cacheKey }, 'Users page served from Redis');
       res.status(200).json(JSON.parse(cachedUsers));
       return;
     }
 
-    console.log(`⚠️ [Redis] Cache miss. Querying the PostgreSQL layer...`);
+    logger.debug({ component: 'cache', cacheKey }, 'Users page not cached; reading PostgreSQL');
 
     // Step C: On a cache miss, get the records from the relational database through the service.
     const users = await this.userService.getAllUsers({
@@ -212,7 +213,7 @@ export class UserController {
     const targetedKeys = await redis.keys('users:*');
     if (targetedKeys.length > 0) {
       await redis.del(...targetedKeys);
-      console.log(`🧹 [Redis] Strict invalidation complete. ${targetedKeys.length} stale keys were purged.`);
+      logger.info({ component: 'cache', purgedKeys: targetedKeys.length }, 'Users cache invalidated');
     }
 
     res.status(202).json({

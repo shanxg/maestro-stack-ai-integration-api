@@ -3,6 +3,7 @@ import type { Channel, ChannelModel } from 'amqplib';
 import type { Request, Response } from 'express';
 import { UserService } from './UserService.js'; // Ensure the user service is imported at the top layer
 import { env } from '../config.js';
+import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
 
 export class EventBrokerService {
   private connection?: ChannelModel;
@@ -36,7 +37,7 @@ export class EventBrokerService {
     // Host, port and account come from src/config.ts. The logged address never carries the credentials.
     const rabbitAddress = `amqp://${env.RABBIT_HOST}:${env.RABBIT_PORT}`;
 
-    console.log(`⏳ [RabbitMQ] Attempting to establish a connection at: ${rabbitAddress}`);
+    logger.info({ component: 'rabbitmq', address: rabbitAddress }, 'Connecting to RabbitMQ');
 
     try {
       // Open the main connection with the configured account (never the broker's default guest user).
@@ -52,14 +53,14 @@ export class EventBrokerService {
 
       // 🛡️ RESILIENCE: Ensure the queue exists before sending any data.
       await this.channel.assertQueue(this.queueName, { durable: true });
-      console.log(`✅ [RabbitMQ] Queue '${this.queueName}' is operational and synchronized successfully.`);
+      logger.info({ component: 'rabbitmq', queue: this.queueName }, 'Queue ready');
 
       // Start the background consumer once the network connection is ready.
       this.startAsynchronousConsumerWorker();
 
     } catch (error: unknown) {
-      console.error('❌ [RabbitMQ] Connection attempt failed. Broker might still be warming up.');
-      console.log('⏳ [RabbitMQ] Scheduling a new network handshake attempt in 5 seconds...');
+      // Only the reason is logged: the error never holds the password (the connection uses an options object).
+      logger.warn({ component: 'rabbitmq', reason: error instanceof Error ? error.message : String(error) }, 'Connection attempt failed; retrying in 5 seconds');
       
       // Schedule a recurring micro-task loop to recover the connection channel automatically
       setTimeout(() => {
@@ -76,7 +77,7 @@ export class EventBrokerService {
     try {
       // 🛡️ If the channel is offline, abort publishing.
       if (!this.channel) {
-        console.warn('⚠️ [RabbitMQ] Send attempt rejected: Messaging channel is offline.');
+        logger.warn({ component: 'rabbitmq' }, 'Publish rejected: the messaging channel is offline');
         return false;
       }
 
@@ -91,11 +92,11 @@ export class EventBrokerService {
       // persistent: true tells RabbitMQ to save messages to the container's disk.
       const isPublished = this.channel.sendToQueue(this.queueName, messageBuffer, { persistent: true });
       
-      console.log(`📥 [RabbitMQ] Asynchronous message added to the queue. Action: "${action}".`);
+      logger.info({ component: 'rabbitmq', action }, 'Event published to the queue');
       return isPublished;
 
     } catch (error: unknown) {
-      console.error('❌ [RabbitMQ] Failed to send bytes to the message broker:', error);
+      logger.error({ component: 'rabbitmq', err: error }, 'Failed to publish the event');
       return false;
     }
   }
@@ -112,7 +113,7 @@ export class EventBrokerService {
         return;
       }
 
-      console.log('👷 [Worker] Background consumer started. Listening for messages...');
+      logger.info({ component: 'consumer', queue: this.queueName }, 'Consumer started');
 
       await this.channel.consume(this.queueName, async (message) => {
         if (!message) return;
@@ -121,7 +122,7 @@ export class EventBrokerService {
           const rawContent = message.content.toString();
           const parsedPayload = JSON.parse(rawContent);
 
-          console.log(`📢 [Worker] Event retrieved from the queue. Processing data pipeline...`);
+          logger.debug({ component: 'consumer' }, 'Event received from the queue');
 
           // =========================================================================
           // ⚙️ ASYNCHRONOUS SERVICE LAYER PERSISTENCE INGESTION
@@ -134,9 +135,10 @@ export class EventBrokerService {
             // The message carries the bcrypt hash computed by UserController, so it goes through the
             // trusted path that stores a verified hash as is (createUser would hash it a second time).
             if (this.userService) {
-              console.log(`📥 [Worker] Intercepted 'user_created' event from queue. Persistent entity write initiated for: ${email}`);
+              // NO PERSONAL DATA IN LOGS (CWE-532, issue #53): this line used to print the new account's e-mail.
+              logger.info({ component: 'consumer', action: 'user_created' }, 'Creating the account from a queued registration');
               const createdUser = await this.userService.createUserWithPasswordHash(name, email, password);
-              console.log(`💾 [Worker] Event transaction successfully resolved and persisted inside PostgreSQL cluster.`);
+              logger.info({ component: 'consumer', userId: createdUser.id }, 'Account created');
 
               // MINIMUM DATA ON THE STREAM (issue #35): every signed-in account receives these events,
               // but a regular account may only read its own record (AUTHZ-01). So the event carries
@@ -144,7 +146,7 @@ export class EventBrokerService {
               // see the record fetches it through GET /users/{id}, where the access rules apply.
               this.broadcastToSSEClients('user_created', { id: createdUser.id });
             } else {
-              console.warn('⚠️ [Worker] Execution blocked: UserService container reference is unmapped inside the broker instance.');
+              logger.warn({ component: 'consumer' }, 'UserService is not wired; the event was not processed');
             }
           }
           // Other actions are not forwarded to the stream: only known events, with known fields, go out.
@@ -152,13 +154,13 @@ export class EventBrokerService {
           this.channel?.ack(message);
 
         } catch (error: unknown) {
-          console.error('❌ [Worker] Operational failure while processing consumed message:', error);
+          logger.error({ component: 'consumer', err: error }, 'Failed to process the message; it was discarded');
           this.channel?.nack(message, false, false); // Drop corrupted packets to block poisoning loops
         }
       });
 
     } catch (error: unknown) {
-      console.error('❌ [Worker] Critical error in the asynchronous consumption loop:', error);
+      logger.error({ component: 'consumer', err: error }, 'The consumer loop failed');
     }
   }
 
@@ -184,13 +186,13 @@ export class EventBrokerService {
 
     // Add this active connection to the global broadcast list.
     this.connectedClients.push(res);
-    console.log(`🔌 [SSE] Client connected to the stream. Total real-time connections: ${this.connectedClients.length}`);
+    logger.info({ component: 'sse', connections: this.connectedClients.length }, 'Stream client connected');
 
     // 🛡️ MEMORY CLEANUP: Express emits 'close' when the user closes the tab or logs out.
     // Remove the connection from the list to prevent server memory leaks.
     res.on('close', () => {
       this.connectedClients = this.connectedClients.filter(client => client !== res);
-      console.log(`❌ [SSE] Connection closed by the browser. Remaining connections: ${this.connectedClients.length}`);
+      logger.info({ component: 'sse', connections: this.connectedClients.length }, 'Stream client disconnected');
     });
   }
 
@@ -209,7 +211,7 @@ export class EventBrokerService {
       try {
         client.write(formattedData);
       } catch (error: unknown) {
-        console.error('⚠️ [SSE] Failed to send data to a broken channel:', error);
+        logger.warn({ component: 'sse', err: error }, 'Failed to write to a stream client');
       }
     });
   }

@@ -1,6 +1,7 @@
 // 1. IMPORTS: The Store contract and the in-memory store from express-rate-limit, and the Redis client type.
 import { MemoryStore, type ClientRateLimitInfo, type Options, type Store } from 'express-rate-limit';
 import { type Redis } from 'ioredis';
+import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
 
 /**
  * 🧮 SHARED RATE-LIMIT STORE (CWE-770 / OWASP API4:2023):
@@ -97,10 +98,10 @@ export class RedisRateLimitStore implements Store {
     this.redisAvailable = available;
 
     if (available) {
-      console.log(`✅ [RateLimit] Redis is reachable again; '${this.prefix}' counters are shared across replicas.`);
+      logger.info({ component: 'rate-limit', prefix: this.prefix }, 'Redis is reachable again; counters are shared across replicas');
     } else {
       const reason = error instanceof Error ? error.message : String(error);
-      console.warn(`⚠️ [RateLimit] Redis unavailable (${reason}); '${this.prefix}' counters fall back to this process's memory.`);
+      logger.warn({ component: 'rate-limit', prefix: this.prefix, reason }, "Redis unavailable; counters fall back to this process's memory");
     }
   }
 }

@@ -35,6 +35,10 @@ export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: port.default(3000),
 
+  // Lowest severity written by the logger (src/logger.ts, issue #53): one of pino's levels.
+  // 'silent' turns logging off (the test suites use it to keep their output readable).
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+
   // RFC 7518, section 3.2: HS256 requires a key of at least 256 bits (32 bytes).
   JWT_SECRET: z.string().min(32, 'must be at least 32 characters (RFC 7518, section 3.2)'),
 

@@ -1,5 +1,6 @@
 // 1. IMPORTS: Bring in Jest utilities. amqplib is mocked below, so no RabbitMQ server is needed.
 import { describe, it, expect, jest } from '@jest/globals';
+import { captureLogs } from './helpers/logCapture.js';
 
 // 🐇 AMQPLIB MOCK: Record the connection options instead of opening a TCP connection.
 // The fake channel answers the calls the broker makes after connecting, and consume()
@@ -22,12 +23,14 @@ jest.unstable_mockModule('amqplib', () => {
 // 2. DYNAMIC IMPORTS: They run after the mock above is registered (ESM has no mock hoisting).
 const { EventBrokerService } = await import('../src/services/EventBrokerService.js');
 const { env } = await import('../src/config.js');
+const { logger } = await import('../src/logger.js');
 
 describe('EventBrokerService (RabbitMQ connection)', () => {
   // TEST 1: Verify that the broker logs in with the configured account (CWE-1392).
   // Condition: tests/setupEnv.ts provides RABBIT_USER and a random RABBIT_PASSWORD.
   it('connects with RABBIT_USER and RABBIT_PASSWORD and never logs the password', async () => {
-    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    // Everything the broker logs while connecting (issue #53: through the shared logger).
+    const logs = captureLogs(logger);
 
     new EventBrokerService();
     // Let the asynchronous connection sequence finish (all of its steps are resolved promises).
@@ -41,16 +44,14 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
     }));
     expect(env.RABBIT_USER).not.toBe('guest');
 
-    const logged = logSpy.mock.calls.flat().join(' ');
-    expect(logged).not.toContain(env.RABBIT_PASSWORD);
+    expect(logs.text()).not.toContain(env.RABBIT_PASSWORD);
 
-    logSpy.mockRestore();
+    logs.restore();
   });
 
   // TEST 2: Verify the queue consumer stores the queued hash through the trusted path (issue #41).
   // Condition: A 'user_created' message carries the bcrypt hash computed by UserController.
   it('passes the queued hash to createUserWithPasswordHash, never to createUser', async () => {
-    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     const userService = {
       createUser: jest.fn(),
       createUserWithPasswordHash: jest.fn(async () => ({ id: 'queued-id' }))
@@ -73,8 +74,6 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
     expect(userService.createUserWithPasswordHash).toHaveBeenCalledWith('Lucas Fila', 'lucas.fila@maestro.com', passwordHash);
     expect(userService.createUser).not.toHaveBeenCalled();
     expect(fakeChannel.ack).toHaveBeenCalledWith(message);
-
-    logSpy.mockRestore();
   });
 
   // A stand-in for the Express response of one open /events connection.
@@ -84,7 +83,6 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
   // Condition: registerSSEClient sets the stream headers but no 'Access-Control-Allow-Origin';
   // the global cors middleware in app.ts answers with an allowed origin only.
   it('opens the event stream without a wildcard Access-Control-Allow-Origin header', async () => {
-    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     const broker = new EventBrokerService();
     await new Promise((resolve) => setImmediate(resolve));
 
@@ -93,15 +91,12 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
 
     expect(stream.setHeader).toHaveBeenCalledWith('Content-Type', 'text/event-stream');
     expect(stream.setHeader).not.toHaveBeenCalledWith('Access-Control-Allow-Origin', expect.anything());
-
-    logSpy.mockRestore();
   });
 
   // TEST 4: Verify a new account is announced on the stream by its id only (issue #35).
   // Condition: Every signed-in account receives the stream, but only admins may read other records
   // (AUTHZ-01), so the user_created event must not carry the name or the e-mail.
   it('broadcasts user_created with the new id only, never the name or e-mail', async () => {
-    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     const userService = {
       createUserWithPasswordHash: jest.fn(async () => ({ id: 'queued-id', name: 'Lucas Fila', email: 'lucas.fila@maestro.com' }))
     };
@@ -122,7 +117,34 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
 
     const sent = stream.write.mock.calls.map((call) => String(call[0])).filter((text) => text.startsWith('event:'));
     expect(sent).toEqual(['event: user_created\ndata: {"id":"queued-id"}\n\n']);
+  });
 
-    logSpy.mockRestore();
+  // TEST 5: Verify the consumer logs a new account by its id, never by its e-mail or name (CWE-532, issue #53).
+  // Condition: A valid 'user_created' message; before, the consumer printed the e-mail of every new account.
+  it('logs the account created from the queue without its e-mail or name', async () => {
+    const userService = {
+      createUserWithPasswordHash: jest.fn(async () => ({ id: 'queued-id', name: 'Lucas Fila', email: 'lucas.fila@maestro.com' }))
+    };
+    fakeChannel.consume.mockClear();
+    new EventBrokerService(userService as never);
+    await new Promise((resolve) => setImmediate(resolve));
+    const onMessage = fakeChannel.consume.mock.calls[0]?.[1] as MessageHandler;
+
+    const logs = captureLogs(logger);
+    try {
+      await onMessage({
+        content: Buffer.from(JSON.stringify({
+          action: 'user_created',
+          data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
+        }))
+      });
+
+      // The id identifies the record; the personal fields stay out of every log line.
+      expect(logs.text()).toContain('queued-id');
+      expect(logs.text()).not.toContain('lucas.fila@maestro.com');
+      expect(logs.text()).not.toContain('Lucas Fila');
+    } finally {
+      logs.restore();
+    }
   });
 });

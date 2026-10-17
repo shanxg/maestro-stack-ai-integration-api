@@ -2,6 +2,7 @@
 import OpenAI, { APIConnectionError } from 'openai';
 import { env, settings } from '../config.js';
 import { AppError } from '../errors/AppError.js';
+import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
 
 export class AIService {
   private openai: OpenAI;
@@ -72,7 +73,7 @@ export class AIService {
       // That is an outage, not a bug: answer 503 so the client knows it can try again later.
       // The connection details stay in the server log; the client gets the AppError message.
       if (error instanceof APIConnectionError) {
-        console.warn(`⚠️ [AI] Model server unavailable or too slow: ${error.message}`);
+        logger.warn({ component: 'ai', reason: error.message }, 'Model server unavailable or too slow');
         throw new AppError(
           503,
           'AI_SERVICE_UNAVAILABLE',
