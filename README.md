@@ -2,46 +2,86 @@
 
 Developed by **Lucas Rivaldo**.
 
-An enterprise-grade, high-performance distributed architecture designed to demonstrate seamless integration between modern asynchronous back-end pipelines, reactive front-end interfaces, and localized private Artificial Intelligence agents.
+A distributed demo architecture that integrates an asynchronous back-end pipeline, a reactive front-end and a private, locally hosted AI model, with every security fix documented in a remediation log.
 
 ---
 
 ## 🏗️ Architectural Core & System Design
 
-The application follows the **12-Factor App** methodology and microservices isolation principles to deliver maximum resilience and horizontal scalability.
+The application follows the **12-Factor App** methodology: configuration comes from environment variables validated at startup (`src/config.ts`), logs are JSON lines on standard output, backing services are attached through that configuration, and the process shuts down gracefully on `SIGTERM`.
 
 ### Technology Stack & Backing Services
 
 - **Back-end Runtime:** Node.js v24+ with TypeScript and Express.
 - **Database (Source of Truth):** PostgreSQL (isolated containerized instance).
-- **Caching & Session State:** Redis Cluster for sub-millisecond data fetching.
+- **Cache & Rate-Limit Counters:** Redis (a single instance) for the users page cache and the rate-limit counters shared by every API replica.
 - **Message Broker (Event-Driven Pipeline):** RabbitMQ for decoupled asynchronous tasks.
-- **Private AI Engine:** Ollama running Llama 3 locally via specialized OpenAI SDK routing hooks.
+- **Private AI Engine:** Ollama running Llama 3 locally, called through the official `openai` SDK (Ollama serves an OpenAI-compatible API).
 - **Front-end Interface:** Next.js 16+ leveraging Turbopack, Tailwind CSS, and React 19 Client Components.
 
 ---
 
 ## ⚙️ Advanced Engineering Highlights
 
-### 1. Unified AI Abstraction & Polymorphism
+### 1. One AI Client for Local and Hosted Models
 
-Thanks to interface abstraction, the back-end integrates the official `openai` NPM SDK but injects a custom `baseURL` pointing to the localized Ollama port (`11434/v1`). The code remains 100% cloud-compatible, meaning switching from the offline local **Llama 3** engine to a production enterprise cloud provider requires zero lines of code changes, satisfying strict **GDPR/LGPD data privacy compliance**.
+`src/services/AIService.ts` uses the official `openai` npm SDK with its `baseURL` set to `OPENAI_BASE_URL`, which defaults to the local Ollama server (`http://localhost:11434/v1`). Because Ollama serves an OpenAI-compatible API, the chat route is meant to move to a hosted OpenAI-compatible model by changing environment variables only; so far it has been tested only against the local server. With the local default, prompts stay on the machine; with a hosted provider, they are sent to that provider under its data-processing terms. The project makes no regulatory compliance claim.
 
-### 2. High-Performance Front-end Hydration (React 19 & Next.js)
+### 2. Front-end Hydration (React 19 & Next.js)
 
-To mitigate the performance pitfalls of synchronous `setState` rendering cascades within React effects, the secure chat console subscribes to the browser storage layer using the advanced **`useSyncExternalStore`** API hook. This eliminates redundant rendering passes, ensures flawless state synchronization across context boundaries, and prevents client-side hydration mismatches caused by browser extensions or asynchronous UI paint cycles.
+The chat page reads the signed-in flag from `localStorage` with React's **`useSyncExternalStore`** hook instead of copying it into state inside an effect. React re-reads the flag when the page dispatches a `storage` event (on logout, or when the API answers `401`), and server rendering uses a separate snapshot, so the first client render matches the server HTML.
 
-### 3. Bulletproof JWT Firewall & OWASP Safeguards
+### 3. Authentication & OWASP Safeguards
 
-Every endpoint within the AI orchestration layer is guarded by a cryptographic JWT validation firewall. The stack implements strict **Rate Limiting** to shield backing services from Distributed Denial of Service (DDoS) attempts, integrates **Helmet** for HTTP header obfuscation, and applies **Zod schema runtime validation** to prevent Malformed Payloads and SQL/Command Injection vectors (addressing OWASP API Security Top 10 vulnerabilities).
+Protected routes require a JWT verified with a pinned algorithm (HS256), issuer and audience (`src/auth/accessToken.ts`); browsers carry it in the HttpOnly `maestro_session` cookie. Rate limits (per client IP, per login attempt and per account on the AI chat) slow down brute force and the abuse of expensive routes; they are not a defense against a distributed denial-of-service attack, which needs protection in front of the API. **Helmet** sets security response headers, **Zod** rejects malformed bodies, query strings and route parameters, and SQL injection is prevented by parameterized queries in `src/repositories/UserRepository.ts`. Each control and the finding behind it is listed in [`SECURITY.md`](SECURITY.md).
 
 ### 4. Real-Time Reactive Pipeline: RabbitMQ & Server-Sent Events (SSE)
 
-To meet microservices decoupling standards, the user registration process operates entirely asynchronously through an event-driven architecture, avoiding bottlenecks in the primary thread:
+User registration is asynchronous: the API queues the request and a consumer creates the account, so the HTTP response does not wait for the database write.
 
-- **The Producer (Express API):** When a client hits `POST /api/v1/users`, the payload is instantly validated via Zod. Instead of opening a blocking I/O stream directly to the database, the `UserController` serializes the metadata and publishes a persistent event packet (`user_created`) to the RabbitMQ broker, immediately returning an **`HTTP 202 Accepted`** response to the client within milliseconds.
-- **The Consumer (Background Worker):** An autonomous worker thread continuously polls the RabbitMQ `user_events` queue. Once an event is intercepted, it decodes the binary buffer, processes the domain logic, and safely persists the record into the **PostgreSQL** cluster.
-- **The Stream (Server-Sent Events):** Upon successful database write, the worker hands the data to the `EventBrokerService`'s internal SSE bridge. The server loops through the active pool of connection channels (`GET /api/v1/events`) and pushes the notification to all active browser interfaces via a memory-efficient, unidirectional text-event stream, causing the front-end to reactively paint the updated state without repetitive HTTP polling loops.
+- **The Producer (Express API):** `POST /api/v1/users` validates the body with Zod, hashes the password with bcrypt (no plain-text password enters the queue), publishes a persistent `user_created` message to the durable `user_events` queue and answers **`HTTP 202 Accepted`**. If RabbitMQ is unreachable, it answers `503` instead.
+- **The Consumer (inside the API process):** `EventBrokerService` subscribes to `user_events`, and RabbitMQ pushes each message to it. The consumer validates the message with Zod, saves the account in **PostgreSQL**, invalidates the users cache and acknowledges the message. A malformed message or a failed insert is rejected without requeue and moves to the `user_events.dead` dead-letter queue.
+- **The Stream (Server-Sent Events):** after the insert, the consumer sends a `user_created` event that carries only the new account's id to every client connected to the authenticated `GET /api/v1/events` stream, so a client learns about new accounts without polling. The bundled Next.js pages do not open this stream yet; a browser client can with `new EventSource(url, { withCredentials: true })`.
+
+The diagram follows one registration from the request to the stream, including the outcomes that do not create an account:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    participant API as Express API<br/>(UserController)
+    participant Q as RabbitMQ<br/>user_events
+    participant W as Consumer<br/>(EventBrokerService)
+    participant DB as PostgreSQL
+    participant R as Redis
+    participant S as SSE clients<br/>GET /api/v1/events
+
+    C->>API: POST /api/v1/users (name, email, password)
+    API->>API: Zod validation and bcrypt hash
+    alt RabbitMQ unreachable
+        API-->>C: 503 SERVICE_UNAVAILABLE
+    else message queued
+        API->>Q: user_created (persistent, hashed password)
+        API-->>C: 202 Accepted
+    end
+    Q->>W: deliver user_created
+    alt not JSON or fails the Zod schema
+        W->>Q: nack without requeue → user_events.dead
+    else valid registration
+        W->>DB: INSERT the account (hash stored as is)
+        alt account saved
+            W->>R: INCR the users cache version
+            W-->>S: event user_created with the new id only
+            W->>Q: ack
+        else e-mail already has an account
+            W->>Q: ack, nothing saved (the client got the same 202)
+        else database error
+            W->>Q: nack without requeue → user_events.dead
+        end
+    end
+```
+
+> Diagram drawn by Lucas Rivaldo and applied with Claude as co-author.
 
 ### 5. LLM Security Boundaries (OWASP Top 10 for LLM Applications 2025)
 
@@ -56,7 +96,7 @@ To meet microservices decoupling standards, the user registration process operat
 
 ## 🐳 Local Infrastructure Setup & Backing Services
 
-The environment is fully dockerized to ensure absolute environment parity between development and cluster orchestration topologies.
+For local development, PostgreSQL, Redis and RabbitMQ run in Docker Compose (`docker-compose.yml`). The API image (`Dockerfile`) and the Kubernetes manifests in `k8s/` read the same environment variables.
 
 ### 📥 1. Dribbling Disk Space Constraints: Custom Ollama Pathing (Drive D:\)
 
@@ -80,9 +120,9 @@ _The daemon will automatically structure the model blobs under `D:\OllamaModels\
 
 ### 🔌 Scalability Blueprint: Switching from Local Ollama to Cloud OpenAI API
 
-The architecture leverages **Interface Abstraction** within the `AIService.ts` orchestration layer. Because the local **Ollama** daemon mimics the official OpenAI REST API specification, the entire platform is decoupled from the underlying LLM provider.
+`AIService.ts` talks to the model through the OpenAI SDK, and the local **Ollama** server implements the same chat completions API, so the provider is chosen by configuration.
 
-Migrating the application from the localized offline **Llama 3** engine to enterprise cloud-grade production engines requires **zero code changes**, satisfying corporate compliance and architectural elasticity.
+Moving the chat route from the local **Llama 3** model to a hosted model only changes environment variables, as long as the provider supports the call the API makes (a chat completion with a system and a user message and `max_tokens`). This path has not been tested against a hosted provider yet.
 
 <details close>
 
@@ -91,31 +131,34 @@ Migrating the application from the localized offline **Llama 3** engine to enter
    </summary>
 
 1. **Acquire a Production API Key:**
-   Sign in to your enterprise cloud account (e.g., OpenAI Platform) and generate a secure API token (e.g., `sk-proj-...`).
+   Sign in to your provider's platform (e.g., OpenAI Platform) and create an API key (e.g., `sk-proj-...`). Keep it only in `.env`.
 
-2. **Update the Environment Infrastructure (`.env`):**
-   Modify the backing service environment variables inside your root `.env` file to swap the internal routing hooks:
+2. **Update the Environment (`.env`):**
+   Set the three AI variables read by `src/config.ts` in your root `.env` file:
 
    ```env
-   # ❌ LOCAL OFFLINE TOPOLOGY (the defaults in src/config.ts)
-   # OPENAI_API_KEY="ollama"
-   # OPENAI_MODEL="llama3"
-   # OPENAI_BASE_URL="http://localhost:11434/v1"
+   # ❌ LOCAL OLLAMA (leave all three unset to use the defaults in src/config.ts;
+   #    Ollama ignores the key, so the default key is a placeholder)
+   # OPENAI_BASE_URL=http://localhost:11434/v1
+   # OPENAI_MODEL=llama3
+   # OPENAI_API_KEY=
 
-   # 🚀 ENTERPRISE CLOUD PRODUCTION TOPOLOGY
+   # 🚀 HOSTED OPENAI-COMPATIBLE PROVIDER
    OPENAI_API_KEY="sk-proj-YOUR_AUTHENTICATED_PRODUCTION_KEY_HERE"
-   OPENAI_MODEL="gpt-4o" # Or any target production model layer
+   OPENAI_MODEL="gpt-4o" # any chat model the provider serves
    OPENAI_BASE_URL="https://api.openai.com/v1"
    ```
 
-3. **Hot-Reload the Ecosystem:**
-   Restart your Express application compiler. The `AIService` will read the new environment registry from memory on boot, instantly routing all secure prompts from the Next.js chat console into the global high-availability cloud infrastructure with zero friction.
+3. **Restart the API:**
+   `src/config.ts` reads and validates the variables once, when the process starts (`OPENAI_BASE_URL` must be a URL), so restart `npm run dev` or the container after editing `.env`. `tsx --watch` restarts on source changes, not on `.env` changes.
 
 </details>
 
 ### 🚀 2. Booting the Core Eco-system
 
-Ensure your Docker Desktop environment is active. From the project's root folder, run the automated infrastructure script to spawn the Postgres, Redis, and RabbitMQ containers:
+Ensure your Docker Desktop environment is active. Then copy `.env.example` to `.env` and fill in the required variables: `JWT_SECRET`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `RABBIT_USER` and `RABBIT_PASSWORD` (`.env.example` shows how to generate each value). `docker-compose.yml` reads the same values to create the containers and refuses to start without them, and `src/config.ts` stops the API at startup if one is missing or invalid. The other variables (ports, hosts, `LOG_LEVEL`, `ALLOWED_ORIGINS` and the AI settings) have defaults, listed in `.env.example`.
+
+From the project's root folder, run the infrastructure script to start the Postgres, Redis, and RabbitMQ containers:
 
 ```bash
 # Spin up background backing services
@@ -137,7 +180,7 @@ cd frontend
 npm run dev
 ```
 
-_The reactive client console will notice port 3000 is securely held by the Express REST API and will automatically map its visual endpoints onto `http://localhost:3001`._
+_The front-end dev server listens on `http://localhost:3001` (`next dev -p 3001`), next to the API on port 3000._
 
 ---
 
@@ -254,9 +297,21 @@ Decisions that change the shape of the API are recorded in [`docs/adr/`](docs/ad
 
 ---
 
-## ⚖️ Architectural Trade-offs: CAP Theorem Dynamics
+## ⚖️ Decisions and Trade-offs
 
-The Maestro architecture deliberately prioritizes **Availability & Partition Tolerance (AP)** within its streaming communication layer. Rather than holding the critical HTTP request pipeline hostage to complex analytical writes, data signals are dispatched asynchronously into **RabbitMQ** event queues. The platform favors **Eventual Consistency**, allowing backing consumers to batch write telemetries and auditing data blocks without adding a single millisecond of overhead to the user experience.
+Each choice below solved a concrete problem and has a known cost. The findings behind them are in the remediation log (see **Security Policies** below).
+
+- **Registration through a queue.** The response does not wait for the database write, and a database outage does not lose accepted registrations: they wait in the queue or in the dead-letter queue. The cost is that `202` means "queued", not "created"; the client learns the outcome from the event stream or by signing in. The same `202` for a duplicate e-mail keeps the route from revealing which e-mails have accounts (MSG-01).
+- **Consumer inside the API process.** One image and one deployment, and RabbitMQ spreads the messages across the replicas. The cost is that the event stream is per process: with several replicas (`k8s/deployment.yaml` runs two), a stream only receives the events its own replica consumed. A shared fan-out, such as a RabbitMQ fanout exchange or Redis pub/sub, would remove that limit.
+- **Rate-limit counters in Redis, with an in-memory fallback.** Every replica counts the same hits (RATE-01). If Redis is unreachable, each replica counts in its own memory: requests are still served, but N replicas allow up to N times the configured limit until Redis returns. The store is custom (`src/middlewares/redisRateLimitStore.ts`) because `rate-limit-redis` keeps failing until a restart when Redis is down at boot.
+- **Eventually consistent users cache.** `GET /api/v1/users` pages are cached in Redis for 60 seconds under a version number, and the consumer increments the version after each new account: one `INCR` instead of a blocking `KEYS` scan (CACHE-01). A Redis failure never fails a request; reads fall back to PostgreSQL, and a missed invalidation leaves a page at most 60 seconds stale.
+- **Dead-letter queue, no automatic retry.** Invalid messages and failed inserts move to `user_events.dead` instead of being deleted, or requeued forever as poison messages. The cost is a manual replay by an operator, for example with the RabbitMQ management UI's "Move messages".
+
+### What was left out
+
+- **GraphQL:** retired by [ADR 0001](docs/adr/0001-retire-the-graphql-endpoint.md); REST, described by `openapi.yaml`, is the only API contract.
+- **High availability of the backing services:** PostgreSQL, Redis and RabbitMQ each run as a single instance, with no replica, Redis Cluster or broker cluster.
+- **Retry with backoff** for dead-lettered registrations, and an event stream consumer in the bundled frontend.
 
 ---
 
@@ -359,9 +414,7 @@ evidence for each entry.
 <!-- md:include end -->
 
 <details>
-<summary style="font-size: 20px; margin: 25px; font-weight: bold"> 
-   🛡️Remediation Log: <span style="font-style: italic; font-size: 16px;"> (click to open) </span> 
-   </summary>
+<summary><h2>🛡️ Remediation Log <sub><em>(click to open)</em></sub></h2></summary>
 
 <!-- md:include start path="docs/security/remediation-log.md" -->
 
