@@ -147,4 +147,33 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
       logs.restore();
     }
   });
+
+  // TEST 6: Verify the consumer invalidates the users cache once the account is saved, not before (issue #52).
+  // Condition: One message is saved and one fails; only the saved one may make the cached pages stale.
+  it('invalidates the users cache after saving a queued account, and not when saving fails', async () => {
+    const usersCache = { invalidate: jest.fn(async () => undefined) };
+    const userService = {
+      createUserWithPasswordHash: jest.fn(async () => ({ id: 'queued-id' }))
+    };
+    fakeChannel.consume.mockClear();
+    new EventBrokerService(userService as never, usersCache as never);
+    await new Promise((resolve) => setImmediate(resolve));
+    const onMessage = fakeChannel.consume.mock.calls[0]?.[1] as MessageHandler;
+    const message = () => ({
+      content: Buffer.from(JSON.stringify({
+        action: 'user_created',
+        data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
+      }))
+    });
+
+    await onMessage(message());
+    expect(usersCache.invalidate).toHaveBeenCalledTimes(1);
+    expect(usersCache.invalidate.mock.invocationCallOrder[0]).toBeGreaterThan(
+      userService.createUserWithPasswordHash.mock.invocationCallOrder[0] as number
+    );
+
+    userService.createUserWithPasswordHash.mockRejectedValueOnce(new Error('duplicate key value') as never);
+    await onMessage(message());
+    expect(usersCache.invalidate).toHaveBeenCalledTimes(1);
+  });
 });

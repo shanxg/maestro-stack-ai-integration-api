@@ -4,6 +4,7 @@ import type { Request, Response } from 'express';
 import { UserService } from './UserService.js'; // Ensure the user service is imported at the top layer
 import { env } from '../config.js';
 import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
+import { type UsersCache } from '../cache/usersCache.js'; // Invalidated once a new account is saved (issue #52)
 
 export class EventBrokerService {
   private connection?: ChannelModel;
@@ -16,7 +17,9 @@ export class EventBrokerService {
   // Unique queue name registered with the RabbitMQ server.
   private readonly queueName = 'user_events';
 
-  constructor(private userService?: UserService) {
+  // usersCache is optional like userService: the API passes both; a broker built only to publish
+  // (or by a test) runs without them.
+  constructor(private userService?: UserService, private usersCache?: UsersCache) {
     if (userService) {
       this.userService = userService;
     }
@@ -139,6 +142,12 @@ export class EventBrokerService {
               logger.info({ component: 'consumer', action: 'user_created' }, 'Creating the account from a queued registration');
               const createdUser = await this.userService.createUserWithPasswordHash(name, email, password);
               logger.info({ component: 'consumer', userId: createdUser.id }, 'Account created');
+
+              // CACHE INVALIDATION AT THE RIGHT TIME (issue #52): the account exists only from this
+              // point on, so cached GET /users pages become stale now, not when the API answered 202.
+              // One INCR of the cache version (src/cache/usersCache.ts) replaces the blocking
+              // redis.keys('users:*') scan; a Redis failure here only logs a warning.
+              await this.usersCache?.invalidate();
 
               // MINIMUM DATA ON THE STREAM (issue #35): every signed-in account receives these events,
               // but a regular account may only read its own record (AUTHZ-01). So the event carries
