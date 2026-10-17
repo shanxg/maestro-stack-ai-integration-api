@@ -929,18 +929,21 @@ describe('API contract (openapi.yaml)', () => {
   );
 
   // Every route registered on the Express app, as "METHOD /path" in OpenAPI notation (":id" -> "{id}").
-  // createApp() returns the HTTP server; its 'request' listener is the Express app. The OPTIONS
-  // handler for CORS preflights is infrastructure, not an API operation, so it is left out.
+  // createApp() returns the HTTP server; its 'request' listener is the Express app. The routes live in
+  // routers (src/routes/, issue #46) mounted at '/', each declaring full paths, so the walk descends
+  // into every router layer (its 'handle' has a stack of its own). The OPTIONS handler for CORS
+  // preflights is infrastructure, not an API operation, so it is left out.
   const registeredRoutes = (server: http.Server): string[] => {
-    type Layer = { route?: { path: string; methods: Record<string, boolean> } };
+    type Layer = { route?: { path: string; methods: Record<string, boolean> }; handle?: { stack?: Layer[] } };
     const app = server.listeners('request')[0] as unknown as { router: { stack: Layer[] } };
-    return app.router.stack.flatMap((layer) => {
+    const walk = (stack: Layer[]): string[] => stack.flatMap((layer) => {
       const route = layer.route;
-      if (!route) return [];
+      if (!route) return layer.handle?.stack ? walk(layer.handle.stack) : [];
       return Object.keys(route.methods)
         .filter((method) => httpMethods.includes(method))
         .map((method) => `${method.toUpperCase()} ${route.path.replace(/:(\w+)/g, '{$1}')}`);
     });
+    return walk(app.router.stack);
   };
 
   beforeAll(async () => {
