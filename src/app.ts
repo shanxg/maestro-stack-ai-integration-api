@@ -25,6 +25,8 @@ import { createAuthRouter } from './routes/authRoutes.js';
 import { createUserRouter } from './routes/userRoutes.js';
 import { createAiRouter } from './routes/aiRoutes.js';
 import { createEventRouter } from './routes/eventRoutes.js';
+import { createHealthRouter } from './routes/healthRoutes.js'; // Liveness and readiness probes (issue #51)
+import { ReadinessCheck } from './health/readiness.js';
 
 // 2. GLOBAL SECURITY PACKAGE IMPORTS (OWASP TOP 10)
 import helmet from 'helmet';
@@ -34,7 +36,7 @@ import { Redis } from 'ioredis'; // Clients for the shared rate-limit counters a
 // 3. MIDDLEWARE AND CONFIG IMPORTS
 import { createRateLimiters } from './middlewares/rateLimiters.js'; // Global, login and AI chat limits
 import { errorHandler } from './middlewares/errorHandler.js'; // Central JSON error responses (CWE-209)
-import { env, redisConnection } from './config.js'; // Validated environment and the Redis connection (also loads .env)
+import { env, settings, redisConnection } from './config.js'; // Validated environment, fixed limits and the Redis connection (also loads .env)
 // The CSRF Origin check that protects the HttpOnly session cookie (CWE-352).
 import { originCheck } from './middlewares/originCheck.js';
 import { logger } from './logger.js'; // Structured logger without personal data (issue #53)
@@ -79,7 +81,19 @@ export async function createApp(customUserService?: UserService) {
   // allowed origin, a second layer on top of the SameSite=Strict session cookie (originCheck.ts).
   app.use(originCheck);
 
-  // D. RATE LIMITS (CWE-770 / CWE-307): the counters live in Redis, shared by every replica. Without
+  // D. HEALTH PROBES (issue #51), registered BEFORE the rate limiters: the Kubernetes probes call
+  // them every few seconds from the node's IP and would use up the global per-IP budget, and a
+  // 429 on the liveness probe would restart a healthy pod. Readiness reuses its result for
+  // settings.health.readinessCacheMs, so this unthrottled route stays cheap.
+  // The checks are closures: userRepository and eventBrokerService are created below, before any
+  // request can arrive (createApp finishes wiring before the server listens).
+  const readiness = new ReadinessCheck({
+    database: () => userRepository.ping(),
+    broker: async () => eventBrokerService.isConnected(),
+  }, settings.health.readinessCacheMs);
+  app.use(createHealthRouter(readiness));
+
+  // E. RATE LIMITS (CWE-770 / CWE-307): the counters live in Redis, shared by every replica. Without
   // an offline queue, commands fail at once while Redis is down, and the stores switch to
   // per-process memory counters instead of holding requests until Redis returns.
   const rateLimitRedis = new Redis({
@@ -162,6 +176,27 @@ export async function createApp(customUserService?: UserService) {
   app.use(errorHandler);
 
   // ==========================================
+  // 🛑 GRACEFUL SHUTDOWN (issue #51)
+  // ==========================================
+  // Called by src/lifecycle.ts on SIGTERM/SIGINT. The order matters:
+  // 1. Report "not ready", so Kubernetes stops sending new requests to this replica.
+  // 2. Stop accepting connections; idle keep-alive connections close at once.
+  // 3. End the event streams and close RabbitMQ: an open stream would keep server.close() waiting,
+  //    and a message in progress is redelivered to another consumer instead of being lost.
+  // 4. Wait for the requests in flight, THEN close PostgreSQL and Redis, which they may still use.
+  const shutdown = async (): Promise<void> => {
+    readiness.markShuttingDown();
+    const serverClosed = server.listening
+      ? new Promise<void>((resolve) => server.close(() => resolve()))
+      : Promise.resolve();
+    server.closeIdleConnections();
+    await eventBrokerService.close();
+    await serverClosed;
+    await userRepository.close();
+    await Promise.allSettled([rateLimitRedis.quit(), cacheRedis.quit()]);
+  };
+
+  // ==========================================
   // 🚀 UNIVERSAL HTTP SERVER STARTUP
   // ==========================================
   const PORT = env.PORT;
@@ -173,5 +208,6 @@ export async function createApp(customUserService?: UserService) {
       logger.info({ component: 'server', port: PORT }, 'REST API and Server-Sent Events stream listening');
     });
   }
-  return server;
+  // The HTTP server, with the shutdown routine attached for src/server.ts (and the tests).
+  return Object.assign(server, { shutdown });
 }

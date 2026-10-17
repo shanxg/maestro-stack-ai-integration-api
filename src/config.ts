@@ -123,6 +123,13 @@ export const settings = {
   },
   bcryptSaltRounds: 12,
   usersCacheTtlSeconds: 60,
+  // Probes and shutdown (issue #51). The readiness result is reused for readinessCacheMs, so the
+  // public, unthrottled readiness endpoint runs its database query at most once per interval.
+  // shutdownTimeoutMs stays below Kubernetes' default 30 s grace period before SIGKILL.
+  health: {
+    readinessCacheMs: 2_000,
+    shutdownTimeoutMs: 10_000,
+  },
   // PostgreSQL connection pool (src/repositories/UserRepository.ts, issue #93). Without a
   // connection timeout, a request waits for the operating system's TCP timeout (minutes) when
   // the database host does not answer; with it, the request fails fast with a 503.

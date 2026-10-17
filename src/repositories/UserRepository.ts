@@ -78,6 +78,23 @@ constructor() {
     }
   }
               
+  /**
+   * 🩺 PING (issue #51): the readiness probe's database check. A trivial query through the pool
+   * proves a connection can be opened and the server answers; any failure counts as not ready.
+   */
+  async ping(): Promise<boolean> {
+    await this.pool.query('SELECT 1');
+    return true;
+  }
+
+  /**
+   * 🛑 CLOSE (issue #51): part of the graceful shutdown. pool.end() waits for the queries in
+   * progress, then closes every connection, so PostgreSQL does not keep sessions of a dead process.
+   */
+  async close(): Promise<void> {
+    await this.pool.end();
+  }
+
   // FUNCTION 1 (paginated findAll): Select a logical slice using the supplied numeric coordinates.  
   /**
    * 🔍 PAGINATED LIST FUNCTION (findAll):
