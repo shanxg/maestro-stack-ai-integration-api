@@ -144,7 +144,7 @@ export class EventBrokerService {
               logger.info({ component: 'consumer', userId: createdUser.id }, 'Account created');
 
               // CACHE INVALIDATION AT THE RIGHT TIME (issue #52): the account exists only from this
-              // point on, so cached GET /users pages become stale now, not when the API answered 202.
+              // point on, so cached GET /api/v1/users pages become stale now, not when the API answered 202.
               // One INCR of the cache version (src/cache/usersCache.ts) replaces the blocking
               // redis.keys('users:*') scan; a Redis failure here only logs a warning.
               await this.usersCache?.invalidate();
@@ -152,7 +152,7 @@ export class EventBrokerService {
               // MINIMUM DATA ON THE STREAM (issue #35): every signed-in account receives these events,
               // but a regular account may only read its own record (AUTHZ-01). So the event carries
               // only the new account's id, never its name, e-mail or password hash; a client that may
-              // see the record fetches it through GET /users/{id}, where the access rules apply.
+              // see the record fetches it through GET /api/v1/users/{id}, where the access rules apply.
               this.broadcastToSSEClients('user_created', { id: createdUser.id });
             } else {
               logger.warn({ component: 'consumer' }, 'UserService is not wired; the event was not processed');
@@ -175,7 +175,7 @@ export class EventBrokerService {
 
   /**
   * 📡 4. STREAM REGISTRATION (registerSSEClient):
-  * Handle the /events HTTP route, set Server-Sent Events headers,
+  * Handle the /api/v1/events HTTP route, set Server-Sent Events headers,
   * and keep the response open as an active stream.
    */
   // The parameter types come from Express (issue #47). Before, 'Request | any' named the browser's

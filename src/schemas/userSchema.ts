@@ -24,7 +24,20 @@ export const createUserSchema = z.object({
   })
 });
 
-// VALIDATION SCHEMA (GET /users): Query values always arrive as text, so z.coerce converts
+// VALIDATION SCHEMA (GET /api/v1/users/{id}, issue #49): the id in the path. A blank id used to get a
+// hand-written 400 BAD_REQUEST from the controller; now it fails here like every other input, with the
+// shared VALIDATION_FAILURE envelope. Ids are UUIDs stored in a VARCHAR(50) column, so anything
+// longer cannot exist and is rejected before the database is queried.
+export const userIdParamsSchema = z.object({
+  params: z.object({
+    id: z.string({ message: 'O id do usuário é obrigatório.' })
+      .trim()
+      .min(1, { message: 'O id do usuário não pode ser vazio.' })
+      .max(50, { message: 'O id do usuário pode ter no máximo 50 caracteres.' })
+  })
+});
+
+// VALIDATION SCHEMA (GET /api/v1/users): Query values always arrive as text, so z.coerce converts
 // them to numbers before the checks. A missing value falls back to the default.
 export const listUsersSchema = z.object({
   query: z.object({

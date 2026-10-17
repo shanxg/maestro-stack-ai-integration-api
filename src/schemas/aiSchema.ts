@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { settings } from '../config.js';
 
-// VALIDATION SCHEMA (POST /ai/chat): The prompt must be text with at least one visible character
+// VALIDATION SCHEMA (POST /api/v1/ai/chat): The prompt must be text with at least one visible character
 // and at most settings.aiChat.maxPromptLength characters. Every prompt costs model compute, so an
 // oversized one is rejected with 400 before it reaches the model (CWE-770 / OWASP LLM10:2025).
 export const chatSchema = z.object({

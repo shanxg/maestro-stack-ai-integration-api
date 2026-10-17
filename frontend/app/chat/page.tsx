@@ -90,7 +90,7 @@ export default function ChatPage() {
       // Target the environment-driven API matrix cluster gateway. 
       // This forces cross-origin execution handshakes to adapt seamlessly between Kind and AWS topologies.
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const targetUrl = new URL('/ai/chat', apiBaseUrl);
+      const targetUrl = new URL('/api/v1/ai/chat', apiBaseUrl);
 
       // No Authorization header: the browser attaches the HttpOnly session cookie because of
       // credentials: 'include', and page scripts never see the token (CWE-922).
@@ -133,7 +133,7 @@ export default function ChatPage() {
     // Ask the API to clear the HttpOnly cookie; page scripts cannot delete it themselves.
     try {
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      await fetch(new URL('/auth/logout', apiBaseUrl).href, { method: 'POST', credentials: 'include' });
+      await fetch(new URL('/api/v1/auth/logout', apiBaseUrl).href, { method: 'POST', credentials: 'include' });
     } catch (err: unknown) {
       // Even if the API cannot be reached, leave the page; the cookie expires with the token.
       console.error('❌ Falha ao encerrar a sessão na API:', err);

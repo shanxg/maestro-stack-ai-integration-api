@@ -3,13 +3,13 @@
 import { type Request, type Response } from 'express';
 import { UserService } from '../services/UserService.js';
 import { EventBrokerService } from '../services/EventBrokerService.js';
-import { createUserSchema, listUsersSchema } from '../schemas/userSchema.js';
+import { createUserSchema, listUsersSchema, userIdParamsSchema } from '../schemas/userSchema.js';
 import { AppError } from '../errors/AppError.js'; // Expected failures answered by the central errorHandler
 import { type AccessTokenClaims } from '../auth/accessToken.js';
 import { canListUsers, canReadUser } from '../auth/userPolicy.js'; // Who may read which user records (issue #36)
 import { toUserResponse } from '../dtos/userResponse.js'; // The only public shape of a user record (issue #48)
 import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
-// Versioned cache of GET /users pages (issue #52). src/app.ts creates it with the shared Redis
+// Versioned cache of GET /api/v1/users pages (issue #52). src/app.ts creates it with the shared Redis
 // connection settings (REDIS_PASSWORD included, CWE-306) and injects it here.
 import { UsersCache } from '../cache/usersCache.js';
 
@@ -35,7 +35,7 @@ export class UserController {
   ) {}
 
   /**
-  * 📡 ENDPOINT 1 (GET /users): List users using the Redis Cache-Aside pattern.
+  * 📡 ENDPOINT 1 (GET /api/v1/users): List users using the Redis Cache-Aside pattern.
   * Safely paginate queries against PostgreSQL persistence.
    */
   getUsers = async (req: Request, res: Response): Promise<void> => {
@@ -95,33 +95,23 @@ export class UserController {
   };
 
   /**
-  * 📡 ENDPOINT 2 (GET /users/:id): Look up a record by its indexed identifier.
+  * 📡 ENDPOINT 2 (GET /api/v1/users/:id): Look up a record by its indexed identifier.
   * Search PostgreSQL persistence for a single record.
    */
   getUserById = async (req: Request, res: Response): Promise<void> => {
     // No try/catch: a database failure reaches the central errorHandler (see getUsers above).
-    const { id } = req.params;
-
-    // Reject an ID that is blank or malformed in the URL.
-    // OWASP pattern: return an enveloped error with a client-readable code.
-    if (!id || typeof id !== 'string' || id.trim() === '') {
-      res.status(400).json({
-        error: {
-          code: 'BAD_REQUEST',
-          message: 'O parâmetro de identificação do Usuário (ID) é mandatório e precisa ser válido.'
-        }
-      });
-      return;
-    }
+    // validateMiddleware(userIdParamsSchema) has already answered 400 VALIDATION_FAILURE for a blank or
+    // oversized id (issue #49), so this parse only returns it, trimmed and typed as a string.
+    const { id } = userIdParamsSchema.shape.params.parse(req.params);
 
     // ACCESS RULE (BOLA, OWASP API1:2023): a record is visible to its owner and to admins. The check
     // runs before the lookup, so another account's id gets 403 whether that account exists or not.
-    if (!canReadUser(requesterOf(req), id.trim())) {
+    if (!canReadUser(requesterOf(req), id)) {
       throw new AppError(403, 'FORBIDDEN', 'Você só pode consultar o seu próprio cadastro.');
     }
 
     // Forward the lookup to the service layer.
-    const user = await this.userService.getUserById(id.trim());
+    const user = await this.userService.getUserById(id);
 
     // Return 404 if the database has no matching record.
     if (!user) {
@@ -139,7 +129,7 @@ export class UserController {
   };
 
   /**
-  * 📡 ENDPOINT 2B (GET /users/me): Read the caller's own record.
+  * 📡 ENDPOINT 2B (GET /api/v1/users/me): Read the caller's own record.
   * The id comes from the verified token, never from the URL, so there is nothing to tamper with.
    */
   getCurrentUser = async (req: Request, res: Response): Promise<void> => {
@@ -157,12 +147,12 @@ export class UserController {
       return;
     }
 
-    // Same public view as GET /users/{id} (issue #48).
+    // Same public view as GET /api/v1/users/{id} (issue #48).
     res.status(200).json(toUserResponse(user));
   };
 
    /**
-  * 📡 ENDPOINT 3 (POST /users): Submit a request to the queue asynchronously.
+  * 📡 ENDPOINT 3 (POST /api/v1/users): Submit a request to the queue asynchronously.
   * Accept the payload, calculate the cryptographic hash stream, and send it to RabbitMQ.
    */
   createUser = async (req: Request, res: Response): Promise<void> => {
@@ -208,7 +198,7 @@ export class UserController {
 
     // NO CACHE INVALIDATION HERE (issue #52): this ran redis.keys('users:*'), which blocks Redis
     // while it walks the whole keyspace, and it ran too early: the account does not exist until the
-    // queue consumer saves it, so the next GET /users cached a page without it for 60 seconds.
+    // queue consumer saves it, so the next GET /api/v1/users cached a page without it for 60 seconds.
     // The consumer (EventBrokerService) now invalidates the cache right after the row is written.
 
     res.status(202).json({

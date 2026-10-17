@@ -1,7 +1,7 @@
 // Import the structural validation engine from Zod
 import { z } from 'zod';
 
-// VALIDATION SCHEMA (POST /auth/login): Both fields must be text. A number, an array or a
+// VALIDATION SCHEMA (POST /api/v1/auth/login): Both fields must be text. A number, an array or a
 // missing body is rejected with 400 before the database lookup and the bcrypt comparison.
 export const loginSchema = z.object({
   body: z.object({

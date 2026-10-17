@@ -13,7 +13,7 @@ export function createEventRouter(eventBrokerService: EventBrokerService): Route
   // AUTHENTICATED STREAM (issue #35): authMiddleware runs first. The browser's EventSource cannot set
   // an Authorization header, so it sends the session cookie (new EventSource(url, { withCredentials: true })).
   // The broker then keeps the response open and pushes queue events to it.
-  router.get('/events', authMiddleware, (req, res) => {
+  router.get('/api/v1/events', authMiddleware, (req, res) => {
     eventBrokerService.registerSSEClient(req, res);
   });
 

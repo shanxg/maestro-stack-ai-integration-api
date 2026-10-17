@@ -6,7 +6,9 @@ info:
     REST and Server-Sent Events endpoints of the Maestro API: JWT login, user
     registration through a RabbitMQ queue, user reads with a Redis cache-aside layer,
     a chat endpoint backed by a local LLM (Ollama) and a real-time event stream.
-  version: 1.0.0
+    Every route lives under /api/v1 (issue #49); the earlier unversioned paths (/auth, /users,
+    /ai, /events) were removed and answer 404.
+  version: 1.1.0
 
 servers:
   - url: http://localhost:3000
@@ -19,7 +21,7 @@ security:
   - BearerAuth: []
 
 paths:
-  /auth/login:
+  /api/v1/auth/login:
     post:
       summary: Exchange email and password for a session cookie
       description: >
@@ -104,7 +106,7 @@ paths:
         '503':
           $ref: '#/components/responses/DatabaseUnavailable'
 
-  /auth/logout:
+  /api/v1/auth/logout:
     post:
       summary: End the browser session
       description: >
@@ -125,7 +127,7 @@ paths:
         '429':
           $ref: '#/components/responses/TooManyRequests'
 
-  /users:
+  /api/v1/users:
     get:
       summary: List users with pagination (admins only)
       description: >
@@ -185,69 +187,6 @@ paths:
           $ref: '#/components/responses/InternalError'
         '503':
           $ref: '#/components/responses/DatabaseUnavailable'
-
-  /users/me:
-    get:
-      summary: Get the caller's own user record
-      description: >
-        Reads the record of the account in the JWT. The id comes from the verified token, never
-        from the URL. The password hash is never returned.
-      responses:
-        '200':
-          description: The caller's record.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/User'
-        '401':
-          description: Access denied because the JWT is missing, expired or invalid.
-        '404':
-          description: The account in the token no longer exists.
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/InternalError'
-        '503':
-          $ref: '#/components/responses/DatabaseUnavailable'
-
-  /users/{id}:
-    get:
-      summary: Get a user by ID (own record, or any record for admins)
-      description: >
-        Reads a single user from PostgreSQL. A regular account may read only its own id
-        (GET /users/me does the same without the id); admins may read any id. Another account's
-        id gets 403 whether that account exists or not. The password hash is never returned.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          description: Identifier of the user (a UUID generated when the user is created).
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: User found.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/User'
-        '400':
-          description: The ID is blank.
-        '401':
-          description: Access denied because the JWT is missing, expired or invalid.
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          description: No user exists with this ID (only an admin or the owner gets this far).
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '500':
-          $ref: '#/components/responses/InternalError'
-        '503':
-          $ref: '#/components/responses/DatabaseUnavailable'
-
-  /api/v1/users:
     post:
       summary: Submit a registration request to the messaging queue
       description: Receives the identification parameters, computes the Bcrypt hash at the edge and enqueues the request on RabbitMQ asynchronously.
@@ -298,7 +237,74 @@ paths:
                   code: SERVICE_UNAVAILABLE
                   message: "O serviço de cadastro está temporariamente indisponível. Tente novamente em instantes."
 
-  /ai/chat:
+  /api/v1/users/me:
+    get:
+      summary: Get the caller's own user record
+      description: >
+        Reads the record of the account in the JWT. The id comes from the verified token, never
+        from the URL. The password hash is never returned.
+      responses:
+        '200':
+          description: The caller's record.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          description: Access denied because the JWT is missing, expired or invalid.
+        '404':
+          description: The account in the token no longer exists.
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DatabaseUnavailable'
+
+  /api/v1/users/{id}:
+    get:
+      summary: Get a user by ID (own record, or any record for admins)
+      description: >
+        Reads a single user from PostgreSQL. A regular account may read only its own id
+        (GET /api/v1/users/me does the same without the id); admins may read any id. Another account's
+        id gets 403 whether that account exists or not. The password hash is never returned.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identifier of the user (a UUID generated when the user is created).
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          description: >
+            The id is blank or longer than 50 characters (code VALIDATION_FAILURE, with the failing
+            field in error.details as params.id).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Access denied because the JWT is missing, expired or invalid.
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: No user exists with this ID (only an admin or the owner gets this far).
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/DatabaseUnavailable'
+
+  /api/v1/ai/chat:
     post:
       summary: Send a prompt to the Maestro virtual assistant
       description: >
@@ -370,7 +376,7 @@ paths:
                   code: AI_SERVICE_UNAVAILABLE
                   message: "O assistente de IA está indisponível no momento. Tente novamente em instantes."
 
-  /events:
+  /api/v1/events:
     get:
       summary: Subscribe to real-time events (Server-Sent Events)
       description: >
@@ -378,7 +384,7 @@ paths:
         {"status": "CONNECTED_TO_MAESTRO_STREAM"}; after that, every event consumed from
         RabbitMQ is pushed as an "event:" line with the action name and a "data:" line with JSON.
         For user_created the data carries only the new account's id: every signed-in account
-        receives the stream, and only the access rules of GET /users/{id} decide who may read the
+        receives the stream, and only the access rules of GET /api/v1/users/{id} decide who may read the
         record. The stream requires a session; browsers open it with
         new EventSource(url, { withCredentials: true }) so the session cookie is sent.
       responses:
@@ -405,7 +411,7 @@ components:
       in: cookie
       name: maestro_session
       description: >
-        HttpOnly, SameSite=Strict cookie set by POST /auth/login and cleared by POST /auth/logout;
+        HttpOnly, SameSite=Strict cookie set by POST /api/v1/auth/login and cleared by POST /api/v1/auth/logout;
         the browser sends it by itself. It holds the same JWT as BearerAuth, checked with the same
         rules. State-changing requests from a browser page must also come from an allowed Origin.
     BearerAuth:
@@ -413,7 +419,7 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: >
-        For API clients: send the JWT from the maestro_session cookie that POST /auth/login sets in
+        For API clients: send the JWT from the maestro_session cookie that POST /api/v1/auth/login sets in
         the Authorization header, as Bearer followed by the token. Tokens are signed with HS256 and carry the issuer and audience "maestro-api";
         the API rejects any token with another algorithm, issuer or audience, an invalid signature
         or an expired "exp" claim, always with the same 401 INVALID_TOKEN response.
@@ -449,8 +455,8 @@ components:
     TooManyRequests:
       description: >
         Rate limit exceeded. Every route shares a global limit of 100 requests per IP every
-        15 minutes (code TOO_MANY_REQUESTS). /auth/login also allows only 5 attempts per IP
-        every 5 minutes (code AUTH_FLOOD_DETECTED), and /ai/chat only 10 prompts per account
+        15 minutes (code TOO_MANY_REQUESTS). /api/v1/auth/login also allows only 5 attempts per IP
+        every 5 minutes (code AUTH_FLOOD_DETECTED), and /api/v1/ai/chat only 10 prompts per account
         (the user id in the JWT) per minute (code LLM_COMPUTE_LIMIT_EXCEEDED), so users who
         share one IP address do not block each other. The counters are kept in Redis, so every API
         replica counts the same hits. While Redis is unavailable, each replica falls back to its

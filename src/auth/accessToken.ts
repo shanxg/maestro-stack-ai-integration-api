@@ -6,7 +6,7 @@ import { type UserRole } from '../models/User.js';
 /**
  * 🔐 ACCESS TOKENS (CWE-347): the single place that signs and verifies the API's JWTs.
  *
- * Before, POST /auth/login signed tokens with only a lifetime, and each consumer (authMiddleware,
+ * Before, POST /api/v1/auth/login signed tokens with only a lifetime, and each consumer (authMiddleware,
  * the Apollo context, the WebSocket blueprint) called jwt.verify(token, secret) on its own,
  * without pinning the algorithm, the issuer or the audience. Any HMAC algorithm signed with the
  * secret was accepted, and so was any token signed with it for another purpose.

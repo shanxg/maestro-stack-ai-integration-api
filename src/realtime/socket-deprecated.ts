@@ -1,7 +1,7 @@
 /**
  * @deprecated Legacy cloud blueprint. This module is NOT wired into the API.
  *
- * The API pushes real-time updates through Server-Sent Events on GET /events
+ * The API pushes real-time updates through Server-Sent Events on GET /api/v1/events
  * (EventBrokerService.registerSSEClient). This file keeps the original Socket.IO push
  * channel, the piece that maps to a managed WebSocket service in the cloud design
  * ("Real-Time Push Topology" in README.md). Only src/worker-deprecated.ts uses it.

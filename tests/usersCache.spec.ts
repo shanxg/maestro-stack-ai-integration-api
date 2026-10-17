@@ -6,7 +6,7 @@ import { UsersCache, USERS_CACHE_VERSION_KEY } from '../src/cache/usersCache.js'
 
 const page = [{ id: 'abc-777', name: 'Lucas Cache', email: 'cache@maestro.test' }];
 
-describe('UsersCache (versioned GET /users pages)', () => {
+describe('UsersCache (versioned GET /api/v1/users pages)', () => {
   let redis: FakeRedis;
   let cache: UsersCache;
 

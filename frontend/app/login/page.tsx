@@ -39,7 +39,7 @@ export default function LoginPage() {
       // =========================================================================
       // Target 'localhost' explicitly to align with the backend CORS allowed origin matrix.
       // This prevents the browser engine from dropping pre-flight requests due to Same-Origin Policy mismatches.
-      const targetUrl = new URL('http://localhost:3000/auth/login');
+      const targetUrl = new URL('http://localhost:3000/api/v1/auth/login');
 
       const res = await fetch(targetUrl.href, {
         method: 'POST',

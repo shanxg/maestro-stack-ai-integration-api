@@ -8,7 +8,7 @@ export class AIController {
   constructor(private aiService: AIService) {}
 
   /**
-  * 📡 POST /ai/chat:
+  * 📡 POST /api/v1/ai/chat:
   * Read the validated prompt from the request body,
   * then pass it to the configured model for processing.
    */
