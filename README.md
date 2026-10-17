@@ -311,6 +311,7 @@ Out of scope:
 | **Secrets**          | Local `.env` only (never committed). Gitleaks runs locally (pre-commit hook) and in CI on every push and pull request. Only documentation placeholders are allowlisted, so `.env` and `k8s/secret.yaml` are blocked even if force-added. |
 | **Authentication**   | JWT-based. Tokens are signed with a secret loaded from the environment; the API refuses to start without it, and there is no hardcoded fallback. One module signs and verifies every token, pinning HS256, the issuer and the audience (`src/auth/accessToken.ts`). Browsers get the token only in an HttpOnly, SameSite=Strict session cookie (Secure in production), never in a response body or in localStorage; API clients may send it as a Bearer header. The Server-Sent Events stream requires the same session.                                                                                         |
 | **Authorization**    | One ADMIN role, stored in the `users` table and carried in the JWT; every other account is USER. Only admins list users; a regular account reads only its own record (`GET /users/me` or its own id) and gets 403 for any other id, existing or not. Rules in `src/auth/userPolicy.ts`. Admins are promoted directly in the database (`UPDATE users SET role = 'ADMIN' WHERE email = '...';`) and get the role at their next login. |
+| **Response data**    | User routes answer through an allowlist DTO (`src/dtos/userResponse.ts`): only `id`, `name` and `email` leave the API, so the password hash, the role and any column a query adds later stay internal. The `User` schema in `openapi.yaml` is closed to those three fields. |
 | **Input validation** | Zod schemas on REST user creation, `GET /users` pagination (whole numbers, page size capped at 100), login and the AI chat prompt (1 to 2000 characters).                                            |
 | **Redirects**        | Every client-side navigation goes to a fixed internal route (`/login`, `/chat`, `/register`); no route reads a return URL from the request. A future `returnTo` must be checked against an allowlist of relative paths (CWE-601).        |
 | **HTTP hardening**   | Helmet security headers on the API, with its CSP enforced in every environment. CORS allows only the frontend origins listed in `ALLOWED_ORIGINS` (validated at boot: bare http(s) origins, no wildcard), with credentials, and state-changing requests from a browser page with any other Origin are rejected (CSRF check). The Next.js frontend sends a static CSP (only its own origin and the API; no framing, no plugins), X-Frame-Options, nosniff, a strict Referrer-Policy and a Permissions-Policy on every route (`frontend/security-headers.ts`). Rate limiting: 100 req/15 min global, 5 login attempts/5 min per IP and 10 AI prompts/min per account, counted in Redis so every replica shares the limits.                                    |
@@ -1723,6 +1724,44 @@ The read methods treated "the database failed" and "nothing was found" as the sa
 - Commit `86a15e9` — `src/repositories/databaseErrors.ts`, `src/repositories/UserRepository.ts`, `src/config.ts`, `src/controllers/UserController.ts`, `tests/userRepository.spec.ts`.
 - Commit `6f691e4` — `openapi.yaml`.
 - Issue #93.
+
+---
+
+#### 🔵 [DTO-01] User routes returned whatever columns the query selected
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 2.03, issue #48)
+
+**Severity:** Informational
+
+**References:** CWE-201, OWASP API3:2023
+
+**Finding:**
+
+`GET /users`, `GET /users/{id}` and `GET /users/me` sent the service's records to the client as they were, and `GET /users` also stored them in Redis. No response carried the password hash at the time of the review, but only because `findAll` and `findById` happened to select `id, name, email`. `findByEmail` already selects the bcrypt hash and the role for the login, so reusing it in a route, or adding a column to one of the other queries, would have published that data with no other change.
+
+**Root cause:**
+
+There was no explicit public shape for a user: the response contract was a side effect of each SQL query.
+
+**Remediation applied:**
+
+- `src/dtos/userResponse.ts` defines the public view of a user and `toUserResponse()`, an allowlist that copies only `id`, `name` and `email`.
+- The three user routes map every record through it, and `GET /users` caches the mapped page, so cache hits replay data that was already filtered.
+- The `User` schema in `openapi.yaml` is closed to those three fields (`additionalProperties: false`), and `SECURITY.md` gained a "Response data" row.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › TEST 34 `GET /users, /users/:id and /users/me -> answer only the public fields of a user`: the service returns records with a bcrypt hash, the role and a timestamp column, and each route must answer exactly `id`, `name` and `email`. Against the previous code it failed: the responses held `password`, `role` and `created_at`.
+- `npx tsc --noEmit` passes; `npm test` passes (9 suites, 78 tests).
+
+**Evidence:**
+
+- Commit `f7f8972` — `src/dtos/userResponse.ts`, `src/controllers/UserController.ts`, `tests/userRoutes.spec.ts`.
+- Commit `ff794bb` — `openapi.yaml`.
+- Commit `78bf618` — `SECURITY.md`.
+- Issue #48.
 
 <!-- md:include end -->
 </details>
