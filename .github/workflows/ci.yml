@@ -1,0 +1,143 @@
+# 🚦 CONTINUOUS INTEGRATION (issue #57)
+# Every pull request and every push to main builds, type-checks, lints, formats-checks and tests the
+# API and the frontend, and audits the dependencies. Before, the only automated check was Gitleaks,
+# and all of this ran only when someone remembered to run it by hand.
+#
+# The other security workflows stay separate, each with its own permissions:
+# - secret-scan.yml: Gitleaks over the full history;
+# - codeql.yml: CodeQL static analysis (SAST), which needs to write code-scanning results.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Read-only token: no job here writes to the repository.
+permissions:
+  contents: read
+
+# A new push to the same pull request cancels the run that is still checking the old commit.
+# Runs on main are never cancelled, so every merged commit gets a full result.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  api:
+    name: API (typecheck, lint, format, test, build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      # Node 24, the same major as the Docker image (Dockerfile). The npm cache is keyed on the three
+      # lockfiles this job installs from.
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tools/lint/package-lock.json
+            frontend/package-lock.json
+
+      # npm ci installs exactly what the lockfile pins and fails if package.json and the lockfile
+      # disagree. The frontend packages are needed too: the tests import frontend modules, and
+      # `npm run typecheck` resolves their types (for example, NextConfig from 'next').
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm run lint:install
+          npm ci --prefix frontend
+
+      - name: Type-check (src and tests)
+        run: npm run typecheck
+
+      # ESLint with the type-aware and security rules; any warning fails the step (--max-warnings 0).
+      - name: Lint
+        run: npm run lint
+
+      - name: Check formatting (Prettier)
+        run: npm run format:check
+
+      # The suites need no running database, broker or Redis: tests/setupEnv.ts sets throwaway
+      # values for the required variables and the tests use in-memory stand-ins.
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  frontend:
+    name: Frontend (lint, typecheck, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Next.js rules plus react/no-danger and eslint-plugin-no-unsanitized (raw HTML sinks).
+      - name: Lint
+        run: npm run lint
+
+      # Next.js declares some types only in generated files under .next/types (for example the global
+      # LayoutProps used by app/layout.tsx). A fresh checkout has none, so they are generated first,
+      # without a full build.
+      - name: Type-check
+        run: |
+          npx next typegen
+          npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # GATE: a high or critical advisory in a package that ships (the API's runtime dependencies or
+      # the frontend's) fails the pull request. npm audit reads only the lockfile, so nothing is
+      # installed and no install script runs.
+      - name: Audit production dependencies (blocking)
+        run: |
+          npm audit --omit=dev --audit-level=high
+          npm audit --omit=dev --audit-level=high --prefix frontend
+
+      # REPORT: every advisory, development tooling included, goes to the run summary without
+      # failing it. Tooling advisories are tracked, not blocking: for example, the frontend's lint
+      # tooling (eslint-config-next) pulls a vulnerable 'braces' whose only fix is a breaking
+      # downgrade (see issue #57).
+      - name: Audit every dependency (report only)
+        run: |
+          for dir in . frontend tools/lint; do
+            {
+              echo "### npm audit: ${dir}"
+              echo '```'
+              npm audit --prefix "$dir" || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          done

@@ -1,15 +1,26 @@
 version: 2
+
+# GROUPS (issue #57): minor and patch updates of one directory arrive together in a single weekly
+# pull request, which CI checks as one change; major updates still come one per pull request,
+# since each may break something and needs its own review. Security updates are not grouped:
+# Dependabot opens them as soon as an advisory is published.
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
 
   # The API's ESLint toolchain (see tools/lint/eslint.config.js for why it is a separate package).
   - package-ecosystem: npm
     directory: /tools/lint
     schedule:
       interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
     ignore:
       # typescript-eslint supports TypeScript < 6.1 only, so this copy stays on 6.0.x.
       # Revisit when typescript-eslint supports TypeScript 7.
@@ -20,6 +31,9 @@ updates:
     directory: /frontend
     schedule:
       interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
     ignore:
       # typescript-eslint (loaded by eslint-config-next) refuses TypeScript 7:
       # "typescript-eslint does not support TS 7.0". Revisit when it adds support.
@@ -34,6 +48,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
 
   - package-ecosystem: docker
     directory: /
@@ -49,3 +66,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
