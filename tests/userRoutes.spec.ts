@@ -854,6 +854,66 @@ describe('User routes (integration tests)', () => {
     expect(mockUserService.getUserById).not.toHaveBeenCalled();
   });
 
+  // TEST 40: rejects an expired access token signed with the correct key.
+  // Uses the same secret, algorithm, issuer and audience the API signs with,
+  // so the only failing check is the expiry — otherwise this would duplicate
+  // the "wrong key" case.
+  it('TEST 40: rejects an expired access token signed with the correct key', async () => {
+    const expiredToken = jwt.sign(
+      {
+        id: 'user-id',
+        user: 'testuser',
+        email: 'test@example.com',
+        role: 'user',
+        exp: Math.floor(Date.now() / 1000) - 60, // expired one minute ago
+      },
+      env.JWT_SECRET,
+      {
+        algorithm: settings.jwt.algorithm,
+        issuer: settings.jwt.issuer,
+        audience: settings.jwt.audience,
+      }
+    );
+
+    const res = await request(serverTarget)
+      .get('/api/v1/users')
+      .set('Authorization', `Bearer ${expiredToken}`);
+
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('INVALID_TOKEN');    
+  });
+
+  // TEST 41: rejects an unsigned token whose header declares alg "none".
+  // jsonwebtoken will not sign such a token, so it is assembled by hand:
+  // header.payload. with an empty signature segment. verifyAccessToken pins
+  // algorithms to HS256, so jsonwebtoken throws "invalid algorithm" and the
+  // middleware answers 401 with the same generic body as any other bad token.
+  it('TEST 41: rejects an unsigned token with alg "none"', async () => {
+    const header = Buffer.from(
+      JSON.stringify({ alg: 'none', typ: 'JWT' })
+    ).toString('base64url');
+
+    const payload = Buffer.from(
+      JSON.stringify({
+        id: 'user-id',
+        user: 'testuser',
+        email: 'test@example.com',
+        role: 'user',
+        iss: settings.jwt.issuer,
+        aud: settings.jwt.audience,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      })
+    ).toString('base64url');
+
+    const unsignedToken = `${header}.${payload}.`; // third segment is empty
+
+    const res = await request(serverTarget)
+      .get('/api/v1/users')
+      .set('Authorization', `Bearer ${unsignedToken}`);
+
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('INVALID_TOKEN');
+  });
 });
 
 describe('AI chat route (integration tests)', () => {
