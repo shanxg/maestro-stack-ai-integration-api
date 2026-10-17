@@ -854,65 +854,63 @@ describe('User routes (integration tests)', () => {
     expect(mockUserService.getUserById).not.toHaveBeenCalled();
   });
 
-  // TEST 40: rejects an expired access token signed with the correct key.
-  // Uses the same secret, algorithm, issuer and audience the API signs with,
-  // so the only failing check is the expiry — otherwise this would duplicate
-  // the "wrong key" case.
-  it('TEST 40: rejects an expired access token signed with the correct key', async () => {
+  // TEST 40: Verify an expired token is rejected even when everything else about it is valid (issue #56).
+  // Condition: Signed with the API secret, HS256, the right issuer and audience, but "exp" one minute in
+  // the past, so the expiry is the only check that can fail (a wrong key would repeat TEST 18). The
+  // answer must be the generic 401: no "jwt expired" text that tells a caller why (CWE-209).
+  it('GET /api/v1/users -> returns 401 for an expired token signed with the correct key', async () => {
+    mockUserService.getAllUsers.mockClear();
     const expiredToken = jwt.sign(
       {
-        id: 'user-id',
-        user: 'testuser',
-        email: 'test@example.com',
-        role: 'user',
-        exp: Math.floor(Date.now() / 1000) - 60, // expired one minute ago
+        id: 'admin-id',
+        user: 'Maestro Admin',
+        email: ADMIN_EMAIL,
+        role: 'ADMIN', // an admin token: even the highest role gets nothing once expired
+        exp: Math.floor(Date.now() / 1000) - 60 // expired one minute ago
       },
       env.JWT_SECRET,
-      {
-        algorithm: settings.jwt.algorithm,
-        issuer: settings.jwt.issuer,
-        audience: settings.jwt.audience,
-      }
+      { algorithm: settings.jwt.algorithm, issuer: settings.jwt.issuer, audience: settings.jwt.audience }
     );
 
-    const res = await request(serverTarget)
+    const response = await request(serverTarget)
       .get('/api/v1/users')
       .set('Authorization', `Bearer ${expiredToken}`);
 
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe('INVALID_TOKEN');    
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe('INVALID_TOKEN');
+    expect(response.body.error.details).toBeUndefined();
+    expect(JSON.stringify(response.body)).not.toMatch(/expired/i);
+    expect(mockUserService.getAllUsers).not.toHaveBeenCalled();
   });
 
-  // TEST 41: rejects an unsigned token whose header declares alg "none".
-  // jsonwebtoken will not sign such a token, so it is assembled by hand:
-  // header.payload. with an empty signature segment. verifyAccessToken pins
-  // algorithms to HS256, so jsonwebtoken throws "invalid algorithm" and the
-  // middleware answers 401 with the same generic body as any other bad token.
-  it('TEST 41: rejects an unsigned token with alg "none"', async () => {
-    const header = Buffer.from(
-      JSON.stringify({ alg: 'none', typ: 'JWT' })
-    ).toString('base64url');
+  // TEST 41: Verify an unsigned token ("alg": "none") is rejected (CWE-347, issue #56).
+  // Condition: jsonwebtoken refuses to sign such a token, so it is assembled by hand: base64url header
+  // and payload with valid issuer, audience and expiry, and an empty signature segment. With a secret
+  // configured, jwt.verify answers "jwt signature is required" before it even compares the algorithm
+  // with the pinned HS256; the client must still get the generic 401 without that text (CWE-209).
+  it('GET /api/v1/users -> returns 401 for an unsigned token with alg "none"', async () => {
+    mockUserService.getAllUsers.mockClear();
+    const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify({
+      id: 'admin-id',
+      user: 'Maestro Admin',
+      email: ADMIN_EMAIL,
+      role: 'ADMIN', // a forged admin claim: the classic goal of an alg "none" token
+      iss: settings.jwt.issuer,
+      aud: settings.jwt.audience,
+      exp: Math.floor(Date.now() / 1000) + 3600
+    })).toString('base64url');
+    const unsignedToken = `${header}.${payload}.`; // the third segment (the signature) is empty
 
-    const payload = Buffer.from(
-      JSON.stringify({
-        id: 'user-id',
-        user: 'testuser',
-        email: 'test@example.com',
-        role: 'user',
-        iss: settings.jwt.issuer,
-        aud: settings.jwt.audience,
-        exp: Math.floor(Date.now() / 1000) + 3600,
-      })
-    ).toString('base64url');
-
-    const unsignedToken = `${header}.${payload}.`; // third segment is empty
-
-    const res = await request(serverTarget)
+    const response = await request(serverTarget)
       .get('/api/v1/users')
       .set('Authorization', `Bearer ${unsignedToken}`);
 
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe('INVALID_TOKEN');
+    expect(response.status).toBe(401);
+    expect(response.body.error.code).toBe('INVALID_TOKEN');
+    expect(response.body.error.details).toBeUndefined();
+    expect(JSON.stringify(response.body)).not.toMatch(/signature|algorithm/i);
+    expect(mockUserService.getAllUsers).not.toHaveBeenCalled();
   });
 });
 
