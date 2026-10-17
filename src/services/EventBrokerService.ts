@@ -7,8 +7,9 @@ import { logger } from '../logger.js'; // Structured logger without personal dat
 import { type UsersCache } from '../cache/usersCache.js'; // Invalidated once a new account is saved (issue #52)
 
 export class EventBrokerService {
-  private connection?: ChannelModel;
-  private channel?: Channel;
+  // Both are 'undefined' while disconnected and again after close() (issue #51).
+  private connection: ChannelModel | undefined;
+  private channel: Channel | undefined;
   
   // 👥 ACTIVE CONNECTIONS (SSE TUNNEL):
   // Temporarily store Express Response objects for all connected clients.
@@ -16,6 +17,11 @@ export class EventBrokerService {
   
   // Unique queue name registered with the RabbitMQ server.
   private readonly queueName = 'user_events';
+
+  // GRACEFUL SHUTDOWN STATE (issue #51): once close() runs, no reconnection is scheduled, and a
+  // pending reconnection timer is cancelled, so the process can exit.
+  private closing = false;
+  private reconnectTimer?: NodeJS.Timeout;
 
   // usersCache is optional like userService: the API passes both; a broker built only to publish
   // (or by a test) runs without them.
@@ -65,10 +71,50 @@ export class EventBrokerService {
       // Only the reason is logged: the error never holds the password (the connection uses an options object).
       logger.warn({ component: 'rabbitmq', reason: error instanceof Error ? error.message : String(error) }, 'Connection attempt failed; retrying in 5 seconds');
       
-      // Schedule a recurring micro-task loop to recover the connection channel automatically
-      setTimeout(() => {
-        this.establishInfrastructureBridges();
-      }, 5000);
+      // Schedule a recurring micro-task loop to recover the connection channel automatically,
+      // unless the API is shutting down (issue #51). The handle is kept so close() can cancel it.
+      if (!this.closing) {
+        this.reconnectTimer = setTimeout(() => {
+          this.establishInfrastructureBridges();
+        }, 5000);
+      }
+    }
+  }
+
+  /**
+  * 🩺 READINESS (issue #51): true while the channel to RabbitMQ is open. Without it, registrations
+  * answer 503 and no queued account is created, so the replica reports itself not ready.
+  */
+  isConnected(): boolean {
+    return this.channel !== undefined && !this.closing;
+  }
+
+  /**
+  * 🛑 GRACEFUL SHUTDOWN (close, issue #51):
+  * 1. Stop reconnecting.
+  * 2. End every open Server-Sent Events stream. An open stream keeps its HTTP connection alive,
+  *    so server.close() would otherwise wait for it until the orchestrator's SIGKILL; browsers
+  *    reconnect on their own to another replica.
+  * 3. Close the channel and the connection. A message being processed is not acknowledged, so
+  *    RabbitMQ delivers it again to another consumer instead of losing it.
+  */
+  async close(): Promise<void> {
+    this.closing = true;
+    clearTimeout(this.reconnectTimer);
+
+    for (const client of this.connectedClients) {
+      client.end();
+    }
+    this.connectedClients = [];
+
+    try {
+      await this.channel?.close();
+      await this.connection?.close();
+    } catch (error: unknown) {
+      logger.warn({ component: 'rabbitmq', reason: error instanceof Error ? error.message : String(error) }, 'Failed to close the RabbitMQ connection cleanly');
+    } finally {
+      this.channel = undefined;
+      this.connection = undefined;
     }
   }
 

@@ -61,6 +61,8 @@ jest.unstable_mockModule('../src/repositories/UserRepository.js', () => {
   return {
     UserRepository: class {
       async initialize() {}
+      async ping() { return true; }      // readiness probe (issue #51)
+      async close() {}                   // graceful shutdown (issue #51)
       async findAll() { return []; }
       async findById() { return null; }
       async findByEmail() { return null; }

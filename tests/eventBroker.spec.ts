@@ -10,9 +10,11 @@ const fakeChannel = {
   assertQueue: jest.fn(async () => ({})),
   consume: jest.fn(async (_queue: string, _onMessage: MessageHandler) => ({ consumerTag: 'test-consumer' })),
   ack: jest.fn(),
-  nack: jest.fn()
+  nack: jest.fn(),
+  close: jest.fn(async () => undefined)
 };
-const connectMock = jest.fn(async (_options: unknown) => ({ createChannel: async () => fakeChannel }));
+const fakeConnection = { createChannel: async () => fakeChannel, close: jest.fn(async () => undefined) };
+const connectMock = jest.fn(async (_options: unknown) => fakeConnection);
 jest.unstable_mockModule('amqplib', () => {
   return {
     default: { connect: connectMock },
@@ -175,5 +177,44 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
     userService.createUserWithPasswordHash.mockRejectedValueOnce(new Error('duplicate key value') as never);
     await onMessage(message());
     expect(usersCache.invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  // TEST 7: Verify close() ends the open event streams and closes the channel and the connection (issue #51).
+  // Condition: One stream is open; an open stream would keep server.close() waiting until SIGKILL.
+  it('close() ends every open stream and closes the RabbitMQ channel and connection', async () => {
+    const broker = new EventBrokerService();
+    await new Promise((resolve) => setImmediate(resolve));
+    const stream = { ...fakeStream(), end: jest.fn() };
+    broker.registerSSEClient({} as never, stream as never);
+    fakeChannel.close.mockClear();
+    fakeConnection.close.mockClear();
+    expect(broker.isConnected()).toBe(true);
+
+    await broker.close();
+
+    expect(stream.end).toHaveBeenCalledTimes(1);
+    expect(fakeChannel.close).toHaveBeenCalledTimes(1);
+    expect(fakeConnection.close).toHaveBeenCalledTimes(1);
+    expect(broker.isConnected()).toBe(false);
+  });
+
+  // TEST 8: Verify a closed broker stops its reconnection loop, so the process can exit (issue #51).
+  // Condition: The first connection attempt fails, which schedules a retry in 5 seconds.
+  it('close() cancels a scheduled reconnection', async () => {
+    jest.useFakeTimers();
+    try {
+      connectMock.mockRejectedValueOnce(new Error('connect ECONNREFUSED 127.0.0.1:5672'));
+      connectMock.mockClear();
+      const broker = new EventBrokerService();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await broker.close();
+      jest.advanceTimersByTime(10_000);
+
+      expect(connectMock).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });

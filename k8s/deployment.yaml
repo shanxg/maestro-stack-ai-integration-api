@@ -26,6 +26,10 @@ spec:
       labels:
         app: maestro-api          # Label added to the Pod for selector matching
     spec:
+      # 🛑 GRACEFUL SHUTDOWN (issue #51): on SIGTERM the API stops accepting work and closes its
+      # connections within settings.health.shutdownTimeoutMs (10 s); Kubernetes sends SIGKILL only
+      # after this period, so the shutdown always has time to finish.
+      terminationGracePeriodSeconds: 30
       # 🛡️ POD SECURITY CONTEXT: Run as the unprivileged 'node' user (UID/GID 1000 in the
       # official Node.js image) and apply the container runtime's default seccomp filter.
       securityContext:
@@ -68,6 +72,28 @@ spec:
           # Expose the internal port where the Node.js container listens for traffic
           ports:
             - containerPort: 3000
+
+          # =========================================================================
+          # 🩺 HEALTH PROBES (issue #51)
+          # =========================================================================
+          # Liveness: restart the container only when the process stops answering. It checks no
+          # dependency, so a database outage does not restart every replica at once.
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          # Readiness: send traffic only while PostgreSQL and RabbitMQ answer and the replica is not
+          # shutting down (it answers 503 from the first moment of a graceful shutdown).
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health/ready
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 2
           
           # =========================================================================
           # 🔐 DEPENDENCY CONFIGURATION (ENVIRONMENT VARIABLES / FINOPS)

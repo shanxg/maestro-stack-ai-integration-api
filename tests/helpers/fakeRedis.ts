@@ -52,6 +52,9 @@ export class FakeRedis {
   // Connection events are ignored.
   on(): this { return this; }
 
+  // Graceful shutdown (issue #51): QUIT closes the connection after pending replies.
+  async quit(): Promise<'OK'> { return 'OK'; }
+
   async del(...keys: string[]): Promise<number> {
     this.failIfDown();
     return keys.filter((key) => FakeRedis.data.delete(key)).length;
