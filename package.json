@@ -26,7 +26,12 @@
     "dev": "npm run infra:up && tsx --watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --no-cache"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --no-cache",
+    "typecheck": "tsc --noEmit && tsc -p tests",
+    "lint:install": "npm ci --prefix tools/lint",
+    "lint": "node tools/lint/node_modules/eslint/bin/eslint.js --config tools/lint/eslint.config.js --max-warnings 0 .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "keywords": [],
   "author": "",
@@ -47,6 +52,7 @@
     "@types/supertest": "^7.2.1",
     "jest": "^30.5.2",
     "js-yaml": "^4.3.2",
+    "prettier": "^3.9.10",
     "supertest": "^7.3.1",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
