@@ -1,6 +1,6 @@
 // 1. IMPORTS: Jest utilities, the YAML parser and Node's file reader.
 import fs from 'node:fs';
-import yaml from 'js-yaml';
+import { load } from 'js-yaml'; // js-yaml 5 has named exports only
 import { describe, it, expect } from '@jest/globals';
 
 // The parts of docker-compose.yml this suite reads: each service and its published ports.
@@ -27,7 +27,7 @@ describe('Local infrastructure (docker-compose.yml)', () => {
   // Condition: PostgreSQL, Redis and RabbitMQ (broker and management UI) must not listen on every
   // network interface, where other machines on the same network could reach them.
   it('publishes every port on 127.0.0.1 only', () => {
-    const compose = yaml.load(fs.readFileSync('docker-compose.yml', 'utf8')) as ComposeFile;
+    const compose = load(fs.readFileSync('docker-compose.yml', 'utf8')) as ComposeFile;
 
     const published = Object.entries(compose.services).flatMap(([service, definition]) =>
       (definition.ports ?? []).map((port) => ({

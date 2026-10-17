@@ -5,7 +5,7 @@ import 'dotenv/config';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
-import yaml from 'js-yaml';
+import { load } from 'js-yaml'; // js-yaml 5 has named exports only
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { describe, beforeAll, beforeEach, afterAll, it, expect, jest } from '@jest/globals';
@@ -1105,7 +1105,7 @@ describe('API contract (openapi.yaml)', () => {
   // The parts of openapi.yaml these tests read: each path, its operations and their security.
   type Operation = { security?: Array<Record<string, string[]>> };
   type Spec = { security?: Array<Record<string, string[]>>; paths: Record<string, Record<string, Operation>> };
-  const spec = yaml.load(fs.readFileSync('openapi.yaml', 'utf8')) as Spec;
+  const spec = load(fs.readFileSync('openapi.yaml', 'utf8')) as Spec;
   const httpMethods = ['get', 'post', 'put', 'patch', 'delete'];
 
   // Every documented operation as "METHOD /path", with its effective security: the operation's own
