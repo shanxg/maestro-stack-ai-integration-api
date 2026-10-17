@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import { SESSION_FLAG_KEY, clearSignedIn } from '../utils/session'; // "Signed in" flag, never the token (issue #34)
+import { ApiError, apiRequest } from '../utils/apiClient'; // The one way pages call the API (issue #54)
 
 interface Message {
   role: 'user' | 'assistant';
@@ -84,40 +85,22 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, { role: 'user', content: userPrompt }]);
 
     try {
-      // =========================================================================
-      // 🗺️ APPSEC REMEDIATION - DYNAMIC BOUNDARY HOOK ALIGNMENT
-      // =========================================================================
-      // Target the environment-driven API matrix cluster gateway. 
-      // This forces cross-origin execution handshakes to adapt seamlessly between Kind and AWS topologies.
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      const targetUrl = new URL('/api/v1/ai/chat', apiBaseUrl);
-
-      // No Authorization header: the browser attaches the HttpOnly session cookie because of
-      // credentials: 'include', and page scripts never see the token (CWE-922).
-      const res = await fetch(targetUrl.href, {
+      // The shared API client (issue #54) builds the URL from NEXT_PUBLIC_API_URL and sends the
+      // HttpOnly session cookie (credentials: 'include'); no Authorization header and no token in
+      // page scripts (CWE-922). Any failure arrives here as an ApiError with a message to show.
+      const data = await apiRequest<{ response: string }>('/api/v1/ai/chat', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({ prompt: userPrompt }),
+        body: { prompt: userPrompt },
+        fallbackMessage: 'Falha ao obter resposta do motor de IA.',
       });
-
-      // The session expired or was cleared: drop the flag, and the effect above redirects to /login.
-      if (res.status === 401) {
-        clearSignedIn();
-        return;
-      }
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error?.message || 'Falha ao obter resposta do motor de IA.');
-      }
 
       setMessages((prev) => [...prev, { role: 'assistant', content: data.response }]);
 
     } catch (err: unknown) { // Keep the existing type-safe error handling
+      // 401: the session expired or was cleared. The client already dropped the "signed in" flag,
+      // and the effect above redirects to /login, so there is no error to show.
+      if (err instanceof ApiError && err.status === 401) return;
+
       console.error('❌ Falha na esteira de transmissão do chat:', err);
       setError(
         err instanceof Error 
@@ -132,8 +115,8 @@ export default function ChatPage() {
   const handleLogout = async () => {
     // Ask the API to clear the HttpOnly cookie; page scripts cannot delete it themselves.
     try {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
-      await fetch(new URL('/api/v1/auth/logout', apiBaseUrl).href, { method: 'POST', credentials: 'include' });
+      // A 401 here (the session had already ended) is fine: the goal was to end it anyway.
+      await apiRequest('/api/v1/auth/logout', { method: 'POST' });
     } catch (err: unknown) {
       // Even if the API cannot be reached, leave the page; the cookie expires with the token.
       console.error('❌ Falha ao encerrar a sessão na API:', err);

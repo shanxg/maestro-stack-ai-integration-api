@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { apiRequest } from '../utils/apiClient'; // The one way pages call the API (issue #54)
 
 export default function RegisterPage() {
   // ==========================================
@@ -36,37 +37,22 @@ export default function RegisterPage() {
   }
 
   // =========================================================================
-  // 🗺️ APPSEC REMEDIATION - ABSOLUTE BOUNDARY HANDSHAKE
+  // 📡 SHARED API CLIENT (issue #54)
   // =========================================================================
-  // Hardcoding the explicit local development port DNS directly into the constructor
-  // to fully prevent Next.js Turbopack from routing this client call internally.
-  const targetUrl = new URL('http://localhost:3000/api/v1/users');
-
-  const res = await fetch(targetUrl.href, {
+  // apiRequest() builds the absolute API URL from NEXT_PUBLIC_API_URL (this page used to hardcode
+  // http://localhost:3000), so the call never goes to the Next.js server itself. A response that
+  // is not JSON, or an error status, arrives in the catch below as an ApiError with a message.
+  // requiresSession: false, because creating an account needs no session.
+  await apiRequest('/api/v1/users', {
     method: 'POST',
-    mode: 'cors', // Force cross-origin evaluation down to the browser engine
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+    body: {
       name: name.trim(),
       email: email.trim(),
       password: password
-    }),
+    },
+    fallbackMessage: 'Falha ao registrar a solicitação de cadastro.',
+    requiresSession: false,
   });
-
-  const rawResponseText = await res.text();
-
-  let data;
-  try {
-    data = JSON.parse(rawResponseText);
-  } catch {
-    throw new Error('O servidor de dados retornou uma resposta inválida. Verifique se a API está online.');
-  }
-
-  if (!res.ok) {
-    throw new Error(data.error?.message || 'Falha ao registrar a solicitação de cadastro.');
-  }
 
       // HTTP 202 ACCEPTED: Notify user about the background batch queue processing success
       setSuccess('Solicitação enviada com sucesso! Redirecionando para o portal de acesso...');
