@@ -7,7 +7,10 @@ import { captureLogs } from './helpers/logCapture.js';
 // keeps the message handler so a test can deliver a message to it.
 type MessageHandler = (message: { content: Buffer } | null) => Promise<void>;
 const fakeChannel = {
-  assertQueue: jest.fn(async () => ({})),
+  // The topology (src/queue/topology.ts): dead-letter exchange, dead-letter queue, binding, main queue.
+  assertExchange: jest.fn(async (_exchange: string, _type: string, _options?: object) => ({})),
+  bindQueue: jest.fn(async (_queue: string, _exchange: string, _pattern: string) => ({})),
+  assertQueue: jest.fn(async (_queue: string, _options?: object) => ({})),
   consume: jest.fn(async (_queue: string, _onMessage: MessageHandler) => ({ consumerTag: 'test-consumer' })),
   ack: jest.fn(),
   nack: jest.fn(),
@@ -216,5 +219,98 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  // Start a consumer with the given service and return its message handler (issue #50 tests).
+  const startConsumer = async (userService: object, usersCache?: object) => {
+    fakeChannel.consume.mockClear();
+    fakeChannel.ack.mockClear();
+    fakeChannel.nack.mockClear();
+    new EventBrokerService(userService as never, usersCache as never);
+    await new Promise((resolve) => setImmediate(resolve));
+    return fakeChannel.consume.mock.calls[0]?.[1] as MessageHandler;
+  };
+  const registration = (data: Record<string, unknown>) => ({
+    content: Buffer.from(JSON.stringify({ action: 'user_created', data }))
+  });
+  const validData = { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) };
+
+  // TEST 9: Verify the queue is declared with a dead-letter exchange, so rejected messages are kept (issue #50).
+  // Condition: Before, 'user_events' had no dead-letter exchange and RabbitMQ deleted every nacked message.
+  it('declares user_events with a dead-letter exchange bound to user_events.dead', async () => {
+    fakeChannel.assertExchange.mockClear();
+    fakeChannel.assertQueue.mockClear();
+    fakeChannel.bindQueue.mockClear();
+
+    new EventBrokerService();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(fakeChannel.assertExchange).toHaveBeenCalledWith('user_events.dlx', 'fanout', { durable: true });
+    expect(fakeChannel.assertQueue).toHaveBeenCalledWith('user_events.dead', { durable: true });
+    expect(fakeChannel.bindQueue).toHaveBeenCalledWith('user_events.dead', 'user_events.dlx', '');
+    expect(fakeChannel.assertQueue).toHaveBeenCalledWith('user_events', {
+      durable: true,
+      arguments: { 'x-dead-letter-exchange': 'user_events.dlx' }
+    });
+  });
+
+  // TEST 10: Verify a registration for an e-mail that already has an account is acknowledged on purpose,
+  // without touching the cache or the stream, and logged without the e-mail (issue #50).
+  // Condition: The repository reports a duplicate; before, the consumer logged a failure and dropped it.
+  it('acknowledges a duplicate e-mail registration and changes nothing', async () => {
+    const { DuplicateEmailError } = await import('../src/errors/DuplicateEmailError.js');
+    const usersCache = { invalidate: jest.fn(async () => undefined) };
+    const onMessage = await startConsumer({
+      createUserWithPasswordHash: jest.fn(async () => { throw new DuplicateEmailError(); })
+    }, usersCache);
+    const message = registration(validData);
+    const logs = captureLogs(logger);
+
+    try {
+      await onMessage(message);
+
+      expect(fakeChannel.ack).toHaveBeenCalledWith(message);
+      expect(fakeChannel.nack).not.toHaveBeenCalled();
+      expect(usersCache.invalidate).not.toHaveBeenCalled();
+      expect(logs.text()).toContain('already has an account');
+      expect(logs.text()).not.toContain(validData.email);
+    } finally {
+      logs.restore();
+    }
+  });
+
+  // TEST 11: Verify malformed registrations never reach the service and go to the dead-letter queue (issue #50).
+  // Condition: A body that is not JSON, an invalid e-mail and a plaintext password; before, the consumer
+  // passed whatever JSON.parse returned to the service.
+  it('dead-letters malformed registrations without calling the service', async () => {
+    const service = { createUserWithPasswordHash: jest.fn(async () => ({ id: 'never' })) };
+    const onMessage = await startConsumer(service);
+    const notJson = { content: Buffer.from('{not-json') };
+    const badEmail = registration({ ...validData, email: 'email_invalido' });
+    const plaintext = registration({ ...validData, password: 'senha-em-texto' });
+
+    for (const message of [notJson, badEmail, plaintext]) {
+      await onMessage(message);
+    }
+
+    expect(service.createUserWithPasswordHash).not.toHaveBeenCalled();
+    expect(fakeChannel.nack).toHaveBeenNthCalledWith(1, notJson, false, false);
+    expect(fakeChannel.nack).toHaveBeenNthCalledWith(2, badEmail, false, false);
+    expect(fakeChannel.nack).toHaveBeenNthCalledWith(3, plaintext, false, false);
+    expect(fakeChannel.ack).not.toHaveBeenCalled();
+  });
+
+  // TEST 12: Verify a registration that fails to save goes to the dead-letter queue, not back to the
+  // queue (issue #50). Condition: The database is down when the message arrives.
+  it('dead-letters a registration whose save fails', async () => {
+    const onMessage = await startConsumer({
+      createUserWithPasswordHash: jest.fn(async () => { throw new Error('connect ECONNREFUSED 127.0.0.1:5433'); })
+    });
+    const message = registration(validData);
+
+    await onMessage(message);
+
+    expect(fakeChannel.nack).toHaveBeenCalledWith(message, false, false);
+    expect(fakeChannel.ack).not.toHaveBeenCalled();
   });
 });

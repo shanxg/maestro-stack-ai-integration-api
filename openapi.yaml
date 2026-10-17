@@ -200,9 +200,11 @@ paths:
       responses:
         '202':
           description: >
-            Request accepted for asynchronous batch processing in the queue. Known issue: the
-            response is the same when the email is already registered; the worker then drops
-            the message and the user is not created (tracked in issue #50).
+            Request accepted for asynchronous processing in the queue. The response is the same
+            when the email already has an account, so this route does not reveal which emails are
+            registered (CWE-204); the consumer then leaves the existing account untouched. A queued
+            registration that cannot be saved (for example, the database is down) is kept in the
+            dead-letter queue user_events.dead for an operator, never dropped.
         '400':
           description: >
             The body fails the Zod validation schema. Each failing field is listed in error.details.

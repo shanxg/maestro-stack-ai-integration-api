@@ -4,6 +4,7 @@ import { type User } from "../models/User.js";
 import pg from 'pg'; // Use the official 'pg' driver to connect to the relational database.
 import { env, settings } from '../config.js'; // Validated database settings (no default password) and pool limits
 import { databaseReadFailure } from './databaseErrors.js'; // Outage -> 503, query error -> 500 (CWE-392)
+import { DuplicateEmailError } from '../errors/DuplicateEmailError.js'; // Expected outcome of a repeated registration (issue #50)
 import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
 
 // 2. CLASS: 'implements IUserRepository' tells TypeScript that this class
@@ -185,9 +186,16 @@ constructor() {
       const result = await this.pool.query(queryConfig);
       return result.rows[0];
     } catch (error) {
-      // A duplicate e-mail fails here with a 'detail' that quotes the address; the logger redacts it (issue #53).
-      logger.error({ component: 'postgres', err: error }, 'Failed to persist the user');
-      throw new Error('Internal persistence exception triggered inside repository boundary.');
+      // DUPLICATE E-MAIL (issue #50): PostgreSQL rejects the insert with unique_violation (SQLSTATE
+      // 23505). Before, every failure became the same generic Error, so the queue consumer could not
+      // tell "this e-mail already has an account" from "the database is down" and dropped both.
+      // The original error is not logged here: its 'detail' quotes the e-mail.
+      if (error instanceof pg.DatabaseError && error.code === '23505') {
+        throw new DuplicateEmailError();
+      }
+      // Anything else keeps its cause: an outage becomes AppError 503 (logged with the driver
+      // error), any other SQL error is rethrown as it is for the caller to log (issue #93).
+      throw databaseReadFailure('create', error);
     }
   }
 }

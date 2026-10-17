@@ -1,10 +1,13 @@
 import amqp from 'amqplib';
-import type { Channel, ChannelModel } from 'amqplib';
+import type { Channel, ChannelModel, ConsumeMessage } from 'amqplib';
 import type { Request, Response } from 'express';
 import { UserService } from './UserService.js'; // Ensure the user service is imported at the top layer
 import { env } from '../config.js';
 import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
 import { type UsersCache } from '../cache/usersCache.js'; // Invalidated once a new account is saved (issue #52)
+import { QUEUE_NAME, assertUserEventsTopology } from '../queue/topology.js'; // Queue + dead-letter queue (issue #50)
+import { queueEnvelopeSchema, userCreatedEventSchema } from '../schemas/eventSchema.js'; // Queue messages are validated (issue #50)
+import { DuplicateEmailError } from '../errors/DuplicateEmailError.js';
 
 export class EventBrokerService {
   // Both are 'undefined' while disconnected and again after close() (issue #51).
@@ -16,7 +19,8 @@ export class EventBrokerService {
   private connectedClients: Response[] = [];
   
   // Unique queue name registered with the RabbitMQ server.
-  private readonly queueName = 'user_events';
+  // Declared, with its dead-letter queue, in src/queue/topology.ts (issue #50).
+  private readonly queueName = QUEUE_NAME;
 
   // GRACEFUL SHUTDOWN STATE (issue #51): once close() runs, no reconnection is scheduled, and a
   // pending reconnection timer is cancelled, so the process can exit.
@@ -60,12 +64,16 @@ export class EventBrokerService {
       });
       this.channel = await this.connection.createChannel();
 
-      // 🛡️ RESILIENCE: Ensure the queue exists before sending any data.
-      await this.channel.assertQueue(this.queueName, { durable: true });
+      // 🛡️ RESILIENCE: Ensure the queue, its dead-letter exchange and the dead-letter queue exist
+      // before sending any data (src/queue/topology.ts, issue #50).
+      await assertUserEventsTopology(this.channel);
       logger.info({ component: 'rabbitmq', queue: this.queueName }, 'Queue ready');
 
-      // Start the background consumer once the network connection is ready.
-      this.startAsynchronousConsumerWorker();
+      // Start the background consumer once the network connection is ready. A broker built
+      // without a UserService only publishes: consuming would take messages it cannot process.
+      if (this.userService) {
+        this.startAsynchronousConsumerWorker();
+      }
 
     } catch (error: unknown) {
       // Only the reason is logged: the error never holds the password (the connection uses an options object).
@@ -152,8 +160,7 @@ export class EventBrokerService {
 
   /**
   * 👷 3. ASYNCHRONOUS CONSUMER WORKER (startAsynchronousConsumerWorker):
-  * Continuously listen to the queue in the background.
-  * When a message arrives, parse it, execute asymmetric writing to PostgreSQL and trigger SSE alerts.
+  * Continuously listen to the queue in the background and hand every message to handleMessage().
    */
   private async startAsynchronousConsumerWorker(): Promise<void> {
     try {
@@ -163,60 +170,93 @@ export class EventBrokerService {
       }
 
       logger.info({ component: 'consumer', queue: this.queueName }, 'Consumer started');
-
-      await this.channel.consume(this.queueName, async (message) => {
-        if (!message) return;
-
-        try {
-          const rawContent = message.content.toString();
-          const parsedPayload = JSON.parse(rawContent);
-
-          logger.debug({ component: 'consumer' }, 'Event received from the queue');
-
-          // =========================================================================
-          // ⚙️ ASYNCHRONOUS SERVICE LAYER PERSISTENCE INGESTION
-          // =========================================================================
-          // Extrapolate the safe cryptographically protected credentials block sent from the controller boundary
-          if (parsedPayload.action === 'user_created') {
-            const { name, email, password } = parsedPayload.data;
-            
-            // APPSEC REMEDIATION - EVENT CONSUMPTION INGESTION ACTIVATION
-            // The message carries the bcrypt hash computed by UserController, so it goes through the
-            // trusted path that stores a verified hash as is (createUser would hash it a second time).
-            if (this.userService) {
-              // NO PERSONAL DATA IN LOGS (CWE-532, issue #53): this line used to print the new account's e-mail.
-              logger.info({ component: 'consumer', action: 'user_created' }, 'Creating the account from a queued registration');
-              const createdUser = await this.userService.createUserWithPasswordHash(name, email, password);
-              logger.info({ component: 'consumer', userId: createdUser.id }, 'Account created');
-
-              // CACHE INVALIDATION AT THE RIGHT TIME (issue #52): the account exists only from this
-              // point on, so cached GET /api/v1/users pages become stale now, not when the API answered 202.
-              // One INCR of the cache version (src/cache/usersCache.ts) replaces the blocking
-              // redis.keys('users:*') scan; a Redis failure here only logs a warning.
-              await this.usersCache?.invalidate();
-
-              // MINIMUM DATA ON THE STREAM (issue #35): every signed-in account receives these events,
-              // but a regular account may only read its own record (AUTHZ-01). So the event carries
-              // only the new account's id, never its name, e-mail or password hash; a client that may
-              // see the record fetches it through GET /api/v1/users/{id}, where the access rules apply.
-              this.broadcastToSSEClients('user_created', { id: createdUser.id });
-            } else {
-              logger.warn({ component: 'consumer' }, 'UserService is not wired; the event was not processed');
-            }
-          }
-          // Other actions are not forwarded to the stream: only known events, with known fields, go out.
-
-          this.channel?.ack(message);
-
-        } catch (error: unknown) {
-          logger.error({ component: 'consumer', err: error }, 'Failed to process the message; it was discarded');
-          this.channel?.nack(message, false, false); // Drop corrupted packets to block poisoning loops
-        }
-      });
+      await this.channel.consume(this.queueName, (message) => this.handleMessage(message));
 
     } catch (error: unknown) {
       logger.error({ component: 'consumer', err: error }, 'The consumer loop failed');
     }
+  }
+
+  /**
+  * 📥 MESSAGE HANDLING (issue #50): every message ends in exactly one of three outcomes.
+  * - ACK: processed, or deliberately ignored (an unknown action, or a registration for an e-mail
+  *   that already has an account). Nothing to retry.
+  * - NACK WITHOUT REQUEUE -> DEAD-LETTER QUEUE: the message is malformed, or saving failed (for
+  *   example, the database was down). Before, RabbitMQ deleted these, so a registration could
+  *   vanish after the client got 202; now they wait in 'user_events.dead' for an operator.
+  *   Requeueing instead would redeliver a broken message forever (a poison-message loop).
+  * Log lines name the outcome and, at most, the account id: never the e-mail or name (CWE-532).
+  */
+  private async handleMessage(message: ConsumeMessage | null): Promise<void> {
+    // RabbitMQ delivers null when it cancels the consumer (for example, the queue was deleted).
+    if (!message) return;
+
+    // Step A: Decode. A body that is not JSON can never be processed.
+    let payload: unknown;
+    try {
+      payload = JSON.parse(message.content.toString());
+    } catch {
+      this.deadLetter(message, 'The message is not valid JSON');
+      return;
+    }
+
+    // Step B: Route by action. Only 'user_created' has a handler; other actions are acknowledged
+    // and not forwarded to the stream (only known events, with known fields, go out).
+    const envelope = queueEnvelopeSchema.safeParse(payload);
+    if (!envelope.success || envelope.data.action !== 'user_created') {
+      logger.info({ component: 'consumer', action: envelope.success ? envelope.data.action : undefined }, 'No handler for this action; acknowledged');
+      this.channel?.ack(message);
+      return;
+    }
+
+    // Step C: Validate the registration (the queue is a trust boundary). Only the failing field
+    // names are logged, never the values.
+    const event = userCreatedEventSchema.safeParse(payload);
+    if (!event.success) {
+      const fields = event.error.issues.map((issue) => issue.path.join('.')).join(', ');
+      this.deadLetter(message, 'The registration message failed validation', { fields });
+      return;
+    }
+
+    // Step D: Save the account through the trusted path that stores a verified hash as it is
+    // (createUser would hash it a second time).
+    const { name, email, password } = event.data.data;
+    try {
+      // NO PERSONAL DATA IN LOGS (CWE-532, issue #53): this line used to print the new account's e-mail.
+      logger.info({ component: 'consumer', action: 'user_created' }, 'Creating the account from a queued registration');
+      const createdUser = await this.userService!.createUserWithPasswordHash(name, email, password);
+      logger.info({ component: 'consumer', userId: createdUser.id }, 'Account created');
+
+      // CACHE INVALIDATION AT THE RIGHT TIME (issue #52): the account exists only from this
+      // point on, so cached GET /api/v1/users pages become stale now, not when the API answered 202.
+      // One INCR of the cache version (src/cache/usersCache.ts) replaces the blocking
+      // redis.keys('users:*') scan; a Redis failure here only logs a warning.
+      await this.usersCache?.invalidate();
+
+      // MINIMUM DATA ON THE STREAM (issue #35): every signed-in account receives these events,
+      // but a regular account may only read its own record (AUTHZ-01). So the event carries
+      // only the new account's id, never its name, e-mail or password hash; a client that may
+      // see the record fetches it through GET /api/v1/users/{id}, where the access rules apply.
+      this.broadcastToSSEClients('user_created', { id: createdUser.id });
+      this.channel?.ack(message);
+    } catch (error: unknown) {
+      // DUPLICATE E-MAIL (issue #50): an expected outcome, not a failure. The API answered the same
+      // 202 it answers for a new e-mail, so the registration route does not reveal which e-mails
+      // have accounts (CWE-204); the existing account is left untouched and nothing is retried.
+      if (error instanceof DuplicateEmailError) {
+        logger.info({ component: 'consumer', action: 'user_created' }, 'Registration ignored: the e-mail already has an account');
+        this.channel?.ack(message);
+        return;
+      }
+      this.deadLetter(message, 'Failed to save the queued registration', { err: error });
+    }
+  }
+
+  // Reject a message without requeueing it: the queue's dead-letter exchange moves it to
+  // 'user_events.dead' (src/queue/topology.ts), where it is kept for inspection.
+  private deadLetter(message: ConsumeMessage, reason: string, details: Record<string, unknown> = {}): void {
+    logger.error({ component: 'consumer', ...details }, `${reason}; moved to the dead-letter queue`);
+    this.channel?.nack(message, false, false);
   }
 
   /**

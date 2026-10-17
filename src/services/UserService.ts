@@ -4,6 +4,7 @@ import { type User } from '../models/User.js';
 import bcrypt from 'bcrypt'; // Use bcrypt for secure password hashing
 import crypto from 'node:crypto'; // Native, cryptographically secure pseudo-random number generator (CSPRNG)
 import { settings } from '../config.js';
+import { BCRYPT_HASH_FORMAT } from '../schemas/eventSchema.js'; // Shared with the queue message schema (issue #50)
 
 // 2. SERVICE CLASS: Business rules live here, at the heart of the system.
 // It delegates database operations to the repository.
@@ -78,10 +79,9 @@ export class UserService {
    * plaintext or a cheap hash.
    */
   async createUserWithPasswordHash(name: string, email: string, passwordHash: string): Promise<User> {
-    // A complete bcrypt hash: version, two-digit cost, then 53 characters of salt and digest.
-    const bcryptHashFormat = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
-
-    if (!bcryptHashFormat.test(passwordHash) || bcrypt.getRounds(passwordHash) < this.SALT_ROUNDS) {
+    // A complete bcrypt hash (BCRYPT_HASH_FORMAT: version, two-digit cost, 53 characters of salt and
+    // digest) with at least the configured cost.
+    if (!BCRYPT_HASH_FORMAT.test(passwordHash) || bcrypt.getRounds(passwordHash) < this.SALT_ROUNDS) {
       throw new Error('Rejected registration event: the password is not a bcrypt hash with the configured cost.');
     }
 
