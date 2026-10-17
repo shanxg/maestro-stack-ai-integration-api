@@ -14,7 +14,7 @@
 
 // 1. IMPORTS: Node HTTP types, the JWT library, and the Socket.io engine.
 import type http from 'node:http';
-import { verifyAccessToken } from '../auth/accessToken.js'; // The same token rules as authMiddleware
+import { verifyAccessToken, type AccessTokenClaims } from '../auth/accessToken.js'; // The same token rules as authMiddleware
 import { env } from '../config.js';
 import { Server, type Socket } from 'socket.io';
 import { type User } from '../models/User.js';
@@ -28,6 +28,10 @@ export const ALLOWED_ORIGINS = [...env.ALLOWED_ORIGINS];
 // initializeSocket() runs, so importing this module has no side effects.
 export let io: Server | undefined;
 
+// What the handshake keeps on socket.data, which Socket.io types as 'any' by default: the verified
+// token claims, so event handlers can apply per-user rules.
+type AuthenticatedSocketData = { user?: AccessTokenClaims };
+
 /**
  * 🔐 HANDSHAKE FIREWALL FACTORY (createHandshakeAuthenticator):
  * Build a Socket.io middleware that runs once per connection attempt, before the
@@ -37,7 +41,9 @@ export let io: Server | undefined;
 export function createHandshakeAuthenticator() {
   return (socket: Socket, next: (err?: Error) => void): void => {
     // Step A: Read the token from the handshake 'auth' payload.
-    const token = socket.handshake.auth?.token;
+    // Socket.io types the auth payload as 'any'; it is client input, so it stays 'unknown' until
+    // the check below proves it is a string (issue #55, typed lint).
+    const token: unknown = (socket.handshake.auth as { token?: unknown } | undefined)?.token;
 
     // Step B: Reject the connection when the token is missing or blank.
     if (typeof token !== 'string' || token.trim() === '') {
@@ -48,7 +54,7 @@ export function createHandshakeAuthenticator() {
     try {
       // Step C: Verify the signature and expiry, then keep the identity on the socket
       // so event handlers can apply per-user rules later.
-      socket.data.user = verifyAccessToken(token);
+      (socket.data as AuthenticatedSocketData).user = verifyAccessToken(token);
       next();
     } catch {
       // Step D: Altered or expired tokens never reach the 'connection' event.

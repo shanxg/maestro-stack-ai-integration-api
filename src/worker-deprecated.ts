@@ -42,6 +42,7 @@ import { getRabbitChannel, closeRabbitChannel, QUEUE_NAME } from './queue/rabbit
 import { UserRepository } from './repositories/UserRepository.js';
 import { UserService } from './services/UserService.js';
 import { createUserSchema } from './schemas/userSchema.js';
+import { queueEnvelopeSchema } from './schemas/eventSchema.js'; // { action: string }, checked before routing
 import { initializeSocket, broadcastUserCreated, closeSocket } from './realtime/socket-deprecated.js';
 import { logger } from './logger.js'; // Structured logger without personal data (issue #53)
 
@@ -73,13 +74,18 @@ export async function processUserEventMessage(
   try {
     // Step A: Convert the Buffer (raw bytes sent over the network) back into a String,
     // and then into a JavaScript object. A malformed JSON throws and is rejected below.
-    const content = JSON.parse(message.content.toString());
-    logger.info({ component: 'worker', action: content?.action }, 'Message received from the queue');
+    // The result is 'unknown', not 'any': the queue is a trust boundary, so no field is read until
+    // a schema has checked it (issue #55, typed lint).
+    const content: unknown = JSON.parse(message.content.toString());
+    const envelope = queueEnvelopeSchema.safeParse(content);
+    const action = envelope.success ? envelope.data.action : undefined;
+    logger.info({ component: 'worker', action }, 'Message received from the queue');
 
     // Step B: Internal routing. Only 'user_created' carries a business rule for this worker.
-    if (content?.action === USER_CREATED_ACTION) {
+    if (action === USER_CREATED_ACTION) {
       // Step C: Revalidate the payload with the same Zod rules as POST /api/v1/users.
-      const parsed = createUserSchema.shape.body.safeParse(content.data);
+      // The envelope check above proved 'content' is an object; 'data' is still unknown here.
+      const parsed = createUserSchema.shape.body.safeParse((content as { data?: unknown }).data);
 
       if (!parsed.success) {
         // Log only the failing field names, never the values (they may hold personal data).
@@ -102,7 +108,7 @@ export async function processUserEventMessage(
       // 🔥 (REAL-TIME WEBSOCKET TRIGGER): Push the sanitized user to every authenticated client.
       broadcastUserCreated(newUser);
     } else {
-      logger.info({ component: 'worker', action: content?.action }, 'No handler for this action; acknowledged and skipped');
+      logger.info({ component: 'worker', action }, 'No handler for this action; acknowledged and skipped');
     }
 
     // CONFIRMATION OF RECEIPT (Acknowledgment / Ack): Notify RabbitMQ that the message was
@@ -149,7 +155,9 @@ export async function startWorker(): Promise<void> {
     await channel.prefetch(1);
 
     // Step D: Start consuming. The callback runs for every message the broker delivers.
-    await channel.consume(QUEUE_NAME, (message) => processUserEventMessage(channel, message, userService));
+    // amqplib ignores the callback's return value; 'void' marks the promise as handled on purpose,
+    // since processUserEventMessage() settles every message itself (ack or nack).
+    await channel.consume(QUEUE_NAME, (message) => void processUserEventMessage(channel, message, userService));
     logger.info({ component: 'worker' }, 'Worker started; listening to the event queue');
 
   } catch (error) {

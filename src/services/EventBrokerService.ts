@@ -33,8 +33,10 @@ export class EventBrokerService {
     if (userService) {
       this.userService = userService;
     }
-    // Automatically establish connections to the Docker infrastructure.
-    this.establishInfrastructureBridges();
+    // Automatically establish connections to the Docker infrastructure. A constructor cannot await;
+    // 'void' marks the call as deliberately not awaited. The method catches every failure itself
+    // and schedules a retry, so the promise never rejects.
+    void this.establishInfrastructureBridges();
   }
 
   /**
@@ -72,7 +74,9 @@ export class EventBrokerService {
       // Start the background consumer once the network connection is ready. A broker built
       // without a UserService only publishes: consuming would take messages it cannot process.
       if (this.userService) {
-        this.startAsynchronousConsumerWorker();
+        // Not awaited on purpose: the consumer runs in the background. It catches and logs its own
+        // failures, so the promise never rejects ('void' says so to the linter, issue #55).
+        void this.startAsynchronousConsumerWorker();
       }
 
     } catch (error: unknown) {
@@ -83,7 +87,7 @@ export class EventBrokerService {
       // unless the API is shutting down (issue #51). The handle is kept so close() can cancel it.
       if (!this.closing) {
         this.reconnectTimer = setTimeout(() => {
-          this.establishInfrastructureBridges();
+          void this.establishInfrastructureBridges(); // Never rejects: a failure schedules the next retry
         }, 5000);
       }
     }
@@ -165,11 +169,15 @@ export class EventBrokerService {
   private async startAsynchronousConsumerWorker(): Promise<void> {
     try {
       if (!this.channel) {
-        setTimeout(() => this.startAsynchronousConsumerWorker(), 1000);
+        setTimeout(() => void this.startAsynchronousConsumerWorker(), 1000);
         return;
       }
 
       logger.info({ component: 'consumer', queue: this.queueName }, 'Consumer started');
+      // The callback returns handleMessage()'s promise on purpose. amqplib ignores the return value
+      // (handleMessage() settles every message itself: ack, or nack to the dead-letter queue), while
+      // tests/eventBroker.spec.ts awaits it to know when a delivered message has been handled.
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises
       await this.channel.consume(this.queueName, (message) => this.handleMessage(message));
 
     } catch (error: unknown) {

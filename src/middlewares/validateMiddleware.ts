@@ -9,7 +9,9 @@ export const validateMiddleware = (schema: ZodObject) => {
     try {
       // Step A: Strictly validate data in 'body', 'query', or 'params'.
       await schema.parseAsync({
-        body: req.body,
+        // Express types the parsed body as 'any'; 'unknown' says what it is (untrusted input) until
+        // the schema has checked it (issue #55, typed lint).
+        body: req.body as unknown,
         query: req.query,
         params: req.params,
       });

@@ -19,5 +19,6 @@ async function bootstrap() {
   }
 }
 
-// Starts the server
-bootstrap();
+// Starts the server. 'void' marks the promise as deliberately not awaited (top-level start-up):
+// bootstrap() catches every failure itself, logs it and exits with code 1, so it never rejects.
+void bootstrap();
