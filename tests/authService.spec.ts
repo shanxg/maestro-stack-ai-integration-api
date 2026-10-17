@@ -17,12 +17,20 @@ describe('AuthService (login rules)', () => {
 
   beforeAll(async () => {
     // Cost factor 4 keeps the suite fast; the dummy hash still uses the configured cost.
-    account = { id: 'abc-777', name: 'Lucas Auth', email: 'auth@maestro.test', password: await bcrypt.hash(ACCOUNT_PASSWORD, 4), role: 'ADMIN' };
+    account = {
+      id: 'abc-777',
+      name: 'Lucas Auth',
+      email: 'auth@maestro.test',
+      password: await bcrypt.hash(ACCOUNT_PASSWORD, 4),
+      role: 'ADMIN'
+    };
   });
 
   // A stand-in for UserService: only the e-mail lookup is used by the login.
   const lookup = () => ({
-    getUserByEmail: jest.fn<(email: string) => Promise<User | null>>(async (email) => (email === account.email ? account : null))
+    getUserByEmail: jest.fn<(email: string) => Promise<User | null>>(async (email) =>
+      email === account.email ? account : null
+    )
   });
 
   // TEST 1: Verify valid credentials return the session claims and a token signed with them.

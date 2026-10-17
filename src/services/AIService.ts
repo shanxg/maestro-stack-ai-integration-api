@@ -13,7 +13,7 @@ export class AIService {
     // The routing abstraction lets the SDK treat local Ollama like the official OpenAI server.
     this.openai = new OpenAI({
       apiKey: env.OPENAI_API_KEY,
-      baseURL: env.OPENAI_BASE_URL,
+      baseURL: env.OPENAI_BASE_URL
     });
 
     // The model comes from OPENAI_MODEL (default "llama3", the model downloaded for local Ollama),
@@ -22,16 +22,16 @@ export class AIService {
   }
 
   /**
-  * 🧠 GENERATE A RESPONSE (CHAT COMPLETION):
-  * Accept the user's plain-text question, send it to the configured model,
-  * and return the resulting text.
-  *
-  * LLM SECURITY BOUNDARIES (OWASP LLM01:2025 / LLM02:2025 / LLM10:2025):
-  * - The model receives only the fixed system prompt and the user's own prompt: no user records,
-  *   no secrets and no tools or function calls. A prompt injection can change the answer's text,
-  *   but there is no data for it to leak and no action for it to trigger.
-  * - The prompt length is checked by chatSchema (src/schemas/aiSchema.ts) before this method runs.
-  * - The answer length (max_tokens) and the waiting time (timeout) come from settings.aiChat.
+   * 🧠 GENERATE A RESPONSE (CHAT COMPLETION):
+   * Accept the user's plain-text question, send it to the configured model,
+   * and return the resulting text.
+   *
+   * LLM SECURITY BOUNDARIES (OWASP LLM01:2025 / LLM02:2025 / LLM10:2025):
+   * - The model receives only the fixed system prompt and the user's own prompt: no user records,
+   *   no secrets and no tools or function calls. A prompt injection can change the answer's text,
+   *   but there is no data for it to leak and no action for it to trigger.
+   * - The prompt length is checked by chatSchema (src/schemas/aiSchema.ts) before this method runs.
+   * - The answer length (max_tokens) and the waiting time (timeout) come from settings.aiChat.
    */
   async generateResponse(prompt: string): Promise<string> {
     try {
@@ -42,7 +42,8 @@ export class AIService {
           messages: [
             {
               role: 'system',
-              content: 'Você é o Maestro, um assistente virtual sênior inteligente integrado ao ecossistema de dados da API. Responda de forma direta, técnica, profissional e em português brasileiro.'
+              content:
+                'Você é o Maestro, um assistente virtual sênior inteligente integrado ao ecossistema de dados da API. Responda de forma direta, técnica, profissional e em português brasileiro.'
             },
             {
               role: 'user',
@@ -53,7 +54,7 @@ export class AIService {
           temperature: 0.2,
           // OUTPUT CEILING: the model stops after this many tokens, so one prompt cannot keep
           // the model busy generating an unbounded answer.
-          max_tokens: settings.aiChat.maxTokens,
+          max_tokens: settings.aiChat.maxTokens
         },
         {
           // TIME CEILING: the SDK aborts the HTTP request (with an AbortController) once this
@@ -61,7 +62,7 @@ export class AIService {
           timeout: settings.aiChat.timeoutMs,
           // No automatic retries: the SDK retries twice by default, which would triple both the
           // waiting time and the load on a model server that is already failing.
-          maxRetries: 0,
+          maxRetries: 0
         }
       );
 

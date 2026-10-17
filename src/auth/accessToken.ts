@@ -33,7 +33,7 @@ export function signAccessToken(claims: AccessTokenClaims): string {
     algorithm: settings.jwt.algorithm,
     issuer: settings.jwt.issuer,
     audience: settings.jwt.audience,
-    expiresIn: settings.jwt.expiresIn,
+    expiresIn: settings.jwt.expiresIn
   });
 }
 
@@ -43,7 +43,7 @@ export function verifyAccessToken(token: string): AccessTokenClaims & jwt.JwtPay
   const payload = jwt.verify(token, env.JWT_SECRET, {
     algorithms: [settings.jwt.algorithm],
     issuer: settings.jwt.issuer,
-    audience: settings.jwt.audience,
+    audience: settings.jwt.audience
   });
 
   // jwt.verify returns a string only for tokens whose payload is not a JSON object. The API never

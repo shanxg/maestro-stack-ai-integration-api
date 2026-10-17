@@ -33,7 +33,7 @@ export function buildSecurityHeaders(options: { isDev: boolean; apiOrigin: strin
     "frame-ancestors 'none'",
     // In production, load every http:// subresource over https://. Left out in development,
     // where the API itself runs on plain http://localhost.
-    ...(isDev ? [] : ['upgrade-insecure-requests']),
+    ...(isDev ? [] : ['upgrade-insecure-requests'])
   ].join('; ');
 
   return [
@@ -45,6 +45,6 @@ export function buildSecurityHeaders(options: { isDev: boolean; apiOrigin: strin
     // Send only the origin to other sites, never the full URL with its path and query.
     { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
     // The app uses none of these browser features, so no page (or injected script) may ask for them.
-    { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+    { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' }
   ];
 }

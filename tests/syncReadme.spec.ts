@@ -22,7 +22,9 @@ describe('README sync (scripts/sync-readme.mjs)', () => {
     const once = syncIncludes(readme, (file: string) => files[file] as string);
     const twice = syncIncludes(once, (file: string) => files[file] as string);
 
-    expect(once).toContain('<!-- md:include start path="SECURITY.md" -->\n\n### Security Policy\n\n#### Scope\nText.\n\n<!-- md:include end -->');
+    expect(once).toContain(
+      '<!-- md:include start path="SECURITY.md" -->\n\n### Security Policy\n\n#### Scope\nText.\n\n<!-- md:include end -->'
+    );
     expect(once).not.toContain('old copy');
     expect(twice).toBe(once);
   });

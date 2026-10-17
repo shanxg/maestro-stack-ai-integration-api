@@ -13,11 +13,11 @@ export class EventBrokerService {
   // Both are 'undefined' while disconnected and again after close() (issue #51).
   private connection: ChannelModel | undefined;
   private channel: Channel | undefined;
-  
+
   // 👥 ACTIVE CONNECTIONS (SSE TUNNEL):
   // Temporarily store Express Response objects for all connected clients.
   private connectedClients: Response[] = [];
-  
+
   // Unique queue name registered with the RabbitMQ server.
   // Declared, with its dead-letter queue, in src/queue/topology.ts (issue #50).
   private readonly queueName = QUEUE_NAME;
@@ -29,7 +29,10 @@ export class EventBrokerService {
 
   // usersCache is optional like userService: the API passes both; a broker built only to publish
   // (or by a test) runs without them.
-  constructor(private userService?: UserService, private usersCache?: UsersCache) {
+  constructor(
+    private userService?: UserService,
+    private usersCache?: UsersCache
+  ) {
     if (userService) {
       this.userService = userService;
     }
@@ -42,10 +45,10 @@ export class EventBrokerService {
   /**
    * 🔌 1. ESTABLISH INFRASTRUCTURE BRIDGES (establishInfrastructureBridges):
    * Open persistent TCP connections to RabbitMQ using environment variables.
-   * 
+   *
    * ARCHITECTURAL REMEDIATION - ASYNCHRONOUS RETRY LOOP (CWE-770 / RESILIENCE):
    * Implements a deterministic re-connection cycle to shield the application from crashes
-   * during cluster warm-up delays. If Erlang's opening handshake fails on early boot phases, 
+   * during cluster warm-up delays. If Erlang's opening handshake fails on early boot phases,
    * the connection engine catches the exception and schedules a new attempt every 5 seconds.
    */
   private async establishInfrastructureBridges(): Promise<void> {
@@ -62,7 +65,7 @@ export class EventBrokerService {
         hostname: env.RABBIT_HOST,
         port: env.RABBIT_PORT,
         username: env.RABBIT_USER,
-        password: env.RABBIT_PASSWORD,
+        password: env.RABBIT_PASSWORD
       });
       this.channel = await this.connection.createChannel();
 
@@ -78,11 +81,13 @@ export class EventBrokerService {
         // failures, so the promise never rejects ('void' says so to the linter, issue #55).
         void this.startAsynchronousConsumerWorker();
       }
-
     } catch (error: unknown) {
       // Only the reason is logged: the error never holds the password (the connection uses an options object).
-      logger.warn({ component: 'rabbitmq', reason: error instanceof Error ? error.message : String(error) }, 'Connection attempt failed; retrying in 5 seconds');
-      
+      logger.warn(
+        { component: 'rabbitmq', reason: error instanceof Error ? error.message : String(error) },
+        'Connection attempt failed; retrying in 5 seconds'
+      );
+
       // Schedule a recurring micro-task loop to recover the connection channel automatically,
       // unless the API is shutting down (issue #51). The handle is kept so close() can cancel it.
       if (!this.closing) {
@@ -94,22 +99,22 @@ export class EventBrokerService {
   }
 
   /**
-  * 🩺 READINESS (issue #51): true while the channel to RabbitMQ is open. Without it, registrations
-  * answer 503 and no queued account is created, so the replica reports itself not ready.
-  */
+   * 🩺 READINESS (issue #51): true while the channel to RabbitMQ is open. Without it, registrations
+   * answer 503 and no queued account is created, so the replica reports itself not ready.
+   */
   isConnected(): boolean {
     return this.channel !== undefined && !this.closing;
   }
 
   /**
-  * 🛑 GRACEFUL SHUTDOWN (close, issue #51):
-  * 1. Stop reconnecting.
-  * 2. End every open Server-Sent Events stream. An open stream keeps its HTTP connection alive,
-  *    so server.close() would otherwise wait for it until the orchestrator's SIGKILL; browsers
-  *    reconnect on their own to another replica.
-  * 3. Close the channel and the connection. A message being processed is not acknowledged, so
-  *    RabbitMQ delivers it again to another consumer instead of losing it.
-  */
+   * 🛑 GRACEFUL SHUTDOWN (close, issue #51):
+   * 1. Stop reconnecting.
+   * 2. End every open Server-Sent Events stream. An open stream keeps its HTTP connection alive,
+   *    so server.close() would otherwise wait for it until the orchestrator's SIGKILL; browsers
+   *    reconnect on their own to another replica.
+   * 3. Close the channel and the connection. A message being processed is not acknowledged, so
+   *    RabbitMQ delivers it again to another consumer instead of losing it.
+   */
   async close(): Promise<void> {
     this.closing = true;
     clearTimeout(this.reconnectTimer);
@@ -123,7 +128,10 @@ export class EventBrokerService {
       await this.channel?.close();
       await this.connection?.close();
     } catch (error: unknown) {
-      logger.warn({ component: 'rabbitmq', reason: error instanceof Error ? error.message : String(error) }, 'Failed to close the RabbitMQ connection cleanly');
+      logger.warn(
+        { component: 'rabbitmq', reason: error instanceof Error ? error.message : String(error) },
+        'Failed to close the RabbitMQ connection cleanly'
+      );
     } finally {
       this.channel = undefined;
       this.connection = undefined;
@@ -131,8 +139,8 @@ export class EventBrokerService {
   }
 
   /**
-  * 📤 2. MESSAGE PRODUCER (publishEvent):
-  * Accept an action from the HTTP controller and publish it to the queue asynchronously.
+   * 📤 2. MESSAGE PRODUCER (publishEvent):
+   * Accept an action from the HTTP controller and publish it to the queue asynchronously.
    */
   async publishEvent(action: string, data: object): Promise<boolean> {
     try {
@@ -152,10 +160,9 @@ export class EventBrokerService {
       // Send the data buffer to the broker.
       // persistent: true tells RabbitMQ to save messages to the container's disk.
       const isPublished = this.channel.sendToQueue(this.queueName, messageBuffer, { persistent: true });
-      
+
       logger.info({ component: 'rabbitmq', action }, 'Event published to the queue');
       return isPublished;
-
     } catch (error: unknown) {
       logger.error({ component: 'rabbitmq', err: error }, 'Failed to publish the event');
       return false;
@@ -163,8 +170,8 @@ export class EventBrokerService {
   }
 
   /**
-  * 👷 3. ASYNCHRONOUS CONSUMER WORKER (startAsynchronousConsumerWorker):
-  * Continuously listen to the queue in the background and hand every message to handleMessage().
+   * 👷 3. ASYNCHRONOUS CONSUMER WORKER (startAsynchronousConsumerWorker):
+   * Continuously listen to the queue in the background and hand every message to handleMessage().
    */
   private async startAsynchronousConsumerWorker(): Promise<void> {
     try {
@@ -179,22 +186,21 @@ export class EventBrokerService {
       // tests/eventBroker.spec.ts awaits it to know when a delivered message has been handled.
       // eslint-disable-next-line @typescript-eslint/no-misused-promises
       await this.channel.consume(this.queueName, (message) => this.handleMessage(message));
-
     } catch (error: unknown) {
       logger.error({ component: 'consumer', err: error }, 'The consumer loop failed');
     }
   }
 
   /**
-  * 📥 MESSAGE HANDLING (issue #50): every message ends in exactly one of three outcomes.
-  * - ACK: processed, or deliberately ignored (an unknown action, or a registration for an e-mail
-  *   that already has an account). Nothing to retry.
-  * - NACK WITHOUT REQUEUE -> DEAD-LETTER QUEUE: the message is malformed, or saving failed (for
-  *   example, the database was down). Before, RabbitMQ deleted these, so a registration could
-  *   vanish after the client got 202; now they wait in 'user_events.dead' for an operator.
-  *   Requeueing instead would redeliver a broken message forever (a poison-message loop).
-  * Log lines name the outcome and, at most, the account id: never the e-mail or name (CWE-532).
-  */
+   * 📥 MESSAGE HANDLING (issue #50): every message ends in exactly one of three outcomes.
+   * - ACK: processed, or deliberately ignored (an unknown action, or a registration for an e-mail
+   *   that already has an account). Nothing to retry.
+   * - NACK WITHOUT REQUEUE -> DEAD-LETTER QUEUE: the message is malformed, or saving failed (for
+   *   example, the database was down). Before, RabbitMQ deleted these, so a registration could
+   *   vanish after the client got 202; now they wait in 'user_events.dead' for an operator.
+   *   Requeueing instead would redeliver a broken message forever (a poison-message loop).
+   * Log lines name the outcome and, at most, the account id: never the e-mail or name (CWE-532).
+   */
   private async handleMessage(message: ConsumeMessage | null): Promise<void> {
     // RabbitMQ delivers null when it cancels the consumer (for example, the queue was deleted).
     if (!message) return;
@@ -212,7 +218,10 @@ export class EventBrokerService {
     // and not forwarded to the stream (only known events, with known fields, go out).
     const envelope = queueEnvelopeSchema.safeParse(payload);
     if (!envelope.success || envelope.data.action !== 'user_created') {
-      logger.info({ component: 'consumer', action: envelope.success ? envelope.data.action : undefined }, 'No handler for this action; acknowledged');
+      logger.info(
+        { component: 'consumer', action: envelope.success ? envelope.data.action : undefined },
+        'No handler for this action; acknowledged'
+      );
       this.channel?.ack(message);
       return;
     }
@@ -252,7 +261,10 @@ export class EventBrokerService {
       // 202 it answers for a new e-mail, so the registration route does not reveal which e-mails
       // have accounts (CWE-204); the existing account is left untouched and nothing is retried.
       if (error instanceof DuplicateEmailError) {
-        logger.info({ component: 'consumer', action: 'user_created' }, 'Registration ignored: the e-mail already has an account');
+        logger.info(
+          { component: 'consumer', action: 'user_created' },
+          'Registration ignored: the e-mail already has an account'
+        );
         this.channel?.ack(message);
         return;
       }
@@ -268,9 +280,9 @@ export class EventBrokerService {
   }
 
   /**
-  * 📡 4. STREAM REGISTRATION (registerSSEClient):
-  * Handle the /api/v1/events HTTP route, set Server-Sent Events headers,
-  * and keep the response open as an active stream.
+   * 📡 4. STREAM REGISTRATION (registerSSEClient):
+   * Handle the /api/v1/events HTTP route, set Server-Sent Events headers,
+   * and keep the response open as an active stream.
    */
   // The parameter types come from Express (issue #47). Before, 'Request | any' named the browser's
   // fetch Request, not Express's, and the '| any' turned off type checking for the argument.
@@ -294,14 +306,14 @@ export class EventBrokerService {
     // 🛡️ MEMORY CLEANUP: Express emits 'close' when the user closes the tab or logs out.
     // Remove the connection from the list to prevent server memory leaks.
     res.on('close', () => {
-      this.connectedClients = this.connectedClients.filter(client => client !== res);
+      this.connectedClients = this.connectedClients.filter((client) => client !== res);
       logger.info({ component: 'sse', connections: this.connectedClients.length }, 'Stream client disconnected');
     });
   }
 
   /**
-  * 📢 5. BROADCAST (broadcastToSSEClients):
-  * Send event data to every open response using the SSE syntax.
+   * 📢 5. BROADCAST (broadcastToSSEClients):
+   * Send event data to every open response using the SSE syntax.
    */
   // 'object' instead of 'any' (issue #47): any JSON object is accepted, but a value that is not
   // an object (or a typo such as passing the event name twice) is a compile error.
@@ -310,7 +322,7 @@ export class EventBrokerService {
     const formattedData = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 
     // Send the formatted text to every active network connection.
-    this.connectedClients.forEach(client => {
+    this.connectedClients.forEach((client) => {
       try {
         client.write(formattedData);
       } catch (error: unknown) {

@@ -51,7 +51,14 @@ describe('Environment configuration (src/config.ts)', () => {
   // Condition: A wildcard, a wildcard subdomain, a path, a trailing slash, another scheme or an
   // empty list must each stop the boot with an error on ALLOWED_ORIGINS.
   it('rejects wildcards, paths, trailing slashes, other schemes and an empty list in ALLOWED_ORIGINS', () => {
-    for (const value of ['*', 'https://*.maestro.example', 'https://app.maestro.example/chat', 'https://app.maestro.example/', 'ftp://files.maestro.example', ' , ']) {
+    for (const value of [
+      '*',
+      'https://*.maestro.example',
+      'https://app.maestro.example/chat',
+      'https://app.maestro.example/',
+      'ftp://files.maestro.example',
+      ' , '
+    ]) {
       const result = envSchema.safeParse({ ...validEnvironment, ALLOWED_ORIGINS: value });
 
       expect({ value, success: result.success }).toEqual({ value, success: false });

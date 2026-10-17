@@ -14,7 +14,7 @@ const mockUserRepository: jest.Mocked<IUserRepository> = {
   findAll: jest.fn(),
   findById: jest.fn(),
   findByEmail: jest.fn(),
-  create: jest.fn(),
+  create: jest.fn()
 };
 
 // 3. SERVICE TESTS: Group tests related to UserService.
@@ -43,9 +43,9 @@ describe('UserService (Testes Unitários)', () => {
 
     // ASSERTIONS: Verify the expected values.
     expect(result).toHaveProperty('id'); // Confirm that an ID was generated
-    expect(result.name).toBe(name);       // Confirm that the returned name matches the input
-    expect(result.email).toBe(email);     // Confirm that the returned email matches the input
-    
+    expect(result.name).toBe(name); // Confirm that the returned name matches the input
+    expect(result.email).toBe(email); // Confirm that the returned email matches the input
+
     // Verify that the service called the repository persistence method exactly once.
     expect(mockUserRepository.create).toHaveBeenCalledTimes(1);
   });
@@ -71,7 +71,7 @@ describe('UserService (Testes Unitários)', () => {
   // 🔥 TEST 3: Verify lookup by ID (covers the ID lookup path).
   it('deve retornar um usuário específico ao buscar por um ID válido', async () => {
     const mockUser: User = { id: '123', name: 'User Target', email: 'target@test.com' };
-    
+
     mockUserRepository.findById.mockResolvedValue(mockUser);
 
     const result = await userService.getUserById('123');
@@ -114,7 +114,9 @@ describe('UserService (Testes Unitários)', () => {
     const rejected = ['plain-text-password', '$2b$12$short', lowCostHash];
 
     for (const value of rejected) {
-      await expect(userService.createUserWithPasswordHash('Lucas Fila', 'lucas.fila@maestro.com', value)).rejects.toThrow();
+      await expect(
+        userService.createUserWithPasswordHash('Lucas Fila', 'lucas.fila@maestro.com', value)
+      ).rejects.toThrow();
     }
     expect(mockUserRepository.create).not.toHaveBeenCalled();
   });
@@ -122,7 +124,13 @@ describe('UserService (Testes Unitários)', () => {
   // TEST 7: Verify the login lookup goes through the IUserRepository contract (issue #47).
   // Condition: The mock repository holds the account; then a repository without findByEmail is used.
   it('reads an account by e-mail through IUserRepository and fails loudly when findByEmail is missing', async () => {
-    const account: User = { id: 'abc-777', name: 'Lucas Login', email: 'lucas.login@maestro.com', password: '$2b$12$hash', role: 'USER' };
+    const account: User = {
+      id: 'abc-777',
+      name: 'Lucas Login',
+      email: 'lucas.login@maestro.com',
+      password: '$2b$12$hash',
+      role: 'USER'
+    };
     mockUserRepository.findByEmail.mockResolvedValue(account);
 
     // The service returns the repository's record as it is, hash and role included (the login needs both).
@@ -138,6 +146,8 @@ describe('UserService (Testes Unitários)', () => {
     // RUNTIME CHECK: before, the service probed for the method through an 'any' cast and answered null
     // when it was missing, so every login failed with a 401 that looked like wrong credentials.
     // Now the missing method is a programming error that surfaces at once.
-    await expect(new UserService(incompleteRepository).getUserByEmail('lucas.login@maestro.com')).rejects.toThrow(TypeError);
+    await expect(new UserService(incompleteRepository).getUserByEmail('lucas.login@maestro.com')).rejects.toThrow(
+      TypeError
+    );
   });
 });

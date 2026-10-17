@@ -45,13 +45,15 @@ export class ReadinessCheck {
     }
 
     // Run the checks in parallel; a check that throws counts as failed.
-    const results = await Promise.all(Object.entries(this.checks).map(async ([name, check]) => {
-      const passed = await check().catch(() => false);
-      if (!passed) {
-        logger.warn({ component: 'health', check: name }, 'Readiness check failed');
-      }
-      return passed;
-    }));
+    const results = await Promise.all(
+      Object.entries(this.checks).map(async ([name, check]) => {
+        const passed = await check().catch(() => false);
+        if (!passed) {
+          logger.warn({ component: 'health', check: name }, 'Readiness check failed');
+        }
+        return passed;
+      })
+    );
 
     const ready = results.every(Boolean);
     this.lastResult = { ready, checkedAt: now };

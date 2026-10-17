@@ -86,7 +86,9 @@ describe('Health probes and graceful shutdown (integration tests)', () => {
     expect(ready.body).toEqual({ status: 'ready' });
 
     advancePastReadinessCache();
-    poolQueryMock.mockRejectedValue(Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5433'), { code: 'ECONNREFUSED' }));
+    poolQueryMock.mockRejectedValue(
+      Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5433'), { code: 'ECONNREFUSED' })
+    );
     const databaseDown = await request(serverTarget).get('/api/v1/health/ready');
     expect(databaseDown.status).toBe(503);
     expect(databaseDown.body).toEqual({ status: 'not_ready' });
@@ -119,7 +121,9 @@ describe('Health probes and graceful shutdown (integration tests)', () => {
 
       expect(brokerCloseMock).toHaveBeenCalledTimes(1);
       expect(poolEndMock).toHaveBeenCalledTimes(1);
-      expect(brokerCloseMock.mock.invocationCallOrder[0]).toBeLessThan(poolEndMock.mock.invocationCallOrder[0] as number);
+      expect(brokerCloseMock.mock.invocationCallOrder[0]).toBeLessThan(
+        poolEndMock.mock.invocationCallOrder[0] as number
+      );
       expect(quitSpy).toHaveBeenCalledTimes(2); // the rate-limit client and the users cache client
 
       // Even with the cache window still open and every dependency up, the replica is out.
@@ -163,7 +167,15 @@ describe('Shutdown signals (src/lifecycle.ts)', () => {
   // Condition: One shutdown rejects; another never settles and must be cut by the timeout.
   it('exits 1 when the shutdown fails or does not finish within the timeout', async () => {
     const failing = fakeProcess();
-    registerShutdownSignals({ shutdown: async () => { throw new Error('pool.end failed'); } }, 1_000, failing.proc);
+    registerShutdownSignals(
+      {
+        shutdown: async () => {
+          throw new Error('pool.end failed');
+        }
+      },
+      1_000,
+      failing.proc
+    );
     failing.send('SIGTERM');
     await flush();
     expect(failing.exit).toHaveBeenCalledWith(1);

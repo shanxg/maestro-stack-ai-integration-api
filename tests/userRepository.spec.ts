@@ -13,7 +13,10 @@ import { captureLogs } from './helpers/logCapture.js';
 // for a broken idle connection. DatabaseError mirrors pg's class: an answer from a running server
 // that carries a SQLSTATE code.
 class FakeDatabaseError extends Error {
-  constructor(message: string, readonly code: string) {
+  constructor(
+    message: string,
+    readonly code: string
+  ) {
     super(message);
   }
 }
@@ -61,13 +64,19 @@ const { AppError } = await import('../src/errors/AppError.js');
 const { logger } = await import('../src/logger.js');
 
 // The ways PostgreSQL can be unavailable, as the 'pg' driver reports them.
-const refusedConnection = () => Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5433'), { code: 'ECONNREFUSED' });
+const refusedConnection = () =>
+  Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5433'), { code: 'ECONNREFUSED' });
 const poolTimeout = () => new Error('timeout exceeded when trying to connect');
 const serverShuttingDown = () => new FakeDatabaseError('terminating connection due to administrator command', '57P01');
 
 describe('UserRepository database failures (integration tests)', () => {
   let serverTarget: http.Server;
-  const adminToken = signAccessToken({ id: 'admin-id', user: 'Maestro Admin', email: 'admin@maestro.test', role: 'ADMIN' });
+  const adminToken = signAccessToken({
+    id: 'admin-id',
+    user: 'Maestro Admin',
+    email: 'admin@maestro.test',
+    role: 'ADMIN'
+  });
 
   beforeAll(async () => {
     // No custom service: the routes use the real UserService over the real UserRepository.
@@ -101,8 +110,12 @@ describe('UserRepository database failures (integration tests)', () => {
             (error: unknown) => error
           );
 
-          expect({ method, outage: outage.name, isAppError: failure instanceof AppError, failure })
-            .toMatchObject({ method, outage: outage.name, isAppError: true, failure: { statusCode: 503, code: 'DATABASE_UNAVAILABLE' } });
+          expect({ method, outage: outage.name, isAppError: failure instanceof AppError, failure }).toMatchObject({
+            method,
+            outage: outage.name,
+            isAppError: true,
+            failure: { statusCode: 503, code: 'DATABASE_UNAVAILABLE' }
+          });
         }
       }
 
@@ -141,15 +154,26 @@ describe('UserRepository database failures (integration tests)', () => {
 
     try {
       const responses = {
-        'GET /api/v1/users': await request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${adminToken}`),
-        'GET /api/v1/users/{id}': await request(serverTarget).get('/api/v1/users/abc-777').set('Authorization', `Bearer ${adminToken}`),
-        'GET /api/v1/users/me': await request(serverTarget).get('/api/v1/users/me').set('Authorization', `Bearer ${adminToken}`),
-        'POST /api/v1/auth/login': await request(serverTarget).post('/api/v1/auth/login').send({ username: 'admin@maestro.test', password: 'any-password' })
+        'GET /api/v1/users': await request(serverTarget)
+          .get('/api/v1/users')
+          .set('Authorization', `Bearer ${adminToken}`),
+        'GET /api/v1/users/{id}': await request(serverTarget)
+          .get('/api/v1/users/abc-777')
+          .set('Authorization', `Bearer ${adminToken}`),
+        'GET /api/v1/users/me': await request(serverTarget)
+          .get('/api/v1/users/me')
+          .set('Authorization', `Bearer ${adminToken}`),
+        'POST /api/v1/auth/login': await request(serverTarget)
+          .post('/api/v1/auth/login')
+          .send({ username: 'admin@maestro.test', password: 'any-password' })
       };
 
       for (const [route, response] of Object.entries(responses)) {
-        expect({ route, status: response.status, code: response.body.error?.code })
-          .toEqual({ route, status: 503, code: 'DATABASE_UNAVAILABLE' });
+        expect({ route, status: response.status, code: response.body.error?.code }).toEqual({
+          route,
+          status: 503,
+          code: 'DATABASE_UNAVAILABLE'
+        });
         expect(JSON.stringify(response.body)).not.toContain('ECONNREFUSED');
       }
 
@@ -196,11 +220,21 @@ describe('UserRepository database failures (integration tests)', () => {
   it('create() throws DuplicateEmailError for unique_violation and keeps other failures distinct', async () => {
     const { DuplicateEmailError } = await import('../src/errors/DuplicateEmailError.js');
     const repository = new UserRepository();
-    const user = { id: 'abc-777', name: 'Lucas Duplicado', email: 'duplicado@maestro.test', password: '$2b$12$' + 'a'.repeat(53) };
+    const user = {
+      id: 'abc-777',
+      name: 'Lucas Duplicado',
+      email: 'duplicado@maestro.test',
+      password: '$2b$12$' + 'a'.repeat(53)
+    };
 
-    poolQueryMock.mockRejectedValueOnce(Object.assign(new FakeDatabaseError('duplicate key value violates unique constraint "users_email_key"', '23505'), {
-      detail: 'Key (email)=(duplicado@maestro.test) already exists.'
-    }));
+    poolQueryMock.mockRejectedValueOnce(
+      Object.assign(
+        new FakeDatabaseError('duplicate key value violates unique constraint "users_email_key"', '23505'),
+        {
+          detail: 'Key (email)=(duplicado@maestro.test) already exists.'
+        }
+      )
+    );
     const duplicate = await repository.create(user).catch((error: unknown) => error);
     expect(duplicate).toBeInstanceOf(DuplicateEmailError);
     expect(String((duplicate as Error).message)).not.toContain('duplicado@maestro.test');

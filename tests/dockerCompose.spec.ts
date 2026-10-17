@@ -30,7 +30,11 @@ describe('Local infrastructure (docker-compose.yml)', () => {
     const compose = yaml.load(fs.readFileSync('docker-compose.yml', 'utf8')) as ComposeFile;
 
     const published = Object.entries(compose.services).flatMap(([service, definition]) =>
-      (definition.ports ?? []).map((port) => ({ service, port: String(typeof port === 'object' ? port.published : port), host: hostAddressOf(port) ?? '(all interfaces)' }))
+      (definition.ports ?? []).map((port) => ({
+        service,
+        port: String(typeof port === 'object' ? port.published : port),
+        host: hostAddressOf(port) ?? '(all interfaces)'
+      }))
     );
 
     expect(published.length).toBeGreaterThan(0);

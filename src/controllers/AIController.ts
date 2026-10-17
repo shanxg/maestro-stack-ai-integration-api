@@ -8,9 +8,9 @@ export class AIController {
   constructor(private aiService: AIService) {}
 
   /**
-  * 📡 POST /api/v1/ai/chat:
-  * Read the validated prompt from the request body,
-  * then pass it to the configured model for processing.
+   * 📡 POST /api/v1/ai/chat:
+   * Read the validated prompt from the request body,
+   * then pass it to the configured model for processing.
    */
   async chat(req: Request, res: Response): Promise<Response> {
     // No try/catch: if the model server fails or cannot be reached, the rejected promise

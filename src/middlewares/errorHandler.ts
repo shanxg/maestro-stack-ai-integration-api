@@ -31,7 +31,10 @@ export function errorHandler(error: unknown, req: Request, res: Response, next: 
     // Server-side failures (5xx) still go to the log, so an outage stays visible to operators.
     // req.path is logged instead of req.originalUrl, so query strings stay out of the log.
     if (error.statusCode >= 500) {
-      logger.warn({ component: 'http', method: req.method, path: req.path, status: error.statusCode, code: error.code }, error.message);
+      logger.warn(
+        { component: 'http', method: req.method, path: req.path, status: error.statusCode, code: error.code },
+        error.message
+      );
     }
     res.status(error.statusCode).json({
       error: { code: error.code, message: error.message }

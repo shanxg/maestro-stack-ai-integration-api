@@ -14,26 +14,26 @@ const config: Config = {
 
   // C. TRANSFORM: Map .ts files to the TypeScript transform.
   // Configure ECMAScript Modules support for TypeScript imports.
-   transform: {
+  transform: {
     '^.+\\.(t|j)sx?$': [
       '@swc/jest',
       {
         jsc: {
           parser: {
             syntax: 'typescript',
-            tsx: false,
+            tsx: false
           },
-          target: 'esnext',
-        },
-      },
-    ],
+          target: 'esnext'
+        }
+      }
+    ]
   },
 
   // D. NATIVE EXTENSION RESOLUTION (.js to .ts):
   // Source imports use paths such as 'from "./UserService.js"'. This regular expression
   // tells Jest to resolve those imports to the original .ts files during tests.
   moduleNameMapper: {
-    '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^(\\.{1,2}/.*)\\.js$': '$1'
   },
 
   // E. DIRECTORY EXCLUSIONS: Skip installed dependencies and build output.
@@ -46,7 +46,7 @@ const config: Config = {
   // G. COVERAGE REPORT: Configure Jest to report which lines of code were tested.
   collectCoverage: true,
   coverageDirectory: 'coverage',
-  coverageReporters: ['text', 'lcov'],
+  coverageReporters: ['text', 'lcov']
 };
 
 // Export the quality settings.

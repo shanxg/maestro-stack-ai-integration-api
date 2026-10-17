@@ -53,7 +53,11 @@ const sessionCookieOf = (response: { headers: Record<string, unknown> }): string
   return cookies.find((cookie) => cookie.startsWith(`${SESSION_COOKIE}=`));
 };
 const sessionTokenOf = (response: { headers: Record<string, unknown> }): string =>
-  decodeURIComponent(sessionCookieOf(response)?.split(';')[0]?.slice(SESSION_COOKIE.length + 1) ?? '');
+  decodeURIComponent(
+    sessionCookieOf(response)
+      ?.split(';')[0]
+      ?.slice(SESSION_COOKIE.length + 1) ?? ''
+  );
 
 // 🐘 MOCK THE POSTGRESQL REPOSITORY: createApp() awaits userRepository.initialize(),
 // which would open a real connection pool. The routes receive the mock service below,
@@ -62,12 +66,22 @@ jest.unstable_mockModule('../src/repositories/UserRepository.js', () => {
   return {
     UserRepository: class {
       async initialize() {}
-      async ping() { return true; }      // readiness probe (issue #51)
-      async close() {}                   // graceful shutdown (issue #51)
-      async findAll() { return []; }
-      async findById() { return null; }
-      async findByEmail() { return null; }
-      async create(user: User) { return user; }
+      async ping() {
+        return true;
+      } // readiness probe (issue #51)
+      async close() {} // graceful shutdown (issue #51)
+      async findAll() {
+        return [];
+      }
+      async findById() {
+        return null;
+      }
+      async findByEmail() {
+        return null;
+      }
+      async create(user: User) {
+        return user;
+      }
     }
   };
 });
@@ -77,7 +91,8 @@ jest.unstable_mockModule('../src/repositories/UserRepository.js', () => {
 // limits sent to the model and simulate an unreachable server without any model running.
 // The SDK's timeout error (APIConnectionTimeoutError) is a subclass of APIConnectionError.
 class FakeAPIConnectionError extends Error {}
-const createCompletionMock = jest.fn<(body: Record<string, unknown>, options?: Record<string, unknown>) => Promise<object>>();
+const createCompletionMock =
+  jest.fn<(body: Record<string, unknown>, options?: Record<string, unknown>) => Promise<object>>();
 jest.unstable_mockModule('openai', () => {
   return {
     default: class {
@@ -143,9 +158,9 @@ describe('User routes (integration tests)', () => {
       name: 'Lucas Integrado',
       email: 'lucas@integrado.com'
     } as never),
-    getAllUsers: jest.fn().mockResolvedValue([
-      { id: '1', name: 'Lucas Integrado', email: 'lucas@integrado.com' }
-    ] as never),
+    getAllUsers: jest
+      .fn()
+      .mockResolvedValue([{ id: '1', name: 'Lucas Integrado', email: 'lucas@integrado.com' }] as never),
     // Return null for ID '999' to simulate a missing user.
     getUserById: jest.fn<(id: string) => Promise<User | null>>(async (id) => {
       if (id === '999') return null;
@@ -213,9 +228,7 @@ describe('User routes (integration tests)', () => {
   // TEST 3: Verify that Zod rejects malformed payloads on the public registration route.
   // Condition: Send an invalid name, e-mail, and no password, without any token.
   it('POST /api/v1/users -> returns 400 when the body fails Zod validation', async () => {
-    const response = await request(serverTarget)
-      .post('/api/v1/users')
-      .send({ name: 'Lu', email: 'email_invalido' });
+    const response = await request(serverTarget).post('/api/v1/users').send({ name: 'Lu', email: 'email_invalido' });
 
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('VALIDATION_FAILURE');
@@ -258,9 +271,7 @@ describe('User routes (integration tests)', () => {
   // TEST 7: Verify that a missing ID returns HTTP 404.
   // Condition: The mock returns null for ID "999", so the controller should return 404 (Not Found).
   it('GET /api/v1/users/:id -> returns 404 when the user does not exist', async () => {
-    const response = await request(serverTarget)
-      .get('/api/v1/users/999')
-      .set('Authorization', `Bearer ${tokenAdmin}`);
+    const response = await request(serverTarget).get('/api/v1/users/999').set('Authorization', `Bearer ${tokenAdmin}`);
 
     expect(response.status).toBe(404);
     expect(response.body.error.code).toBe('NOT_FOUND');
@@ -272,13 +283,11 @@ describe('User routes (integration tests)', () => {
     publishEventMock.mockResolvedValueOnce(true);
     const plainPassword = crypto.randomUUID();
 
-    const response = await request(serverTarget)
-      .post('/api/v1/users')
-      .send({
-        name: 'Lucas Novo',
-        email: 'lucas.novo@maestro.com',
-        password: plainPassword
-      });
+    const response = await request(serverTarget).post('/api/v1/users').send({
+      name: 'Lucas Novo',
+      email: 'lucas.novo@maestro.com',
+      password: plainPassword
+    });
 
     expect(response.status).toBe(202);
     expect(response.body.message).toContain('Solicitação de cadastro recebida com sucesso!');
@@ -311,9 +320,8 @@ describe('User routes (integration tests)', () => {
   it('POST /api/v1/auth/login -> returns 429 after the configured number of attempts', async () => {
     // The shared counters are reset before each test, so the logins in the tests above do not count.
     const freshServer = await createApp(userServiceForApp);
-    const attempt = () => request(freshServer)
-      .post('/api/v1/auth/login')
-      .send({ username: ADMIN_EMAIL, password: 'wrong-password' });
+    const attempt = () =>
+      request(freshServer).post('/api/v1/auth/login').send({ username: ADMIN_EMAIL, password: 'wrong-password' });
 
     for (let i = 0; i < settings.rateLimits.login.max; i++) {
       expect((await attempt()).status).toBe(401);
@@ -358,14 +366,15 @@ describe('User routes (integration tests)', () => {
       .get('/api/v1/users')
       .set('Authorization', `Bearer ${tokenAdmin}`)
       .query({ limit: settings.pagination.maxLimit, offset: 20 });
-    const withoutQuery = await request(serverTarget)
-      .get('/api/v1/users')
-      .set('Authorization', `Bearer ${tokenAdmin}`);
+    const withoutQuery = await request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${tokenAdmin}`);
 
     expect(atCap.status).toBe(200);
     expect(withoutQuery.status).toBe(200);
     expect(mockUserService.getAllUsers).toHaveBeenNthCalledWith(1, { limit: settings.pagination.maxLimit, offset: 20 });
-    expect(mockUserService.getAllUsers).toHaveBeenNthCalledWith(2, { limit: settings.pagination.defaultLimit, offset: 0 });
+    expect(mockUserService.getAllUsers).toHaveBeenNthCalledWith(2, {
+      limit: settings.pagination.defaultLimit,
+      offset: 0
+    });
   });
 
   // TEST 13: Verify the login rejects fields that are missing, blank or not text (CWE-1287).
@@ -415,9 +424,8 @@ describe('User routes (integration tests)', () => {
   it('POST /api/v1/auth/login -> two replicas share one login limit through Redis', async () => {
     const replicaA = await createApp(userServiceForApp);
     const replicaB = await createApp(userServiceForApp);
-    const attempt = (server: http.Server) => request(server)
-      .post('/api/v1/auth/login')
-      .send({ username: ADMIN_EMAIL, password: 'wrong-password' });
+    const attempt = (server: http.Server) =>
+      request(server).post('/api/v1/auth/login').send({ username: ADMIN_EMAIL, password: 'wrong-password' });
 
     // Split the allowed attempts between the replicas, as a load balancer would.
     for (let i = 0; i < settings.rateLimits.login.max; i++) {
@@ -482,9 +490,7 @@ describe('User routes (integration tests)', () => {
   it('GET /api/v1/users -> returns 401 without the JWT verification error', async () => {
     const forgedToken = jwt.sign({ id: 'attacker', role: 'USER' }, crypto.randomUUID());
 
-    const response = await request(serverTarget)
-      .get('/api/v1/users')
-      .set('Authorization', `Bearer ${forgedToken}`);
+    const response = await request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${forgedToken}`);
 
     expect(response.status).toBe(401);
     expect(response.body.error.code).toBe('INVALID_TOKEN');
@@ -559,19 +565,28 @@ describe('User routes (integration tests)', () => {
     const expectRejected = async (name: string, token: string) => {
       const response = await request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${token}`);
 
-      expect({ token: name, status: response.status, code: response.body.error?.code })
-        .toEqual({ token: name, status: 401, code: 'INVALID_TOKEN' });
+      expect({ token: name, status: response.status, code: response.body.error?.code }).toEqual({
+        token: name,
+        status: 401,
+        code: 'INVALID_TOKEN'
+      });
     };
 
     // Signed like every token was before this fix: the right secret, but no issuer or audience.
-    await expectRejected('withoutIssuerOrAudience', jwt.sign(claims, env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '5m' }));
+    await expectRejected(
+      'withoutIssuerOrAudience',
+      jwt.sign(claims, env.JWT_SECRET, { algorithm: 'HS256', expiresIn: '5m' })
+    );
 
     // Right secret, issuer and audience, but an algorithm other than the pinned HS256.
     const pinned = { issuer: settings.jwt.issuer, audience: settings.jwt.audience, expiresIn: '5m' } as const;
     await expectRejected('anotherAlgorithm', jwt.sign(claims, env.JWT_SECRET, { ...pinned, algorithm: 'HS512' }));
 
     // Right secret, algorithm and issuer, but issued for another service.
-    await expectRejected('anotherAudience', jwt.sign(claims, env.JWT_SECRET, { ...pinned, algorithm: 'HS256', audience: 'another-service' }));
+    await expectRejected(
+      'anotherAudience',
+      jwt.sign(claims, env.JWT_SECRET, { ...pinned, algorithm: 'HS256', audience: 'another-service' })
+    );
   });
 
   // TEST 24: Verify a regular account cannot list every user (BFLA, OWASP API5:2023, issue #36).
@@ -594,12 +609,20 @@ describe('User routes (integration tests)', () => {
     mockUserService.getUserById.mockClear();
 
     for (const otherId of ['abc-777', '999']) {
-      const other = await request(serverTarget).get(`/api/v1/users/${otherId}`).set('Authorization', `Bearer ${tokenRegular}`);
-      expect({ id: otherId, status: other.status, code: other.body.error?.code }).toEqual({ id: otherId, status: 403, code: 'FORBIDDEN' });
+      const other = await request(serverTarget)
+        .get(`/api/v1/users/${otherId}`)
+        .set('Authorization', `Bearer ${tokenRegular}`);
+      expect({ id: otherId, status: other.status, code: other.body.error?.code }).toEqual({
+        id: otherId,
+        status: 403,
+        code: 'FORBIDDEN'
+      });
     }
     expect(mockUserService.getUserById).not.toHaveBeenCalled();
 
-    const own = await request(serverTarget).get(`/api/v1/users/${REGULAR_ID}`).set('Authorization', `Bearer ${tokenRegular}`);
+    const own = await request(serverTarget)
+      .get(`/api/v1/users/${REGULAR_ID}`)
+      .set('Authorization', `Bearer ${tokenRegular}`);
     expect(own.status).toBe(200);
     expect(own.body.id).toBe(REGULAR_ID);
   });
@@ -773,13 +796,32 @@ describe('User routes (integration tests)', () => {
 
     const logs = captureLogs(logger);
     try {
-      expect((await request(freshServer).post('/api/v1/auth/login').send({ username: 'nobody@maestro.test', password: 'wrong-password' })).status).toBe(401);
-      expect((await request(freshServer).post('/api/v1/auth/login').send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD })).status).toBe(200);
+      expect(
+        (
+          await request(freshServer)
+            .post('/api/v1/auth/login')
+            .send({ username: 'nobody@maestro.test', password: 'wrong-password' })
+        ).status
+      ).toBe(401);
+      expect(
+        (
+          await request(freshServer)
+            .post('/api/v1/auth/login')
+            .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD })
+        ).status
+      ).toBe(200);
       expect((await request(freshServer).post('/api/v1/users').send(registration)).status).toBe(202);
 
       // The requests were logged (the success by account id), but no personal value was.
       expect(logs.text()).toContain('admin-id');
-      for (const personal of ['nobody@maestro.test', ADMIN_EMAIL, ADMIN_PASSWORD, registration.email, registration.name, registration.password]) {
+      for (const personal of [
+        'nobody@maestro.test',
+        ADMIN_EMAIL,
+        ADMIN_PASSWORD,
+        registration.email,
+        registration.name,
+        registration.password
+      ]) {
         expect({ personal, logged: logs.text().includes(personal) }).toEqual({ personal, logged: false });
       }
     } finally {
@@ -811,7 +853,11 @@ describe('User routes (integration tests)', () => {
   // after saving an account); the third read must reach the service again.
   it('GET /api/v1/users -> serves the cached page, and reads the database again after the version changes', async () => {
     mockUserService.getAllUsers.mockClear();
-    const readPage = () => request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${tokenAdmin}`).query({ limit: 7, offset: 0 });
+    const readPage = () =>
+      request(serverTarget)
+        .get('/api/v1/users')
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .query({ limit: 7, offset: 0 });
 
     expect((await readPage()).status).toBe(200);
     expect((await readPage()).status).toBe(200);
@@ -827,22 +873,34 @@ describe('User routes (integration tests)', () => {
   // Condition: The login works at /api/v1/auth/login; /auth/login, /users, /users/me, /ai/chat and
   // /events, which coexisted with /api/v1/users before, must answer the JSON 404 like any unknown path.
   it('serves the API under /api/v1 and answers 404 on the old unversioned paths', async () => {
-    const login = await request(serverTarget).post('/api/v1/auth/login').send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+    const login = await request(serverTarget)
+      .post('/api/v1/auth/login')
+      .send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD });
     expect(login.status).toBe(200);
 
     // Each request is built only when its turn comes: Supertest starts and stops the shared server
     // per request, so two requests must not be in flight at once (see TEST 32).
     const oldPaths: Array<[string, () => request.Test]> = [
-      ['POST /auth/login', () => request(serverTarget).post('/auth/login').send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD })],
+      [
+        'POST /auth/login',
+        () => request(serverTarget).post('/auth/login').send({ username: ADMIN_EMAIL, password: ADMIN_PASSWORD })
+      ],
       ['GET /users', () => request(serverTarget).get('/users').set('Authorization', `Bearer ${tokenAdmin}`)],
       ['GET /users/me', () => request(serverTarget).get('/users/me').set('Authorization', `Bearer ${tokenAdmin}`)],
-      ['POST /ai/chat', () => request(serverTarget).post('/ai/chat').set('Authorization', `Bearer ${tokenAdmin}`).send({ prompt: 'Olá' })],
+      [
+        'POST /ai/chat',
+        () =>
+          request(serverTarget).post('/ai/chat').set('Authorization', `Bearer ${tokenAdmin}`).send({ prompt: 'Olá' })
+      ],
       ['GET /events', () => request(serverTarget).get('/events').set('Authorization', `Bearer ${tokenAdmin}`)]
     ];
     for (const [path, send] of oldPaths) {
       const response = await send();
-      expect({ path, status: response.status, code: response.body.error?.code })
-        .toEqual({ path, status: 404, code: 'NOT_FOUND' });
+      expect({ path, status: response.status, code: response.body.error?.code }).toEqual({
+        path,
+        status: 404,
+        code: 'NOT_FOUND'
+      });
     }
   });
 
@@ -853,10 +911,16 @@ describe('User routes (integration tests)', () => {
     mockUserService.getUserById.mockClear();
 
     for (const id of ['%20', 'a'.repeat(51)]) {
-      const response = await request(serverTarget).get(`/api/v1/users/${id}`).set('Authorization', `Bearer ${tokenAdmin}`);
+      const response = await request(serverTarget)
+        .get(`/api/v1/users/${id}`)
+        .set('Authorization', `Bearer ${tokenAdmin}`);
 
-      expect({ id, status: response.status, code: response.body.error?.code, field: response.body.error?.details?.[0]?.field })
-        .toEqual({ id, status: 400, code: 'VALIDATION_FAILURE', field: 'params.id' });
+      expect({
+        id,
+        status: response.status,
+        code: response.body.error?.code,
+        field: response.body.error?.details?.[0]?.field
+      }).toEqual({ id, status: 400, code: 'VALIDATION_FAILURE', field: 'params.id' });
     }
     expect(mockUserService.getUserById).not.toHaveBeenCalled();
   });
@@ -879,9 +943,7 @@ describe('User routes (integration tests)', () => {
       { algorithm: settings.jwt.algorithm, issuer: settings.jwt.issuer, audience: settings.jwt.audience }
     );
 
-    const response = await request(serverTarget)
-      .get('/api/v1/users')
-      .set('Authorization', `Bearer ${expiredToken}`);
+    const response = await request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${expiredToken}`);
 
     expect(response.status).toBe(401);
     expect(response.body.error.code).toBe('INVALID_TOKEN');
@@ -898,20 +960,20 @@ describe('User routes (integration tests)', () => {
   it('GET /api/v1/users -> returns 401 for an unsigned token with alg "none"', async () => {
     mockUserService.getAllUsers.mockClear();
     const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
-    const payload = Buffer.from(JSON.stringify({
-      id: 'admin-id',
-      user: 'Maestro Admin',
-      email: ADMIN_EMAIL,
-      role: 'ADMIN', // a forged admin claim: the classic goal of an alg "none" token
-      iss: settings.jwt.issuer,
-      aud: settings.jwt.audience,
-      exp: Math.floor(Date.now() / 1000) + 3600
-    })).toString('base64url');
+    const payload = Buffer.from(
+      JSON.stringify({
+        id: 'admin-id',
+        user: 'Maestro Admin',
+        email: ADMIN_EMAIL,
+        role: 'ADMIN', // a forged admin claim: the classic goal of an alg "none" token
+        iss: settings.jwt.issuer,
+        aud: settings.jwt.audience,
+        exp: Math.floor(Date.now() / 1000) + 3600
+      })
+    ).toString('base64url');
     const unsignedToken = `${header}.${payload}.`; // the third segment (the signature) is empty
 
-    const response = await request(serverTarget)
-      .get('/api/v1/users')
-      .set('Authorization', `Bearer ${unsignedToken}`);
+    const response = await request(serverTarget).get('/api/v1/users').set('Authorization', `Bearer ${unsignedToken}`);
 
     expect(response.status).toBe(401);
     expect(response.body.error.code).toBe('INVALID_TOKEN');
@@ -969,7 +1031,10 @@ describe('AI chat route (integration tests)', () => {
     expect(response.status).toBe(200);
     expect(response.body.response).toBe('Resposta de teste.');
 
-    const [body, options] = createCompletionMock.mock.calls[0] as [Record<string, unknown>, Record<string, unknown> | undefined];
+    const [body, options] = createCompletionMock.mock.calls[0] as [
+      Record<string, unknown>,
+      Record<string, unknown> | undefined
+    ];
     expect(body).toHaveProperty('max_tokens');
     expect(options).toBeDefined();
     expect(body).toMatchObject({ model: env.OPENAI_MODEL, max_tokens: settings.aiChat.maxTokens });
@@ -1012,7 +1077,6 @@ describe('AI chat route (integration tests)', () => {
     const servedB = await sendPrompt(tokenB, 'Primeira pergunta de outra conta');
     expect(servedB.status).toBe(200);
   });
-
 });
 
 describe('API contract (openapi.yaml)', () => {
@@ -1044,13 +1108,14 @@ describe('API contract (openapi.yaml)', () => {
   const registeredRoutes = (server: http.Server): string[] => {
     type Layer = { route?: { path: string; methods: Record<string, boolean> }; handle?: { stack?: Layer[] } };
     const app = server.listeners('request')[0] as unknown as { router: { stack: Layer[] } };
-    const walk = (stack: Layer[]): string[] => stack.flatMap((layer) => {
-      const route = layer.route;
-      if (!route) return layer.handle?.stack ? walk(layer.handle.stack) : [];
-      return Object.keys(route.methods)
-        .filter((method) => httpMethods.includes(method))
-        .map((method) => `${method.toUpperCase()} ${route.path.replace(/:(\w+)/g, '{$1}')}`);
-    });
+    const walk = (stack: Layer[]): string[] =>
+      stack.flatMap((layer) => {
+        const route = layer.route;
+        if (!route) return layer.handle?.stack ? walk(layer.handle.stack) : [];
+        return Object.keys(route.methods)
+          .filter((method) => httpMethods.includes(method))
+          .map((method) => `${method.toUpperCase()} ${route.path.replace(/:(\w+)/g, '{$1}')}`);
+      });
     return walk(app.router.stack);
   };
 
@@ -1081,9 +1146,15 @@ describe('API contract (openapi.yaml)', () => {
 
     for (const { method, path } of protectedOperations) {
       const url = path.replace(/\{\w+\}/g, 'abc-777');
-      const response = await request(serverTarget)[method.toLowerCase() as 'get' | 'post' | 'put' | 'patch' | 'delete'](url).send({});
+      // The supertest method named by the document ('get', 'post', ...). Kept in its own variable so
+      // the call stays on one line: a computed access that starts a line reads like a new statement.
+      const verb = method.toLowerCase() as 'get' | 'post' | 'put' | 'patch' | 'delete';
+      const response = await request(serverTarget)[verb](url).send({});
 
-      expect({ operation: `${method} ${path}`, status: response.status }).toEqual({ operation: `${method} ${path}`, status: 401 });
+      expect({ operation: `${method} ${path}`, status: response.status }).toEqual({
+        operation: `${method} ${path}`,
+        status: 401
+      });
     }
   });
 
@@ -1097,11 +1168,9 @@ describe('API contract (openapi.yaml)', () => {
 
     expect(unversioned).toEqual([]);
   });
-
 });
 
 describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', () => {
-
   afterAll(async () => {
     // Release the fake broker connection and close the WebSocket server opened in TEST 4.
     await rabbitModule.closeRabbitChannel();
@@ -1146,7 +1215,11 @@ describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', (
     expect(forgedNext).toHaveBeenCalledWith(expect.any(Error));
 
     const validSocket = {
-      handshake: { auth: { token: signAccessToken({ id: 'admin-id', user: 'Maestro Admin', email: 'admin@maestro.test', role: 'USER' }) } },
+      handshake: {
+        auth: {
+          token: signAccessToken({ id: 'admin-id', user: 'Maestro Admin', email: 'admin@maestro.test', role: 'USER' })
+        }
+      },
       data: {} as { user?: unknown }
     };
     const validNext = jest.fn();
@@ -1162,18 +1235,22 @@ describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', (
     const emitSpy = jest.spyOn(socketModule.io as NonNullable<typeof socketModule.io>, 'emit');
 
     const passwordHash = await bcrypt.hash(crypto.randomUUID(), 4);
-    const createUserWithPasswordHash = jest.fn<(name: string, email: string, passwordHash: string) => Promise<User>>(async (name, email) => ({
-      id: 'queued-id',
-      name,
-      email,
-      password: passwordHash
-    }));
+    const createUserWithPasswordHash = jest.fn<(name: string, email: string, passwordHash: string) => Promise<User>>(
+      async (name, email) => ({
+        id: 'queued-id',
+        name,
+        email,
+        password: passwordHash
+      })
+    );
     const channel = { ack: jest.fn(), nack: jest.fn() };
     const message = {
-      content: Buffer.from(JSON.stringify({
-        action: 'user_created',
-        data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: passwordHash }
-      }))
+      content: Buffer.from(
+        JSON.stringify({
+          action: 'user_created',
+          data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: passwordHash }
+        })
+      )
     };
 
     await workerModule.processUserEventMessage(channel as never, message as never, { createUserWithPasswordHash });
@@ -1195,14 +1272,24 @@ describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', (
     const channel = { ack: jest.fn(), nack: jest.fn() };
     const brokenJson = { content: Buffer.from('{not-json') };
     const invalidUser = {
-      content: Buffer.from(JSON.stringify({
-        action: 'user_created',
-        data: { name: 'Lu', email: 'email_invalido', password: '123' }
-      }))
+      content: Buffer.from(
+        JSON.stringify({
+          action: 'user_created',
+          data: { name: 'Lu', email: 'email_invalido', password: '123' }
+        })
+      )
     };
 
-    await workerModule.processUserEventMessage(channel as never, brokenJson as never, { createUserWithPasswordHash } as never);
-    await workerModule.processUserEventMessage(channel as never, invalidUser as never, { createUserWithPasswordHash } as never);
+    await workerModule.processUserEventMessage(
+      channel as never,
+      brokenJson as never,
+      { createUserWithPasswordHash } as never
+    );
+    await workerModule.processUserEventMessage(
+      channel as never,
+      invalidUser as never,
+      { createUserWithPasswordHash } as never
+    );
 
     expect(createUserWithPasswordHash).not.toHaveBeenCalled();
     expect(channel.nack).toHaveBeenNthCalledWith(1, brokenJson, false, false);

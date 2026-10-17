@@ -90,7 +90,7 @@ export async function apiRequest<T = unknown>(path: string, options: ApiRequestO
       // The session cookie travels with every call; the API decides what it authorizes.
       credentials: 'include',
       // Body and Content-Type only when there is a body: a bodiless POST (logout) needs no JSON header.
-      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     });
   } catch (error: unknown) {
     console.error('❌ Falha de rede ao chamar a API do Maestro:', error);
@@ -139,6 +139,6 @@ function readErrorEnvelope(data: unknown): { code: string | undefined; message: 
   const { code, message } = error as { code?: unknown; message?: unknown };
   return {
     code: typeof code === 'string' ? code : undefined,
-    message: typeof message === 'string' ? message : undefined,
+    message: typeof message === 'string' ? message : undefined
   };
 }

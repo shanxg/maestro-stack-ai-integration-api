@@ -1,11 +1,11 @@
 // frontend/next.config.ts
-import type { NextConfig } from "next";
-import path from "node:path"; // Native module to resolve paths
-import { buildSecurityHeaders } from "./security-headers"; // CSP and the other security headers (issue #42)
+import type { NextConfig } from 'next';
+import path from 'node:path'; // Native module to resolve paths
+import { buildSecurityHeaders } from './security-headers'; // CSP and the other security headers (issue #42)
 
 // The Maestro API origin, the only other origin the browser may call (connect-src in the CSP).
 // It comes from the same variable the pages use to build their fetch URLs.
-const apiOrigin = new URL(process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000").origin;
+const apiOrigin = new URL(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000').origin;
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
@@ -19,12 +19,12 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:path*",
+        source: '/:path*',
         headers: buildSecurityHeaders({
-          isDev: process.env.NODE_ENV === "development",
-          apiOrigin,
-        }),
-      },
+          isDev: process.env.NODE_ENV === 'development',
+          apiOrigin
+        })
+      }
     ];
   },
 
@@ -36,12 +36,12 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname), // Forces absolute path binding to current folder
     rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
-  },
+      '*.css': {
+        loaders: ['@tailwindcss/turbopack'],
+        as: '*.css'
+      }
+    }
+  }
 };
 
 export default nextConfig;

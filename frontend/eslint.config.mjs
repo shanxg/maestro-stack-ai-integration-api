@@ -1,7 +1,7 @@
-import { defineConfig, globalIgnores } from "eslint/config";
-import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
-import noUnsanitized from "eslint-plugin-no-unsanitized";
+import { defineConfig, globalIgnores } from 'eslint/config';
+import nextVitals from 'eslint-config-next/core-web-vitals';
+import nextTs from 'eslint-config-next/typescript';
+import noUnsanitized from 'eslint-plugin-no-unsanitized';
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -15,17 +15,17 @@ const eslintConfig = defineConfig([
     rules: {
       // XSS guard (CWE-79, issue #42): never inject raw HTML into the page. Content such as the
       // AI answer is rendered as text, which React escapes.
-      "react/no-danger": "error",
-    },
+      'react/no-danger': 'error'
+    }
   },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
-    ".next/**",
-    "out/**",
-    "build/**",
-    "next-env.d.ts",
-  ]),
+    '.next/**',
+    'out/**',
+    'build/**',
+    'next-env.d.ts'
+  ])
 ]);
 
 export default eslintConfig;

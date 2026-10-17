@@ -14,7 +14,9 @@ export function createAiRouter(aiController: AIController, aiChatLimiter: Reques
 
   // Order: authMiddleware sets req.user, the limiter counts per account, and chatSchema rejects
   // an oversized prompt before it reaches the model (invalid prompts still count toward the limit).
-  router.post('/api/v1/ai/chat', authMiddleware, aiChatLimiter, validateMiddleware(chatSchema), (req, res) => aiController.chat(req, res));
+  router.post('/api/v1/ai/chat', authMiddleware, aiChatLimiter, validateMiddleware(chatSchema), (req, res) =>
+    aiController.chat(req, res)
+  );
 
   return router;
 }

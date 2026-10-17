@@ -63,8 +63,9 @@ export function adaptForReadme(markdown, includePath) {
       }
       if (fence !== null) return line;
 
-      const shifted = line.replace(/^(#{1,6})(\s)/, (_match, hashes, space) =>
-        '#'.repeat(Math.min(hashes.length + HEADING_SHIFT, 6)) + space
+      const shifted = line.replace(
+        /^(#{1,6})(\s)/,
+        (_match, hashes, space) => '#'.repeat(Math.min(hashes.length + HEADING_SHIFT, 6)) + space
       );
 
       if (folder === '.') return shifted;

@@ -25,7 +25,10 @@ export class RedisRateLimitStore implements Store {
   // Used to log an outage once, and the recovery once, instead of on every request.
   private redisAvailable = true;
 
-  constructor(private readonly client: Redis, prefix: string) {
+  constructor(
+    private readonly client: Redis,
+    prefix: string
+  ) {
     this.prefix = prefix;
   }
 
@@ -43,7 +46,8 @@ export class RedisRateLimitStore implements Store {
       // One MULTI/EXEC transaction: create the counter with the window as its expiry
       // (NX leaves an existing counter alone), add this hit, and read the time left.
       // INCR keeps the expiry, so the window does not restart on every hit.
-      const results = await this.client.multi()
+      const results = await this.client
+        .multi()
         .set(redisKey, 0, 'PX', this.windowMs, 'NX')
         .incr(redisKey)
         .pttl(redisKey)
@@ -98,10 +102,16 @@ export class RedisRateLimitStore implements Store {
     this.redisAvailable = available;
 
     if (available) {
-      logger.info({ component: 'rate-limit', prefix: this.prefix }, 'Redis is reachable again; counters are shared across replicas');
+      logger.info(
+        { component: 'rate-limit', prefix: this.prefix },
+        'Redis is reachable again; counters are shared across replicas'
+      );
     } else {
       const reason = error instanceof Error ? error.message : String(error);
-      logger.warn({ component: 'rate-limit', prefix: this.prefix, reason }, "Redis unavailable; counters fall back to this process's memory");
+      logger.warn(
+        { component: 'rate-limit', prefix: this.prefix, reason },
+        "Redis unavailable; counters fall back to this process's memory"
+      );
     }
   }
 }

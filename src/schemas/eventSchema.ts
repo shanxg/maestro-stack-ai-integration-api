@@ -8,7 +8,7 @@ export const BCRYPT_HASH_FORMAT = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
 
 // The envelope every queue message has: only the action is read before choosing a schema.
 export const queueEnvelopeSchema = z.object({
-  action: z.string(),
+  action: z.string()
 });
 
 /**
@@ -24,6 +24,6 @@ export const userCreatedEventSchema = z.object({
   data: z.object({
     name: createUserSchema.shape.body.shape.name,
     email: createUserSchema.shape.body.shape.email,
-    password: z.string().regex(BCRYPT_HASH_FORMAT, { message: 'A senha na fila deve ser um hash bcrypt completo.' }),
-  }),
+    password: z.string().regex(BCRYPT_HASH_FORMAT, { message: 'A senha na fila deve ser um hash bcrypt completo.' })
+  })
 });

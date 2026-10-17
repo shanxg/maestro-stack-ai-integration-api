@@ -114,7 +114,6 @@ export async function processUserEventMessage(
     // CONFIRMATION OF RECEIPT (Acknowledgment / Ack): Notify RabbitMQ that the message was
     // handled, so the broker deletes it from the queue and never delivers it again.
     channel.ack(message);
-
   } catch (error) {
     logger.error({ component: 'worker', err: error }, 'Failed to process the message');
 
@@ -159,7 +158,6 @@ export async function startWorker(): Promise<void> {
     // since processUserEventMessage() settles every message itself (ack or nack).
     await channel.consume(QUEUE_NAME, (message) => void processUserEventMessage(channel, message, userService));
     logger.info({ component: 'worker' }, 'Worker started; listening to the event queue');
-
   } catch (error) {
     logger.error({ component: 'worker', err: error }, 'Failed to start the worker');
     // Release whatever was opened before the failure, then let the caller decide how to exit.
@@ -181,9 +179,7 @@ export async function stopWorker(): Promise<void> {
 // 3. ENTRY POINT: Start only when this file is executed directly
 // (npx tsx src/worker-deprecated.ts or node dist/worker-deprecated.js),
 // never when another module or a test imports it.
-const isDirectRun =
-  process.argv[1] !== undefined &&
-  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const isDirectRun = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (isDirectRun) {
   // Container orchestrators send SIGTERM before stopping a task; Ctrl+C sends SIGINT.

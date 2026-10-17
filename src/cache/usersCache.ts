@@ -61,7 +61,12 @@ export class UsersCache {
   // Store a page (already mapped to the public view) under the version read before the query.
   async setPage(version: string, limit: number, offset: number, users: UserResponse[]): Promise<void> {
     try {
-      await this.redis.set(UsersCache.pageKey(version, limit, offset), JSON.stringify(users), 'EX', settings.usersCacheTtlSeconds);
+      await this.redis.set(
+        UsersCache.pageKey(version, limit, offset),
+        JSON.stringify(users),
+        'EX',
+        settings.usersCacheTtlSeconds
+      );
     } catch (error) {
       this.warn('store a users page', error);
     }
