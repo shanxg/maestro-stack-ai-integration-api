@@ -129,8 +129,10 @@ paths:
     get:
       summary: List users with pagination (admins only)
       description: >
-        Retrieves slices of the user array with dynamic Cache-Aside support on Redis.
-        Only accounts with the ADMIN role (set in the database and carried in the JWT) may list
+        Retrieves slices of the user array with dynamic Cache-Aside support on Redis. Each page is
+        cached for up to 60 seconds; when the queue consumer saves a new account it bumps the cache
+        version, so the next read of any page goes to PostgreSQL again. If Redis is unavailable,
+        pages are read from PostgreSQL without the cache. Only accounts with the ADMIN role (set in the database and carried in the JWT) may list
         users; any other account gets 403 before the cache or the database is read.
         Invalid pagination values are rejected with 400 before the database is queried.
       parameters:
