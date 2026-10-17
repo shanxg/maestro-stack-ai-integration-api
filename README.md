@@ -91,31 +91,34 @@ Moving the chat route from the local **Llama 3** model to a hosted model only ch
    </summary>
 
 1. **Acquire a Production API Key:**
-   Sign in to your enterprise cloud account (e.g., OpenAI Platform) and generate a secure API token (e.g., `sk-proj-...`).
+   Sign in to your provider's platform (e.g., OpenAI Platform) and create an API key (e.g., `sk-proj-...`). Keep it only in `.env`.
 
-2. **Update the Environment Infrastructure (`.env`):**
-   Modify the backing service environment variables inside your root `.env` file to swap the internal routing hooks:
+2. **Update the Environment (`.env`):**
+   Set the three AI variables read by `src/config.ts` in your root `.env` file:
 
    ```env
-   # ❌ LOCAL OFFLINE TOPOLOGY (the defaults in src/config.ts)
-   # OPENAI_API_KEY="ollama"
-   # OPENAI_MODEL="llama3"
-   # OPENAI_BASE_URL="http://localhost:11434/v1"
+   # ❌ LOCAL OLLAMA (leave all three unset to use the defaults in src/config.ts;
+   #    Ollama ignores the key, so the default key is a placeholder)
+   # OPENAI_BASE_URL=http://localhost:11434/v1
+   # OPENAI_MODEL=llama3
+   # OPENAI_API_KEY=
 
-   # 🚀 ENTERPRISE CLOUD PRODUCTION TOPOLOGY
+   # 🚀 HOSTED OPENAI-COMPATIBLE PROVIDER
    OPENAI_API_KEY="sk-proj-YOUR_AUTHENTICATED_PRODUCTION_KEY_HERE"
-   OPENAI_MODEL="gpt-4o" # Or any target production model layer
+   OPENAI_MODEL="gpt-4o" # any chat model the provider serves
    OPENAI_BASE_URL="https://api.openai.com/v1"
    ```
 
-3. **Hot-Reload the Ecosystem:**
-   Restart your Express application compiler. The `AIService` will read the new environment registry from memory on boot, instantly routing all secure prompts from the Next.js chat console into the global high-availability cloud infrastructure with zero friction.
+3. **Restart the API:**
+   `src/config.ts` reads and validates the variables once, when the process starts (`OPENAI_BASE_URL` must be a URL), so restart `npm run dev` or the container after editing `.env`. `tsx --watch` restarts on source changes, not on `.env` changes.
 
 </details>
 
 ### 🚀 2. Booting the Core Eco-system
 
-Ensure your Docker Desktop environment is active. From the project's root folder, run the automated infrastructure script to spawn the Postgres, Redis, and RabbitMQ containers:
+Ensure your Docker Desktop environment is active. Then copy `.env.example` to `.env` and fill in the required variables: `JWT_SECRET`, `POSTGRES_PASSWORD`, `REDIS_PASSWORD`, `RABBIT_USER` and `RABBIT_PASSWORD` (`.env.example` shows how to generate each value). `docker-compose.yml` reads the same values to create the containers and refuses to start without them, and `src/config.ts` stops the API at startup if one is missing or invalid. The other variables (ports, hosts, `LOG_LEVEL`, `ALLOWED_ORIGINS` and the AI settings) have defaults, listed in `.env.example`.
+
+From the project's root folder, run the infrastructure script to start the Postgres, Redis, and RabbitMQ containers:
 
 ```bash
 # Spin up background backing services
