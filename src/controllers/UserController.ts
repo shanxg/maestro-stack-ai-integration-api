@@ -4,18 +4,14 @@ import { type Request, type Response } from 'express';
 import { UserService } from '../services/UserService.js';
 import { EventBrokerService } from '../services/EventBrokerService.js';
 import { createUserSchema, listUsersSchema } from '../schemas/userSchema.js';
-import { settings, redisConnection } from '../config.js';
 import { AppError } from '../errors/AppError.js'; // Expected failures answered by the central errorHandler
 import { type AccessTokenClaims } from '../auth/accessToken.js';
 import { canListUsers, canReadUser } from '../auth/userPolicy.js'; // Who may read which user records (issue #36)
 import { toUserResponse } from '../dtos/userResponse.js'; // The only public shape of a user record (issue #48)
-
-// Redis client library
-import { Redis } from 'ioredis'; 
 import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
-// Host, port and password come from src/config.ts (redisConnection): Redis requires
-// authentication, so the cache client always sends REDIS_PASSWORD (CWE-306).
-const redis = new Redis({ ...redisConnection });
+// Versioned cache of GET /users pages (issue #52). src/app.ts creates it with the shared Redis
+// connection settings (REDIS_PASSWORD included, CWE-306) and injects it here.
+import { UsersCache } from '../cache/usersCache.js';
 
 // The verified token claims of the caller. authMiddleware runs before every route that calls this, so
 // req.user is always set; a missing value would mean a route was wired without it, so fail closed with 401.
@@ -31,10 +27,11 @@ function requesterOf(req: Request): AccessTokenClaims {
 export class UserController {
   // DEPENDENCY INJECTION: The controller does not create the service itself.
   // INVERSION OF CONTROL (IoC): The constructor receives live instances from the main factory.
-  // The caller provides ready-to-use UserService and EventBrokerService instances.
+  // The caller provides ready-to-use UserService, EventBrokerService and UsersCache instances.
   constructor(
     private userService: UserService,
-    private eventBrokerService: EventBrokerService
+    private eventBrokerService: EventBrokerService,
+    private usersCache: UsersCache
   ) {}
 
   /**
@@ -60,21 +57,21 @@ export class UserController {
     // and fills in the defaults from src/config.ts.
     const { limit: limitNumber, offset: offsetNumber } = listUsersSchema.shape.query.parse(req.query);
 
-    // Give each page combination its own Redis cache key.
-    const cacheKey = `users:limit=${limitNumber}:offset=${offsetNumber}`;
+    // Step A: Read the cache version once, BEFORE the database query (src/cache/usersCache.ts). The
+    // page is later stored under this same version, so a page computed while a new account is being
+    // saved lands under the old version and is never served as current. null = Redis unavailable.
+    const cacheVersion = await this.usersCache.currentVersion();
 
-    // Step A: Check Redis for a cached result using the page-specific key.
-    const cachedUsers = await redis.get(cacheKey);
-
-    // Step B: On a cache hit, parse the JSON and respond immediately,
-    // avoiding additional processing and PostgreSQL I/O.
+    // Step B: On a cache hit, respond immediately, avoiding PostgreSQL I/O. The cached page was
+    // mapped to the public view before it was stored (Step D).
+    const cachedUsers = cacheVersion === null ? null : await this.usersCache.getPage(cacheVersion, limitNumber, offsetNumber);
     if (cachedUsers) {
-      logger.debug({ component: 'cache', cacheKey }, 'Users page served from Redis');
-      res.status(200).json(JSON.parse(cachedUsers));
+      logger.debug({ component: 'cache', limit: limitNumber, offset: offsetNumber }, 'Users page served from Redis');
+      res.status(200).json(cachedUsers);
       return;
     }
 
-    logger.debug({ component: 'cache', cacheKey }, 'Users page not cached; reading PostgreSQL');
+    logger.debug({ component: 'cache', limit: limitNumber, offset: offsetNumber }, 'Users page not cached; reading PostgreSQL');
 
     // Step C: On a cache miss, get the records from the relational database through the service.
     const users = await this.userService.getAllUsers({
@@ -87,9 +84,11 @@ export class UserController {
     // query might select. Cache hits (Step B) therefore replay data that was already filtered.
     const publicUsers = users.map(toUserResponse);
 
-    // Step D: Store the result as JSON in Redis with the TTL from src/config.ts
-    // to limit how long stale data can remain cached.
-    await redis.set(cacheKey, JSON.stringify(publicUsers), 'EX', settings.usersCacheTtlSeconds);
+    // Step D: Store the page under the version read in Step A, with the TTL from src/config.ts
+    // (settings.usersCacheTtlSeconds) to limit how long stale data can remain cached.
+    if (cacheVersion !== null) {
+      await this.usersCache.setPage(cacheVersion, limitNumber, offsetNumber, publicUsers);
+    }
 
     // Step E: Return the consolidated data to the client.
     res.status(200).json(publicUsers);
@@ -207,14 +206,10 @@ export class UserController {
       );
     }
 
-    // =========================================================================
-    // 🧹 AUTOMATIC CACHE INVALIDATION (REGEX PURGE)
-    // =========================================================================
-    const targetedKeys = await redis.keys('users:*');
-    if (targetedKeys.length > 0) {
-      await redis.del(...targetedKeys);
-      logger.info({ component: 'cache', purgedKeys: targetedKeys.length }, 'Users cache invalidated');
-    }
+    // NO CACHE INVALIDATION HERE (issue #52): this ran redis.keys('users:*'), which blocks Redis
+    // while it walks the whole keyspace, and it ran too early: the account does not exist until the
+    // queue consumer saves it, so the next GET /users cached a page without it for 60 seconds.
+    // The consumer (EventBrokerService) now invalidates the cache right after the row is written.
 
     res.status(202).json({
       message: 'Solicitação de cadastro recebida com sucesso! Processando em lote assíncrono na fila de eventos...'

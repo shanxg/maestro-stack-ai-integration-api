@@ -9,6 +9,7 @@ import crypto from 'node:crypto'; // CSPRNG for the throwaway value behind the d
 import { UserRepository } from './repositories/UserRepository.js';
 import { UserService } from './services/UserService.js';
 import { UserController } from './controllers/UserController.js';
+import { UsersCache } from './cache/usersCache.js'; // Versioned GET /users page cache (issue #52)
 
 // 🔥 UNIFIED MESSAGING AND REAL-TIME SUPPORT (DAY 7)
 // Import the unified service that manages RabbitMQ queues and SSE streaming connections.
@@ -175,10 +176,18 @@ export async function createApp(customUserService?: UserService) {
 
   // Step C: Instantiate the broker factory by passing the live service context into the consumer loop.
   // This structural reordering guarantees the background worker thread captures an active pointer to the database casing.
-  const eventBrokerService = new EventBrokerService(userService);
+  // Step C.1: The GET /users page cache (issue #52). Its own Redis client uses the shared connection
+  // settings (REDIS_PASSWORD included, CWE-306) and, like the rate-limit client, fails at once while
+  // Redis is down instead of queueing commands, so a request falls back to PostgreSQL immediately.
+  const cacheRedis = new Redis({ ...redisConnection, enableOfflineQueue: false, maxRetriesPerRequest: 1 });
+  cacheRedis.on('error', () => {}); // Failures are logged by UsersCache when a command fails
+  const usersCache = new UsersCache(cacheRedis);
+
+  // The consumer invalidates the cache once a queued account is saved.
+  const eventBrokerService = new EventBrokerService(userService, usersCache);
 
   // Step D: Inject structural dependencies into the Controller layer network gateway boundary.
-  const userController = new UserController(userService, eventBrokerService);
+  const userController = new UserController(userService, eventBrokerService, usersCache);
 
   // =========================================================================
   // ⏱️ CONSTANT-TIME LOGIN GUARD (CWE-208)

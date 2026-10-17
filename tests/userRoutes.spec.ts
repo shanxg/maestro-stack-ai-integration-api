@@ -775,6 +775,42 @@ describe('User routes (integration tests)', () => {
     }
   });
 
+  // TEST 36: Verify a registration never scans Redis with KEYS (issue #52).
+  // Condition: A valid registration; before, the route ran redis.keys('users:*'), which blocks Redis
+  // while it walks every key, rate-limit counters included.
+  it('POST /api/v1/users -> queues the registration without a KEYS scan of Redis', async () => {
+    publishEventMock.mockResolvedValueOnce(true);
+    const keysSpy = jest.spyOn(FakeRedis.prototype, 'keys');
+
+    try {
+      const response = await request(serverTarget)
+        .post('/api/v1/users')
+        .send({ name: 'Lucas Sem Scan', email: 'sem.scan@maestro.test', password: crypto.randomUUID() });
+
+      expect(response.status).toBe(202);
+      expect(keysSpy).not.toHaveBeenCalled();
+    } finally {
+      keysSpy.mockRestore();
+    }
+  });
+
+  // TEST 37: Verify GET /users serves a cached page until the cache version changes (issue #52).
+  // Condition: The same page is read twice, then the version is bumped (what the queue consumer does
+  // after saving an account); the third read must reach the service again.
+  it('GET /users -> serves the cached page, and reads the database again after the version changes', async () => {
+    mockUserService.getAllUsers.mockClear();
+    const readPage = () => request(serverTarget).get('/users').set('Authorization', `Bearer ${tokenAdmin}`).query({ limit: 7, offset: 0 });
+
+    expect((await readPage()).status).toBe(200);
+    expect((await readPage()).status).toBe(200);
+    expect(mockUserService.getAllUsers).toHaveBeenCalledTimes(1);
+
+    await new FakeRedis().incr('users:cache-version');
+
+    expect((await readPage()).status).toBe(200);
+    expect(mockUserService.getAllUsers).toHaveBeenCalledTimes(2);
+  });
+
 });
 
 describe('AI chat route (integration tests)', () => {
