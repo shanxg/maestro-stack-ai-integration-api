@@ -1,0 +1,15 @@
+{
+  "name": "maestro-api-lint",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ESLint toolchain for the API (issue #55). Kept in its own package because typescript-eslint needs TypeScript below 6.1, while the API compiles with TypeScript 7, whose npm package no longer ships the JavaScript compiler API that the ESLint parser uses.",
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.13.0",
+    "eslint-plugin-security": "4.2.0",
+    "globals": "17.13.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.2"
+  }
+}
