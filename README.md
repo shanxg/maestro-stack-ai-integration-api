@@ -316,6 +316,7 @@ Out of scope:
 | **Redirects**        | Every client-side navigation goes to a fixed internal route (`/login`, `/chat`, `/register`); no route reads a return URL from the request. A future `returnTo` must be checked against an allowlist of relative paths (CWE-601).        |
 | **HTTP hardening**   | Helmet security headers on the API, with its CSP enforced in every environment. CORS allows only the frontend origins listed in `ALLOWED_ORIGINS` (validated at boot: bare http(s) origins, no wildcard), with credentials, and state-changing requests from a browser page with any other Origin are rejected (CSRF check). The Next.js frontend sends a static CSP (only its own origin and the API; no framing, no plugins), X-Frame-Options, nosniff, a strict Referrer-Policy and a Permissions-Policy on every route (`frontend/security-headers.ts`). Rate limiting: 100 req/15 min global, 5 login attempts/5 min per IP and 10 AI prompts/min per account, counted in Redis so every replica shares the limits.                                    |
 | **LLM interaction**  | System prompt and user input sent as separate messages; the model gets no user data and no tools; answers capped at 512 tokens with a 60 s timeout (503 when the model server is unavailable); the model's answer is rendered as text (React escapes it), never as HTML, and ESLint's `react/no-danger` rule keeps raw HTML out of the frontend.                                                                                                                          |
+| **Logging**          | One structured JSON logger (pino, `src/logger.ts`) for the whole API. Log lines identify accounts by id only: no e-mail, name, password or token is written, and a redaction list replaces such fields (and PostgreSQL error details, which can quote values) with `[REDACTED]` if a call ever passes them (CWE-532). |
 | **Dependencies**     | Dependabot alerts and weekly version-update PRs (npm, GitHub Actions, Docker).                                                                                                                                                           |
 | **CI/CD**            | Workflows use only official GitHub actions and code kept in this repository, with read-only permissions by default. The README sync job (`scripts/sync-readme.mjs`) is the only one that writes: it copies this file and the remediation log into the README, refuses to copy anything but Markdown files of the repository, and starts Secret Scanning on every commit it pushes. |
 | **DAST**             | OWASP ZAP API scan of the local API, driven by `openapi.yaml` (passive and active rules); reports and triage in `docs/security/dast/`. Not run in CI.                                                                                    |
@@ -1762,6 +1763,54 @@ There was no explicit public shape for a user: the response contract was a side 
 - Commit `ff794bb` — `openapi.yaml`.
 - Commit `78bf618` — `SECURITY.md`.
 - Issue #48.
+
+---
+
+#### 🟡 [LOG-01] Login attempts and new accounts were logged with their e-mail addresses
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 2.08, issue #53)
+
+**Severity:** Medium
+
+**References:** CWE-532, OWASP A09:2025
+
+**Finding:**
+
+The API logged with `console.*` and interpolated personal data into the messages:
+
+- `POST /auth/login` printed the e-mail of every attempt, including failed ones, so the log kept a list of the addresses people tried, valid or not.
+- The queue consumer printed the e-mail of every new account before creating it.
+- Failures were printed with whole error objects. A duplicate registration fails in PostgreSQL with a `detail` field that quotes the e-mail (`Key (email)=(...) already exists.`), which ended up in the log as well.
+
+Logs are kept longer, copied to more systems and read by more people than the database, so personal data there widens its exposure.
+
+**Root cause:**
+
+There was no logging policy: each module wrote free text to the console, and nothing kept personal fields out.
+
+**Remediation applied:**
+
+- `src/logger.ts` creates one pino logger for the whole API. Lines are JSON with a `service` and a `component` field instead of emoji text prefixes. The level comes from `LOG_LEVEL`, validated in `src/config.ts`.
+- Every `console.*` call in `src/` now goes through it, and messages identify accounts by id only.
+- A redaction list replaces `password`, `email`, `username`, `name`, `token`, `authorization`, `cookie` and PostgreSQL error `detail` fields with `[REDACTED]` if a call ever passes them, at the top level or one level deep.
+- `SECURITY.md` gained a "Logging" row; `.env.example` documents `LOG_LEVEL`.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › TEST 35 `POST /auth/login and POST /api/v1/users -> log no e-mail, name or password`: a failed login, a successful login and a registration must leave no personal value in any logger or console call.
+- `tests/eventBroker.spec.ts` › TEST 5 `logs the account created from the queue without its e-mail or name`.
+- Against the previous code (no logger module, so the same checks were run on the console output alone), both failed: the login output held `nobody@maestro.test`, and the consumer printed `Persistent entity write initiated for: lucas.fila@maestro.com`.
+- `tests/logging.spec.ts` › TEST 1: a registration body, a nested user, request headers and a duplicate-key error are written as `[REDACTED]`. It cannot run against the previous code, which had no logger.
+- `npx tsc --noEmit` passes; `npm test` passes (10 suites, 81 tests).
+
+**Evidence:**
+
+- Commit `1f377bd` — `src/logger.ts`, `src/config.ts`, `package.json`, `package-lock.json`, `.env.example`, `tests/setupEnv.ts`, `tests/logging.spec.ts`.
+- Commit `a914b86` — every module in `src/` that logged, `tests/helpers/logCapture.ts`, `tests/userRoutes.spec.ts`, `tests/eventBroker.spec.ts`, `tests/userRepository.spec.ts`, `tests/redisRateLimitStore.spec.ts`.
+- Commit `ae8c774` — `SECURITY.md`.
+- Issue #53.
 
 <!-- md:include end -->
 </details>
