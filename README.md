@@ -358,7 +358,8 @@ evidence for each entry.
 > - 🚨 for Critical
 > - 🔴 for High
 > - 🟡 for Medium
-> - 🔵 for Low/Informational
+> - 🔵 for Low
+> - ℹ️ for Informational
 >
 > 1. `[LOG-ID]`: A sequential indexer (e.g., `SEC-01`, `REM-003`) so the security committee or the final client can reference the item in meetings (_"Lucas, regarding item `SEC-01`..."_).
 > 2. `[SEVERITY]`: The risk classification in uppercase to create quick visual contrast.
@@ -543,7 +544,7 @@ No pre-commit hook or secret-scanning pipeline was in place.
 
 ---
 
-#### 🔵 [1.06] `YOUR_TOKEN_HERE` placeholder in README (false positive)
+#### ℹ️ [1.06] `YOUR_TOKEN_HERE` placeholder in README (false positive)
 
 **Date:** 2026-10-13
 
@@ -1034,7 +1035,7 @@ The "unknown account" branch returned early to skip work, and the input was chec
 
 ---
 
-#### 🔵 [REDIR-01] Open redirect review: no redirect takes its target from user input (not applicable)
+#### ℹ️ [REDIR-01] Open redirect review: no redirect takes its target from user input (not applicable)
 
 **Date:** 2026-10-15
 
@@ -1729,7 +1730,7 @@ The read methods treated "the database failed" and "nothing was found" as the sa
 
 ---
 
-#### 🔵 [DTO-01] User routes returned whatever columns the query selected
+#### ℹ️ [DTO-01] User routes returned whatever columns the query selected
 
 **Date:** 2026-10-16
 
@@ -1904,6 +1905,45 @@ The consumer detected failures but had no outcome for them other than deletion, 
 - Commit `421656f` — `src/queue/topology.ts`, `src/schemas/eventSchema.ts`, `src/errors/DuplicateEmailError.ts`, `src/services/EventBrokerService.ts`, `src/repositories/UserRepository.ts`, `src/services/UserService.ts`, `src/queue/rabbit-deprecated.ts`, `tests/eventBroker.spec.ts`, `tests/userRepository.spec.ts`, `tests/userRoutes.spec.ts`.
 - Commit `fac192f` — `openapi.yaml`, `SECURITY.md`.
 - Issue #50.
+
+---
+
+#### ℹ️ [TEST-01] Missing regression tests for JWT edge cases and outdated route names
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (backlog item 3.01, issue #56)
+
+**Severity:** Informational
+
+**References:** CWE-347, CWE-639, OWASP API2:2023, OWASP API1:2023
+
+**Finding:**
+
+The test suite lacked explicit regression tests for specific JWT edge cases: a token signed with the correct key but expired, and an unsigned token with `alg: none`. Additionally, test names referenced old routes (`POST /users`) instead of the current API routes (`/api/v1/users`). XSS coverage relied solely on static checks (no component-test runtime), and IDOR was tested dynamically, but JWT algorithm and expiry boundaries were untested.
+
+**Root cause:**
+
+Tests were written primarily for feature delivery. When the JWT verification was centralized and pinned to HS256 (AUTH-02), edge cases for cryptographic failures (expiry, algorithm downgrade) were not added to the automated test suite.
+
+**Remediation applied:**
+
+- Added TEST 40 in `tests/userRoutes.spec.ts` to assert that an expired JWT signed with the correct secret returns `401 INVALID_TOKEN`.
+- Added TEST 41 to assert that a JWT with `alg: none` (unsigned) is rejected with `401 INVALID_TOKEN`.
+- Verified that all existing test names now reference the real routes (`/api/v1/...`), superseding the old `POST /users` naming.
+- Documented that XSS coverage is provided via static checks (absence of `dangerouslySetInnerHTML` + CSP headers) in `tests/frontendSecurity.spec.ts`.
+
+**Regression test:**
+
+- `tests/userRoutes.spec.ts` › TEST 40: `rejects an expired access token signed with the correct key`.
+- `tests/userRoutes.spec.ts` › TEST 41: `rejects an unsigned token with alg "none"`.
+- Both tests assert `401` with `error.code === 'INVALID_TOKEN'`, ensuring the API does not leak which check failed (CWE-209).
+
+**Evidence:**
+
+- Commit `fb4c3fe` â€” `tests/userRoutes.spec.ts` (TEST 40 and TEST 41 added).
+- Pull Request #134.
+- Issue #56.
 
 <!-- md:include end -->
 </details>
