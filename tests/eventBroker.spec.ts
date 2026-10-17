@@ -59,7 +59,11 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
   it('passes the queued hash to createUserWithPasswordHash, never to createUser', async () => {
     const userService = {
       createUser: jest.fn(),
-      createUserWithPasswordHash: jest.fn(async () => ({ id: 'queued-id' }))
+      // Typed with the real signature (name, email, passwordHash), so the toHaveBeenCalledWith
+      // checks are type-checked against it.
+      createUserWithPasswordHash: jest.fn<(name: string, email: string, passwordHash: string) => Promise<{ id: string }>>(
+        async () => ({ id: 'queued-id' })
+      )
     };
     fakeChannel.consume.mockClear();
 
@@ -158,7 +162,11 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
   it('invalidates the users cache after saving a queued account, and not when saving fails', async () => {
     const usersCache = { invalidate: jest.fn(async () => undefined) };
     const userService = {
-      createUserWithPasswordHash: jest.fn(async () => ({ id: 'queued-id' }))
+      // Typed with the real signature (name, email, passwordHash), so the toHaveBeenCalledWith
+      // checks are type-checked against it.
+      createUserWithPasswordHash: jest.fn<(name: string, email: string, passwordHash: string) => Promise<{ id: string }>>(
+        async () => ({ id: 'queued-id' })
+      )
     };
     fakeChannel.consume.mockClear();
     new EventBrokerService(userService as never, usersCache as never);
@@ -177,7 +185,7 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
       userService.createUserWithPasswordHash.mock.invocationCallOrder[0] as number
     );
 
-    userService.createUserWithPasswordHash.mockRejectedValueOnce(new Error('duplicate key value') as never);
+    userService.createUserWithPasswordHash.mockRejectedValueOnce(new Error('duplicate key value'));
     await onMessage(message());
     expect(usersCache.invalidate).toHaveBeenCalledTimes(1);
   });

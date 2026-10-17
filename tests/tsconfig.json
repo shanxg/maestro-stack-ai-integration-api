@@ -1,0 +1,33 @@
+{
+  // 🧪 TYPE-CHECK FOR THE TEST FILES (issue #55)
+  // The root tsconfig.json compiles only src/ into dist/ and leaves tests/ out, so until now the
+  // tests ran through SWC (jest.config.ts), which strips types without checking them: a test could
+  // call a function with the wrong arguments and still pass. This config checks tests/ together with
+  // the src/ files they import, with the same strict options as the build, and emits nothing.
+  // Used by `npm run typecheck` and by ESLint's typed rules (tools/lint/eslint.config.js).
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // The tests import files from src/ and from frontend/, so the root of the program is the repository.
+    "rootDir": "..",
+    "noEmit": true,
+    // Jest loads every test file as an ES module (jest.config.ts), and the frontend files the tests
+    // import are bundled by Next.js. 'bundler' resolution matches both: it reads the '.js' imports of
+    // src/ as their '.ts' sources and treats the frontend files (whose package.json has no
+    // "type": "module") as ES modules too, instead of as CommonJS under 'nodenext'.
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    // Lets TypeScript read the types of the plain JavaScript modules the tests import, such as
+    // scripts/sync-readme.mjs, without type-checking those files themselves.
+    "allowJs": true,
+    // Tests import the frontend modules with their .ts extension (e.g. '../frontend/next.config.ts'),
+    // which TypeScript accepts only when nothing is emitted.
+    "allowImportingTsExtensions": true,
+    // Build outputs that make no sense without emit.
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["./**/*.ts", "../src/**/*.ts"],
+  // Replaces the root list, which excludes this folder.
+  "exclude": []
+}

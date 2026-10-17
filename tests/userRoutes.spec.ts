@@ -11,6 +11,7 @@ import jwt from 'jsonwebtoken';
 import { describe, beforeAll, beforeEach, afterAll, it, expect, jest } from '@jest/globals';
 import request from 'supertest';
 import type { User } from '../src/models/User.js';
+import type { UserService } from '../src/services/UserService.js';
 import { FakeRedis } from './helpers/fakeRedis.js';
 import { captureLogs } from './helpers/logCapture.js';
 
@@ -157,12 +158,18 @@ describe('User routes (integration tests)', () => {
     })
   };
 
+  // createApp() is typed to take a real UserService. The mock implements only the methods the
+  // routes call (the class's private fields cannot be mocked), so the app receives it through this
+  // typed view, checked by `npm run typecheck` (tests/tsconfig.json), while the tests keep the
+  // jest.fn() handles above for their assertions.
+  const userServiceForApp = mockUserService as unknown as UserService;
+
   beforeAll(async () => {
     // Cost factor 4 is the bcrypt minimum; it keeps the suite fast and is used only in tests.
     adminPasswordHash = await bcrypt.hash(ADMIN_PASSWORD, 4);
 
     // 🔥 DYNAMIC INJECTION: Capture the HTTP server instance and inject the mock service.
-    serverTarget = await createApp(mockUserService);
+    serverTarget = await createApp(userServiceForApp);
 
     // Log in through the real route and capture a valid JWT for the protected routes.
     const response = await request(serverTarget)
@@ -303,7 +310,7 @@ describe('User routes (integration tests)', () => {
   // Condition: The app accepts exactly settings.rateLimits.login.max attempts; the next one gets 429.
   it('POST /api/v1/auth/login -> returns 429 after the configured number of attempts', async () => {
     // The shared counters are reset before each test, so the logins in the tests above do not count.
-    const freshServer = await createApp(mockUserService);
+    const freshServer = await createApp(userServiceForApp);
     const attempt = () => request(freshServer)
       .post('/api/v1/auth/login')
       .send({ username: ADMIN_EMAIL, password: 'wrong-password' });
@@ -364,7 +371,7 @@ describe('User routes (integration tests)', () => {
   // TEST 13: Verify the login rejects fields that are missing, blank or not text (CWE-1287).
   // Condition: The app gets four malformed bodies (counters reset before each test); none reaches the database.
   it('POST /api/v1/auth/login -> returns 400 when username or password is missing, blank or not text', async () => {
-    const freshServer = await createApp(mockUserService);
+    const freshServer = await createApp(userServiceForApp);
     mockUserService.getUserByEmail.mockClear();
     const invalidBodies = [
       { username: 123, password: 'any-password' },
@@ -385,7 +392,7 @@ describe('User routes (integration tests)', () => {
   // TEST 14: Verify an unknown e-mail still pays the bcrypt cost, so timing does not reveal accounts (CWE-208).
   // Condition: The mock finds no account; bcrypt.compare must still run once, against a hash with the real cost.
   it('POST /api/v1/auth/login -> runs bcrypt with the configured cost when the e-mail is unknown', async () => {
-    const freshServer = await createApp(mockUserService);
+    const freshServer = await createApp(userServiceForApp);
     const compareSpy = jest.spyOn(bcrypt, 'compare');
 
     try {
@@ -406,8 +413,8 @@ describe('User routes (integration tests)', () => {
   // TEST 15: Verify two API replicas enforce one login limit together, not one each (issue #65).
   // Condition: Two app instances share the fake Redis; attempts on both count toward the same limit.
   it('POST /api/v1/auth/login -> two replicas share one login limit through Redis', async () => {
-    const replicaA = await createApp(mockUserService);
-    const replicaB = await createApp(mockUserService);
+    const replicaA = await createApp(userServiceForApp);
+    const replicaB = await createApp(userServiceForApp);
     const attempt = (server: http.Server) => request(server)
       .post('/api/v1/auth/login')
       .send({ username: ADMIN_EMAIL, password: 'wrong-password' });
@@ -760,7 +767,7 @@ describe('User routes (integration tests)', () => {
   // Condition: A failed login, a successful login and a registration, each with a recognizable value;
   // before, the login printed the e-mail of every attempt.
   it('POST /api/v1/auth/login and POST /api/v1/users -> log no e-mail, name or password', async () => {
-    const freshServer = await createApp(mockUserService);
+    const freshServer = await createApp(userServiceForApp);
     const registration = { name: 'Lucas Rastreavel', email: 'rastreavel@maestro.test', password: crypto.randomUUID() };
     publishEventMock.mockResolvedValueOnce(true);
 
@@ -1169,7 +1176,7 @@ describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', (
       }))
     };
 
-    await workerModule.processUserEventMessage(channel as never, message as never, { createUserWithPasswordHash } as never);
+    await workerModule.processUserEventMessage(channel as never, message as never, { createUserWithPasswordHash });
 
     expect(createUserWithPasswordHash).toHaveBeenCalledWith('Lucas Fila', 'lucas.fila@maestro.com', passwordHash);
     expect(emitSpy).toHaveBeenCalledWith('user_created', {
