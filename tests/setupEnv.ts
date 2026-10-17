@@ -10,3 +10,7 @@ process.env.POSTGRES_PASSWORD ??= crypto.randomBytes(16).toString('hex');
 process.env.RABBIT_USER ??= 'maestro-test';
 process.env.RABBIT_PASSWORD ??= crypto.randomBytes(16).toString('hex');
 process.env.REDIS_PASSWORD ??= crypto.randomBytes(16).toString('hex');
+
+// Keep the test output readable: the logger (src/logger.ts) writes nothing unless LOG_LEVEL is set.
+// Tests that check what is logged spy on the logger's methods, which records the calls at any level.
+process.env.LOG_LEVEL ??= 'silent';
