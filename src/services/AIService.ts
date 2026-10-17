@@ -3,10 +3,13 @@ import OpenAI, { APIConnectionError } from 'openai';
 import { env, settings } from '../config.js';
 import { AppError } from '../errors/AppError.js';
 import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
+import { loadPrompt, type PromptFile } from '../ai/promptFile.js'; // Prompts versioned in prompts/ (issue #59)
 
 export class AIService {
   private openai: OpenAI;
   private modelName: string;
+  // Read-only so a test (or a future route) can report which prompt version answers.
+  readonly systemPrompt: PromptFile;
 
   constructor() {
     // 🔐 INVERSION OF CONTROL (IoC): Initialize the SDK with the key and URL validated in src/config.ts.
@@ -19,6 +22,17 @@ export class AIService {
     // The model comes from OPENAI_MODEL (default "llama3", the model downloaded for local Ollama),
     // so switching to a cloud model is a configuration change, not a code change.
     this.modelName = env.OPENAI_MODEL;
+
+    // 📝 VERSIONED SYSTEM PROMPT (issue #59): the instructions the model gets live in
+    // prompts/chat-system.md, with a version number, instead of a string literal here. Changing
+    // them is a reviewed change of that file, and the log line below says which version is live.
+    // A missing or malformed file throws, so the API fails at start-up instead of answering with
+    // no instructions.
+    this.systemPrompt = loadPrompt('chat-system');
+    logger.info(
+      { component: 'ai', prompt: this.systemPrompt.id, version: this.systemPrompt.version },
+      'System prompt loaded'
+    );
   }
 
   /**
@@ -42,8 +56,8 @@ export class AIService {
           messages: [
             {
               role: 'system',
-              content:
-                'Você é o Maestro, um assistente virtual sênior inteligente integrado ao ecossistema de dados da API. Responda de forma direta, técnica, profissional e em português brasileiro.'
+              // The versioned text of prompts/chat-system.md, loaded in the constructor (issue #59).
+              content: this.systemPrompt.text
             },
             {
               role: 'user',
