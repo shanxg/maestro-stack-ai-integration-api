@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation'; // Official router for the modern Next.js App Router.
 import { markSignedIn } from '../utils/session'; // Non-sensitive "signed in" flag (issue #34)
+import { apiRequest } from '../utils/apiClient'; // The one way pages call the API (issue #54)
 
 export default function LoginPage() {
   // ==========================================
@@ -35,36 +36,23 @@ export default function LoginPage() {
       }
 
       // =========================================================================
-      // 🔐 APPSEC REMEDIATION - DNS LOOPBACK ALIGNMENT
+      // 📡 SHARED API CLIENT (issue #54)
       // =========================================================================
-      // Target 'localhost' explicitly to align with the backend CORS allowed origin matrix.
-      // This prevents the browser engine from dropping pre-flight requests due to Same-Origin Policy mismatches.
-      const targetUrl = new URL('http://localhost:3000/api/v1/auth/login');
-
-      const res = await fetch(targetUrl.href, {
+      // apiRequest() builds the URL from NEXT_PUBLIC_API_URL (this page used to hardcode
+      // http://localhost:3000) and sends credentials: 'include', so the browser stores the
+      // HttpOnly session cookie the API sets in its response.
+      // For an HTTP error status (400 Bad Request, 401 Unauthorized, 429, ...) it throws an
+      // ApiError carrying the backend's message, which the catch below shows.
+      // requiresSession: false, because a 401 here means "wrong credentials", not "session ended".
+      await apiRequest('/api/v1/auth/login', {
         method: 'POST',
-        mode: 'cors', // Explicitly enable CORS mode for cross-origin requests
-        // Let the browser store the HttpOnly session cookie the API sets in its response.
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
+        body: {
+          username: username.trim(),
+          password: password.trim()
         },
-        body: JSON.stringify({ 
-          username: username.trim(), 
-          password: password.trim() 
-        }),
+        fallbackMessage: 'Falha na validação do acesso. Verifique suas credenciais.',
+        requiresSession: false,
       });
-
-
-      // Convert the API response body into a JSON object
-      const data = await res.json();
-
-      // ❌ HANDLE API ERRORS:
-      // For an HTTP error status (400 Bad Request, 401 Unauthorized, etc.),
-      // res.ok is false. Read the error message returned by the backend.
-      if (!res.ok) {
-        throw new Error(data.error?.message || 'Falha na validação do acesso. Verifique suas credenciais.');
-      }
 
       // =========================================================================
       // 🔐 SESSION COOKIE (CWE-922)
