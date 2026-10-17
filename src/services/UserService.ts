@@ -17,10 +17,10 @@ export class UserService {
 
   // FUNCTION 1: Forward the request to the repository to retrieve all users.
   // Pagination is supported through the 'limit' and 'offset' options.
-  async getAllUsers(options:{ limit: number; offset: number }): Promise<User[]> {    
+  async getAllUsers(options: { limit: number; offset: number }): Promise<User[]> {
     // Extract the two numeric values from the options object.
     const { limit, offset } = options;
-  
+
     // Pass both values to the repository method.
     return this.userRepository.findAll(limit, offset);
   }
@@ -30,7 +30,7 @@ export class UserService {
     return this.userRepository.findById(id);
   }
 
-   /**
+  /**
    * 🎯 RESOLVE IDENTITY BY EMAIL (getUserByEmail)
    * Returns the account with this e-mail, including the password hash and role the login needs.
    * findByEmail is part of IUserRepository (issue #47), so the call is type-checked: the old
@@ -52,7 +52,7 @@ export class UserService {
     return bcrypt.hash(password, secureSalt);
   }
 
-   /**
+  /**
    * APPSEC SECURE WORKFLOW - CRYPTOGRAPHIC USER PROVISIONING (CWE-256 / CWE-338 / CWE-916)
    *
    * Entry point for passwords that come from outside the API (any caller other than the

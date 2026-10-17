@@ -92,7 +92,9 @@ describe('Frontend API client (frontend/app/utils/apiClient.ts)', () => {
     browser.browserWindow.addEventListener('storage', (event) => storageEvents.push(event));
     fetchMock.mockResolvedValue(jsonResponse(401, { error: { code: 'UNAUTHORIZED', message: 'Sessão expirada.' } }));
 
-    const failure = await apiRequest('/api/v1/ai/chat', { method: 'POST', body: { prompt: 'oi' } }).catch((error: unknown) => error);
+    const failure = await apiRequest('/api/v1/ai/chat', { method: 'POST', body: { prompt: 'oi' } }).catch(
+      (error: unknown) => error
+    );
 
     expect(failure).toBeInstanceOf(ApiError);
     expect(failure).toMatchObject({ status: 401, code: 'UNAUTHORIZED', message: 'Sessão expirada.' });
@@ -105,7 +107,9 @@ describe('Frontend API client (frontend/app/utils/apiClient.ts)', () => {
   // another tab may still use stays, and the error carries the message the page displays.
   it('keeps the signed-in flag on a 401 for the login call', async () => {
     browser.storage.setItem(SESSION_FLAG_KEY, '1');
-    fetchMock.mockResolvedValue(jsonResponse(401, { error: { code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' } }));
+    fetchMock.mockResolvedValue(
+      jsonResponse(401, { error: { code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' } })
+    );
 
     const failure = await apiRequest('/api/v1/auth/login', {
       method: 'POST',
@@ -125,8 +129,9 @@ describe('Frontend API client (frontend/app/utils/apiClient.ts)', () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined); // The client logs the network error
 
     fetchMock.mockResolvedValueOnce(jsonResponse(502, { unexpected: true }));
-    await expect(apiRequest('/api/v1/users', { method: 'POST', fallbackMessage: 'Falha ao cadastrar.' }))
-      .rejects.toMatchObject({ status: 502, code: undefined, message: 'Falha ao cadastrar.' });
+    await expect(
+      apiRequest('/api/v1/users', { method: 'POST', fallbackMessage: 'Falha ao cadastrar.' })
+    ).rejects.toMatchObject({ status: 502, code: undefined, message: 'Falha ao cadastrar.' });
 
     fetchMock.mockResolvedValueOnce(new Response('<html>Bad Gateway</html>', { status: 502 }));
     await expect(apiRequest('/api/v1/users')).rejects.toMatchObject({

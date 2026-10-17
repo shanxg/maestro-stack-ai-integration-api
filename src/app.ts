@@ -1,6 +1,6 @@
 // 1. INFRASTRUCTURE AND EXPRESS IMPORTS
 import express, { type Request, type Response } from 'express';
-import http from 'node:http';   // Node module for managing network servers
+import http from 'node:http'; // Node module for managing network servers
 
 // User domain layers
 import { UserRepository } from './repositories/UserRepository.js';
@@ -52,7 +52,6 @@ import { logger } from './logger.js'; // Structured logger without personal data
  * service is typed as UserService (issue #47): a replacement must offer the same methods.
  */
 export async function createApp(customUserService?: UserService) {
-
   const app = express();
 
   // Create a native HTTP server around the Express application.
@@ -70,12 +69,14 @@ export async function createApp(customUserService?: UserService) {
   // B. CORS: Restrict request origins to traffic from the Next.js frontend (ALLOWED_ORIGINS in src/config.ts).
   // The cors middleware also answers every preflight (OPTIONS) request itself, echoing an origin only
   // when it is on the list (CWE-942).
-  app.use(cors({
-    origin: [...env.ALLOWED_ORIGINS],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true, // Let the browser send and receive the HttpOnly session cookie
-  }));
+  app.use(
+    cors({
+      origin: [...env.ALLOWED_ORIGINS],
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      credentials: true // Let the browser send and receive the HttpOnly session cookie
+    })
+  );
 
   // C. CSRF ORIGIN CHECK (CWE-352): state-changing requests from a browser page must come from an
   // allowed origin, a second layer on top of the SameSite=Strict session cookie (originCheck.ts).
@@ -87,10 +88,13 @@ export async function createApp(customUserService?: UserService) {
   // settings.health.readinessCacheMs, so this unthrottled route stays cheap.
   // The checks are closures: userRepository and eventBrokerService are created below, before any
   // request can arrive (createApp finishes wiring before the server listens).
-  const readiness = new ReadinessCheck({
-    database: () => userRepository.ping(),
-    broker: async () => eventBrokerService.isConnected(),
-  }, settings.health.readinessCacheMs);
+  const readiness = new ReadinessCheck(
+    {
+      database: () => userRepository.ping(),
+      broker: async () => eventBrokerService.isConnected()
+    },
+    settings.health.readinessCacheMs
+  );
   app.use(createHealthRouter(readiness));
 
   // E. RATE LIMITS (CWE-770 / CWE-307): the counters live in Redis, shared by every replica. Without
@@ -99,7 +103,7 @@ export async function createApp(customUserService?: UserService) {
   const rateLimitRedis = new Redis({
     ...redisConnection, // Host, port and REDIS_PASSWORD from src/config.ts (CWE-306)
     enableOfflineQueue: false,
-    maxRetriesPerRequest: 1,
+    maxRetriesPerRequest: 1
   });
   // ioredis prints every failed reconnection when nothing listens for 'error';
   // the stores already log when Redis becomes unavailable and when it comes back.
@@ -204,7 +208,7 @@ export async function createApp(customUserService?: UserService) {
     logger.info({ component: 'server' }, 'Test mode: the HTTP server does not listen, to avoid port conflicts');
   } else {
     // Listen on 0.0.0.0 to accept Kubernetes traffic.
-    server.listen(PORT, "0.0.0.0", () => {
+    server.listen(PORT, '0.0.0.0', () => {
       logger.info({ component: 'server', port: PORT }, 'REST API and Server-Sent Events stream listening');
     });
   }

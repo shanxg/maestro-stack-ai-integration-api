@@ -89,9 +89,8 @@ export async function apiRequest<T = unknown>(path: string, options: ApiRequestO
       method,
       // The session cookie travels with every call; the API decides what it authorizes.
       credentials: 'include',
-      // Content-Type only when there is a body: a bodiless POST (logout) needs no JSON header.
-      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      // Body and Content-Type only when there is a body: a bodiless POST (logout) needs no JSON header.
+      ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     });
   } catch (error: unknown) {
     console.error('❌ Falha de rede ao chamar a API do Maestro:', error);
@@ -133,13 +132,13 @@ export async function apiRequest<T = unknown>(path: string, options: ApiRequestO
 
 // Reads { error: { code, message } } without trusting its shape: a field that is missing or is not
 // a string is ignored, so a malformed answer falls back to the generic message.
-function readErrorEnvelope(data: unknown): { code?: string; message?: string } | undefined {
+function readErrorEnvelope(data: unknown): { code: string | undefined; message: string | undefined } | undefined {
   if (typeof data !== 'object' || data === null) return undefined;
   const error = (data as { error?: unknown }).error;
   if (typeof error !== 'object' || error === null) return undefined;
   const { code, message } = error as { code?: unknown; message?: unknown };
   return {
     code: typeof code === 'string' ? code : undefined,
-    message: typeof message === 'string' ? message : undefined,
+    message: typeof message === 'string' ? message : undefined
   };
 }

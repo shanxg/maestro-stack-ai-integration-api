@@ -12,8 +12,8 @@ export default function HomePage() {
   const router = useRouter(); // Create the modern Next.js App Router helper
 
   /**
-  * 🔀 AUTOMATIC REDIRECT
-  * Runs as soon as someone opens the site in a browser.
+   * 🔀 AUTOMATIC REDIRECT
+   * Runs as soon as someone opens the site in a browser.
    */
   useEffect(() => {
     // Use router.replace() instead of .push() for a better user experience:

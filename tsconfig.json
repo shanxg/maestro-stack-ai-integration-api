@@ -39,15 +39,8 @@
     "isolatedModules": true,
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
-    "skipLibCheck": true,
+    "skipLibCheck": true
   },
 
-  "exclude": [
-    "node_modules",
-    "dist",
-    "jest.config.ts",
-    "tests",
-    "old.app-ts.txt",
-    "frontend"
-  ] 
+  "exclude": ["node_modules", "dist", "jest.config.ts", "tests", "old.app-ts.txt", "frontend"]
 }

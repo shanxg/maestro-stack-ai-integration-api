@@ -5,6 +5,17 @@ updates:
     schedule:
       interval: weekly
 
+  # The API's ESLint toolchain (see tools/lint/eslint.config.js for why it is a separate package).
+  - package-ecosystem: npm
+    directory: /tools/lint
+    schedule:
+      interval: weekly
+    ignore:
+      # typescript-eslint supports TypeScript < 6.1 only, so this copy stays on 6.0.x.
+      # Revisit when typescript-eslint supports TypeScript 7.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
   - package-ecosystem: npm
     directory: /frontend
     schedule:

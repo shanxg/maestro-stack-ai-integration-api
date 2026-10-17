@@ -37,7 +37,8 @@ export function registerShutdownSignals(target: ShutdownTarget, timeoutMs: numbe
     }, timeoutMs);
     forceExit.unref?.();
 
-    target.shutdown()
+    target
+      .shutdown()
       .then(() => {
         clearTimeout(forceExit);
         logger.info({ component: 'lifecycle' }, 'Shutdown complete');

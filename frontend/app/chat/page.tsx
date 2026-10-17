@@ -33,11 +33,7 @@ export default function ChatPage() {
   // 💎 CONNECT TO THE EXTERNAL STORE (useSyncExternalStore)
   // =========================================================================
   // Read the session flag reactively without synchronous state updates
-  const sessionFlag = useSyncExternalStore(
-    subscribeToSession,
-    getSessionSnapshot,
-    getServerSessionSnapshot
-  );
+  const sessionFlag = useSyncExternalStore(subscribeToSession, getSessionSnapshot, getServerSessionSnapshot);
 
   // Derive state during rendering, as recommended by React
   const isAuthenticated = sessionFlag !== null && sessionFlag !== undefined;
@@ -47,8 +43,8 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: 'Olá! Sou o assistente inteligente Maestro. Como posso te ajudar com as análises do ecossistema hoje?',
-    },
+      content: 'Olá! Sou o assistente inteligente Maestro. Como posso te ajudar com as análises do ecossistema hoje?'
+    }
   ]);
 
   const [input, setInput] = useState('');
@@ -56,8 +52,8 @@ export default function ChatPage() {
   const [error, setError] = useState('');
 
   /**
-  * 🛡️ AUTH REDIRECT (Navigation effect)
-  * Runs when the token changes. If the token disappears, redirect the user to login.
+   * 🛡️ AUTH REDIRECT (Navigation effect)
+   * Runs when the token changes. If the token disappears, redirect the user to login.
    */
   useEffect(() => {
     if (!isAuthenticated && !isCheckingAuth) {
@@ -91,22 +87,18 @@ export default function ChatPage() {
       const data = await apiRequest<{ response: string }>('/api/v1/ai/chat', {
         method: 'POST',
         body: { prompt: userPrompt },
-        fallbackMessage: 'Falha ao obter resposta do motor de IA.',
+        fallbackMessage: 'Falha ao obter resposta do motor de IA.'
       });
 
       setMessages((prev) => [...prev, { role: 'assistant', content: data.response }]);
-
-    } catch (err: unknown) { // Keep the existing type-safe error handling
+    } catch (err: unknown) {
+      // Keep the existing type-safe error handling
       // 401: the session expired or was cleared. The client already dropped the "signed in" flag,
       // and the effect above redirects to /login, so there is no error to show.
       if (err instanceof ApiError && err.status === 401) return;
 
       console.error('❌ Falha na esteira de transmissão do chat:', err);
-      setError(
-        err instanceof Error 
-          ? err.message 
-          : 'Ocorreu um erro ao tentar se conectar com a API do Maestro.'
-      );
+      setError(err instanceof Error ? err.message : 'Ocorreu um erro ao tentar se conectar com a API do Maestro.');
     } finally {
       setLoading(false);
     }
@@ -145,7 +137,7 @@ export default function ChatPage() {
           <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse shadow-lg shadow-emerald-500/50"></div>
           <h1 className="text-sm font-bold tracking-wider uppercase text-gray-200">Maestro AI Console</h1>
         </div>
-        <button 
+        <button
           onClick={handleLogout}
           className="text-xs bg-gray-800 hover:bg-red-950/40 hover:text-red-400 border border-gray-700 hover:border-red-900 px-4 py-2 rounded-xl transition-all font-medium"
         >
@@ -153,18 +145,17 @@ export default function ChatPage() {
         </button>
       </header>
 
-     {/* PAINEL DE MENSAGENS */}
+      {/* PAINEL DE MENSAGENS */}
       <section className="flex-1 overflow-y-auto px-4 py-6 space-y-6 max-w-4xl w-full mx-auto scrollbar-thin">
         {messages.map((msg, index) => (
-          <div
-            key={index}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div className={`max-w-[80%] rounded-2xl px-5 py-3.5 text-sm leading-relaxed shadow-xl border ${
-              msg.role === 'user'
-                ? 'bg-indigo-600 border-indigo-500 text-white rounded-br-none shadow-indigo-600/10'
-                : 'bg-gray-900 border-gray-800 text-gray-100 rounded-bl-none'
-            }`}>
+          <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div
+              className={`max-w-[80%] rounded-2xl px-5 py-3.5 text-sm leading-relaxed shadow-xl border ${
+                msg.role === 'user'
+                  ? 'bg-indigo-600 border-indigo-500 text-white rounded-br-none shadow-indigo-600/10'
+                  : 'bg-gray-900 border-gray-800 text-gray-100 rounded-bl-none'
+              }`}
+            >
               {/*
                 APPSEC REMEDIATION (CWE-79 / OWASP LLM05:2025, issue #42):
                 The model's answer is untrusted text, so it is rendered as text. React escapes it,

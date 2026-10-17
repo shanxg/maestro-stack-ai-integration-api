@@ -25,7 +25,7 @@ export function sessionCookieOptions(): CookieOptions {
     secure: env.NODE_ENV === 'production',
     sameSite: 'strict',
     path: '/',
-    maxAge: settings.sessionCookie.maxAgeSeconds * 1000, // Express takes milliseconds
+    maxAge: settings.sessionCookie.maxAgeSeconds * 1000 // Express takes milliseconds
   };
 }
 

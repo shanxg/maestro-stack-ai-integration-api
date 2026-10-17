@@ -22,7 +22,7 @@ describe('UsersCache (versioned GET /api/v1/users pages)', () => {
     const keysSpy = jest.spyOn(FakeRedis.prototype, 'keys');
     const incrSpy = jest.spyOn(FakeRedis.prototype, 'incr');
     try {
-      const version = await cache.currentVersion() as string;
+      const version = (await cache.currentVersion()) as string;
       await cache.setPage(version, 10, 0, page);
       await cache.setPage(version, 50, 100, page);
 
@@ -33,7 +33,7 @@ describe('UsersCache (versioned GET /api/v1/users pages)', () => {
       expect(incrSpy).toHaveBeenCalledWith(USERS_CACHE_VERSION_KEY);
 
       // Readers now build keys with the new version, so neither old page is served.
-      const newVersion = await cache.currentVersion() as string;
+      const newVersion = (await cache.currentVersion()) as string;
       expect(newVersion).not.toBe(version);
       expect(await cache.getPage(newVersion, 10, 0)).toBeNull();
       expect(await cache.getPage(newVersion, 50, 100)).toBeNull();
@@ -46,11 +46,11 @@ describe('UsersCache (versioned GET /api/v1/users pages)', () => {
   // TEST 2: Verify a page computed while an account is being saved is never served as current.
   // Condition: The version is read, an invalidation happens, then the (now stale) page is stored.
   it('keeps a page stored after an invalidation under the old version', async () => {
-    const versionBeforeQuery = await cache.currentVersion() as string;
+    const versionBeforeQuery = (await cache.currentVersion()) as string;
     await cache.invalidate(); // the queue consumer saved a new account meanwhile
     await cache.setPage(versionBeforeQuery, 10, 0, page);
 
-    expect(await cache.getPage(await cache.currentVersion() as string, 10, 0)).toBeNull();
+    expect(await cache.getPage((await cache.currentVersion()) as string, 10, 0)).toBeNull();
     expect(await cache.getPage(versionBeforeQuery, 10, 0)).toEqual(page);
   });
 

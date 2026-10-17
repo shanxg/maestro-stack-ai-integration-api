@@ -15,16 +15,22 @@ function describe(value: unknown): string {
     return JSON.stringify({ ...value, message: value.message, stack: value.stack });
   }
   try {
-    return typeof value === 'string' ? value : JSON.stringify(value, (_key, inner) =>
-      inner instanceof Error ? { ...inner, message: inner.message } : inner);
+    return typeof value === 'string'
+      ? value
+      : JSON.stringify(value, (_key, inner) => (inner instanceof Error ? { ...inner, message: inner.message } : inner));
   } catch {
     return String(value);
   }
 }
 
 export function captureLogs(logger: Record<(typeof LOGGER_LEVELS)[number], unknown>) {
+  // pino's methods have overloaded signatures that jest.spyOn cannot infer; viewing the logger as a
+  // map of plain functions lets the spies replace them with a no-op that the type-checker accepts.
+  const loggerMethods = logger as unknown as Record<string, (...args: unknown[]) => unknown>;
   const spies: Spied[] = [
-    ...LOGGER_LEVELS.map((level) => jest.spyOn(logger as never, level as never).mockImplementation((() => undefined) as never) as unknown as Spied),
+    ...LOGGER_LEVELS.map(
+      (level) => jest.spyOn(loggerMethods, level).mockImplementation(() => undefined) as unknown as Spied
+    ),
     ...CONSOLE_METHODS.map((method) => jest.spyOn(console, method).mockImplementation(() => {}) as unknown as Spied)
   ];
 

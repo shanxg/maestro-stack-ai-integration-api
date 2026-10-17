@@ -9,9 +9,11 @@ export const validateMiddleware = (schema: ZodObject) => {
     try {
       // Step A: Strictly validate data in 'body', 'query', or 'params'.
       await schema.parseAsync({
-        body: req.body,
+        // Express types the parsed body as 'any'; 'unknown' says what it is (untrusted input) until
+        // the schema has checked it (issue #55, typed lint).
+        body: req.body as unknown,
         query: req.query,
-        params: req.params,
+        params: req.params
       });
 
       // Step B: The data is valid; continue to the controller.
@@ -26,7 +28,7 @@ export const validateMiddleware = (schema: ZodObject) => {
             message: 'Falha na validação dos dados de entrada.',
             details: error.issues.map((issue) => ({
               field: issue.path.join('.'), // Show the exact field path (for example, "body.email")
-              message: issue.message       // Include the custom message defined in the schema
+              message: issue.message // Include the custom message defined in the schema
             }))
           }
         });

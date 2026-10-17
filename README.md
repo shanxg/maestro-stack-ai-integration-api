@@ -200,6 +200,23 @@ The board owns the status and the spreadsheet owns the content. The `Status` col
 
 The script checks both tokens before doing anything and is idempotent: issues already in the sheet are not imported again, rows that already have an issue are skipped, and the spreadsheet is only saved when a step actually changed something.
 
+### Lint, type-check and format
+
+Run from the repository root:
+
+```bash
+npm run lint:install
+```
+
+installs the ESLint toolchain once (it lives in `tools/lint/` with its own `package.json`, because typescript-eslint needs TypeScript below 6.1 and the API compiles with TypeScript 7). Then:
+
+| Command | What it checks |
+| :--- | :--- |
+| `npm run typecheck` | Strict TypeScript on `src/` and on the tests (`tests/tsconfig.json`). |
+| `npm run lint` | ESLint with type-aware rules and `eslint-plugin-security`; any warning fails it. |
+| `npm run format:check` | Prettier style (`.prettierrc.json`); `npm run format` applies it. |
+| `npm run lint` in `frontend/` | Next.js rules plus `eslint-plugin-no-unsanitized` and `react/no-danger`. |
+
 ### Secret Scanning: Gitleaks + pre-commit
 
 The repository enforces secret scanning at two layers, both using the same `.gitleaks.toml`:

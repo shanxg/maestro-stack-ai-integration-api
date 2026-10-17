@@ -47,13 +47,19 @@ export class FakeRedis {
   }
 
   // KEYS is no longer used by the API (it blocks Redis); kept so a test can assert it is never called.
-  async keys(): Promise<string[]> { return []; }
+  async keys(): Promise<string[]> {
+    return [];
+  }
 
   // Connection events are ignored.
-  on(): this { return this; }
+  on(): this {
+    return this;
+  }
 
   // Graceful shutdown (issue #51): QUIT closes the connection after pending replies.
-  async quit(): Promise<'OK'> { return 'OK'; }
+  async quit(): Promise<'OK'> {
+    return 'OK';
+  }
 
   async del(...keys: string[]): Promise<number> {
     this.failIfDown();

@@ -8,9 +8,10 @@ import { settings } from '../config.js';
 export const chatSchema = z.object({
   body: z.object({
     // Surrounding spaces are removed first, so the limits apply to the text the model receives.
-    prompt: z.string({
-      message: 'O campo "prompt" é obrigatório e precisa ser um texto.'
-    })
+    prompt: z
+      .string({
+        message: 'O campo "prompt" é obrigatório e precisa ser um texto.'
+      })
       .trim()
       .min(1, { message: 'O campo "prompt" não pode ficar em branco.' })
       .max(settings.aiChat.maxPromptLength, {

@@ -35,8 +35,8 @@ export class UserController {
   ) {}
 
   /**
-  * 📡 ENDPOINT 1 (GET /api/v1/users): List users using the Redis Cache-Aside pattern.
-  * Safely paginate queries against PostgreSQL persistence.
+   * 📡 ENDPOINT 1 (GET /api/v1/users): List users using the Redis Cache-Aside pattern.
+   * Safely paginate queries against PostgreSQL persistence.
    */
   getUsers = async (req: Request, res: Response): Promise<void> => {
     // NO TRY/CATCH (CWE-209): a Redis or PostgreSQL failure rejects this promise, and Express 5
@@ -64,14 +64,18 @@ export class UserController {
 
     // Step B: On a cache hit, respond immediately, avoiding PostgreSQL I/O. The cached page was
     // mapped to the public view before it was stored (Step D).
-    const cachedUsers = cacheVersion === null ? null : await this.usersCache.getPage(cacheVersion, limitNumber, offsetNumber);
+    const cachedUsers =
+      cacheVersion === null ? null : await this.usersCache.getPage(cacheVersion, limitNumber, offsetNumber);
     if (cachedUsers) {
       logger.debug({ component: 'cache', limit: limitNumber, offset: offsetNumber }, 'Users page served from Redis');
       res.status(200).json(cachedUsers);
       return;
     }
 
-    logger.debug({ component: 'cache', limit: limitNumber, offset: offsetNumber }, 'Users page not cached; reading PostgreSQL');
+    logger.debug(
+      { component: 'cache', limit: limitNumber, offset: offsetNumber },
+      'Users page not cached; reading PostgreSQL'
+    );
 
     // Step C: On a cache miss, get the records from the relational database through the service.
     const users = await this.userService.getAllUsers({
@@ -95,8 +99,8 @@ export class UserController {
   };
 
   /**
-  * 📡 ENDPOINT 2 (GET /api/v1/users/:id): Look up a record by its indexed identifier.
-  * Search PostgreSQL persistence for a single record.
+   * 📡 ENDPOINT 2 (GET /api/v1/users/:id): Look up a record by its indexed identifier.
+   * Search PostgreSQL persistence for a single record.
    */
   getUserById = async (req: Request, res: Response): Promise<void> => {
     // No try/catch: a database failure reaches the central errorHandler (see getUsers above).
@@ -129,8 +133,8 @@ export class UserController {
   };
 
   /**
-  * 📡 ENDPOINT 2B (GET /api/v1/users/me): Read the caller's own record.
-  * The id comes from the verified token, never from the URL, so there is nothing to tamper with.
+   * 📡 ENDPOINT 2B (GET /api/v1/users/me): Read the caller's own record.
+   * The id comes from the verified token, never from the URL, so there is nothing to tamper with.
    */
   getCurrentUser = async (req: Request, res: Response): Promise<void> => {
     // No try/catch: a database failure reaches the central errorHandler (see getUsers above).
@@ -151,9 +155,9 @@ export class UserController {
     res.status(200).json(toUserResponse(user));
   };
 
-   /**
-  * 📡 ENDPOINT 3 (POST /api/v1/users): Submit a request to the queue asynchronously.
-  * Accept the payload, calculate the cryptographic hash stream, and send it to RabbitMQ.
+  /**
+   * 📡 ENDPOINT 3 (POST /api/v1/users): Submit a request to the queue asynchronously.
+   * Accept the payload, calculate the cryptographic hash stream, and send it to RabbitMQ.
    */
   createUser = async (req: Request, res: Response): Promise<void> => {
     // No try/catch: hashing, queue and Redis failures reach the central errorHandler (see getUsers above).

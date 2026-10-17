@@ -35,6 +35,6 @@ export async function assertUserEventsTopology(channel: Channel): Promise<void> 
   // The main queue: durable (survives a broker restart) and pointing at the dead-letter exchange.
   await channel.assertQueue(QUEUE_NAME, {
     durable: true,
-    arguments: { 'x-dead-letter-exchange': DEAD_LETTER_EXCHANGE },
+    arguments: { 'x-dead-letter-exchange': DEAD_LETTER_EXCHANGE }
   });
 }

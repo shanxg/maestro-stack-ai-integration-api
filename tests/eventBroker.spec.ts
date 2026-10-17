@@ -41,12 +41,14 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
     // Let the asynchronous connection sequence finish (all of its steps are resolved promises).
     await new Promise((resolve) => setImmediate(resolve));
 
-    expect(connectMock).toHaveBeenCalledWith(expect.objectContaining({
-      hostname: env.RABBIT_HOST,
-      port: env.RABBIT_PORT,
-      username: env.RABBIT_USER,
-      password: env.RABBIT_PASSWORD
-    }));
+    expect(connectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hostname: env.RABBIT_HOST,
+        port: env.RABBIT_PORT,
+        username: env.RABBIT_USER,
+        password: env.RABBIT_PASSWORD
+      })
+    );
     expect(env.RABBIT_USER).not.toBe('guest');
 
     expect(logs.text()).not.toContain(env.RABBIT_PASSWORD);
@@ -59,7 +61,11 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
   it('passes the queued hash to createUserWithPasswordHash, never to createUser', async () => {
     const userService = {
       createUser: jest.fn(),
-      createUserWithPasswordHash: jest.fn(async () => ({ id: 'queued-id' }))
+      // Typed with the real signature (name, email, passwordHash), so the toHaveBeenCalledWith
+      // checks are type-checked against it.
+      createUserWithPasswordHash: jest.fn<
+        (name: string, email: string, passwordHash: string) => Promise<{ id: string }>
+      >(async () => ({ id: 'queued-id' }))
     };
     fakeChannel.consume.mockClear();
 
@@ -69,14 +75,20 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
     const onMessage = fakeChannel.consume.mock.calls[0]?.[1] as MessageHandler;
     const passwordHash = '$2b$12$' + 'a'.repeat(53);
     const message = {
-      content: Buffer.from(JSON.stringify({
-        action: 'user_created',
-        data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: passwordHash }
-      }))
+      content: Buffer.from(
+        JSON.stringify({
+          action: 'user_created',
+          data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: passwordHash }
+        })
+      )
     };
     await onMessage(message);
 
-    expect(userService.createUserWithPasswordHash).toHaveBeenCalledWith('Lucas Fila', 'lucas.fila@maestro.com', passwordHash);
+    expect(userService.createUserWithPasswordHash).toHaveBeenCalledWith(
+      'Lucas Fila',
+      'lucas.fila@maestro.com',
+      passwordHash
+    );
     expect(userService.createUser).not.toHaveBeenCalled();
     expect(fakeChannel.ack).toHaveBeenCalledWith(message);
   });
@@ -103,7 +115,11 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
   // (AUTHZ-01), so the user_created event must not carry the name or the e-mail.
   it('broadcasts user_created with the new id only, never the name or e-mail', async () => {
     const userService = {
-      createUserWithPasswordHash: jest.fn(async () => ({ id: 'queued-id', name: 'Lucas Fila', email: 'lucas.fila@maestro.com' }))
+      createUserWithPasswordHash: jest.fn(async () => ({
+        id: 'queued-id',
+        name: 'Lucas Fila',
+        email: 'lucas.fila@maestro.com'
+      }))
     };
     fakeChannel.consume.mockClear();
 
@@ -114,10 +130,12 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
 
     const onMessage = fakeChannel.consume.mock.calls[0]?.[1] as MessageHandler;
     await onMessage({
-      content: Buffer.from(JSON.stringify({
-        action: 'user_created',
-        data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
-      }))
+      content: Buffer.from(
+        JSON.stringify({
+          action: 'user_created',
+          data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
+        })
+      )
     });
 
     const sent = stream.write.mock.calls.map((call) => String(call[0])).filter((text) => text.startsWith('event:'));
@@ -128,7 +146,11 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
   // Condition: A valid 'user_created' message; before, the consumer printed the e-mail of every new account.
   it('logs the account created from the queue without its e-mail or name', async () => {
     const userService = {
-      createUserWithPasswordHash: jest.fn(async () => ({ id: 'queued-id', name: 'Lucas Fila', email: 'lucas.fila@maestro.com' }))
+      createUserWithPasswordHash: jest.fn(async () => ({
+        id: 'queued-id',
+        name: 'Lucas Fila',
+        email: 'lucas.fila@maestro.com'
+      }))
     };
     fakeChannel.consume.mockClear();
     new EventBrokerService(userService as never);
@@ -138,10 +160,12 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
     const logs = captureLogs(logger);
     try {
       await onMessage({
-        content: Buffer.from(JSON.stringify({
-          action: 'user_created',
-          data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
-        }))
+        content: Buffer.from(
+          JSON.stringify({
+            action: 'user_created',
+            data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
+          })
+        )
       });
 
       // The id identifies the record; the personal fields stay out of every log line.
@@ -158,17 +182,23 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
   it('invalidates the users cache after saving a queued account, and not when saving fails', async () => {
     const usersCache = { invalidate: jest.fn(async () => undefined) };
     const userService = {
-      createUserWithPasswordHash: jest.fn(async () => ({ id: 'queued-id' }))
+      // Typed with the real signature (name, email, passwordHash), so the toHaveBeenCalledWith
+      // checks are type-checked against it.
+      createUserWithPasswordHash: jest.fn<
+        (name: string, email: string, passwordHash: string) => Promise<{ id: string }>
+      >(async () => ({ id: 'queued-id' }))
     };
     fakeChannel.consume.mockClear();
     new EventBrokerService(userService as never, usersCache as never);
     await new Promise((resolve) => setImmediate(resolve));
     const onMessage = fakeChannel.consume.mock.calls[0]?.[1] as MessageHandler;
     const message = () => ({
-      content: Buffer.from(JSON.stringify({
-        action: 'user_created',
-        data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
-      }))
+      content: Buffer.from(
+        JSON.stringify({
+          action: 'user_created',
+          data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
+        })
+      )
     });
 
     await onMessage(message());
@@ -177,7 +207,7 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
       userService.createUserWithPasswordHash.mock.invocationCallOrder[0] as number
     );
 
-    userService.createUserWithPasswordHash.mockRejectedValueOnce(new Error('duplicate key value') as never);
+    userService.createUserWithPasswordHash.mockRejectedValueOnce(new Error('duplicate key value'));
     await onMessage(message());
     expect(usersCache.invalidate).toHaveBeenCalledTimes(1);
   });
@@ -260,9 +290,14 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
   it('acknowledges a duplicate e-mail registration and changes nothing', async () => {
     const { DuplicateEmailError } = await import('../src/errors/DuplicateEmailError.js');
     const usersCache = { invalidate: jest.fn(async () => undefined) };
-    const onMessage = await startConsumer({
-      createUserWithPasswordHash: jest.fn(async () => { throw new DuplicateEmailError(); })
-    }, usersCache);
+    const onMessage = await startConsumer(
+      {
+        createUserWithPasswordHash: jest.fn(async () => {
+          throw new DuplicateEmailError();
+        })
+      },
+      usersCache
+    );
     const message = registration(validData);
     const logs = captureLogs(logger);
 
@@ -304,7 +339,9 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
   // queue (issue #50). Condition: The database is down when the message arrives.
   it('dead-letters a registration whose save fails', async () => {
     const onMessage = await startConsumer({
-      createUserWithPasswordHash: jest.fn(async () => { throw new Error('connect ECONNREFUSED 127.0.0.1:5433'); })
+      createUserWithPasswordHash: jest.fn(async () => {
+        throw new Error('connect ECONNREFUSED 127.0.0.1:5433');
+      })
     });
     const message = registration(validData);
 

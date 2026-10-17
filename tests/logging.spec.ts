@@ -24,19 +24,25 @@ describe('Logger (personal data redaction)', () => {
   // PostgreSQL error whose detail quotes the e-mail, as a careless future call could.
   it('writes [REDACTED] instead of e-mails, names, passwords, tokens, cookies and error details', () => {
     const { logger, lines } = memoryLogger();
-    const duplicateError = Object.assign(new Error('duplicate key value violates unique constraint "users_email_key"'), {
-      code: '23505',
-      detail: 'Key (email)=(vazou@maestro.test) already exists.'
-    });
+    const duplicateError = Object.assign(
+      new Error('duplicate key value violates unique constraint "users_email_key"'),
+      {
+        code: '23505',
+        detail: 'Key (email)=(vazou@maestro.test) already exists.'
+      }
+    );
 
-    logger.info({
-      component: 'test',
-      email: 'vazou@maestro.test',
-      name: 'Nome Vazado',
-      password: 'senha-vazada-123',
-      user: { email: 'vazou@maestro.test', username: 'vazou@maestro.test', token: 'jwt.vazado.aqui' },
-      req: { headers: { authorization: 'Bearer jwt.vazado.aqui', cookie: 'maestro_session=jwt.vazado.aqui' } }
-    }, 'Registration received');
+    logger.info(
+      {
+        component: 'test',
+        email: 'vazou@maestro.test',
+        name: 'Nome Vazado',
+        password: 'senha-vazada-123',
+        user: { email: 'vazou@maestro.test', username: 'vazou@maestro.test', token: 'jwt.vazado.aqui' },
+        req: { headers: { authorization: 'Bearer jwt.vazado.aqui', cookie: 'maestro_session=jwt.vazado.aqui' } }
+      },
+      'Registration received'
+    );
     logger.error({ component: 'test', err: duplicateError }, 'Failed to persist the user');
 
     const written = lines.join('');
@@ -47,7 +53,12 @@ describe('Logger (personal data redaction)', () => {
 
     // The rest of the line stays useful: the message, the component and the error code survive.
     const [first, second] = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
-    expect(first).toMatchObject({ msg: 'Registration received', component: 'test', service: 'maestro-api', email: '[REDACTED]' });
+    expect(first).toMatchObject({
+      msg: 'Registration received',
+      component: 'test',
+      service: 'maestro-api',
+      email: '[REDACTED]'
+    });
     expect(second).toMatchObject({ msg: 'Failed to persist the user', err: { code: '23505', detail: '[REDACTED]' } });
   });
 });

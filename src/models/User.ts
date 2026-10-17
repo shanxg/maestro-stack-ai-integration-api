@@ -7,5 +7,5 @@ export interface User {
   name: string;
   email: string;
   password?: string; // Optional property for hashed password
-  role?: UserRole;   // Read at login and copied into the JWT; never returned by the user routes
+  role?: UserRole; // Read at login and copied into the JWT; never returned by the user routes
 }

@@ -20,7 +20,6 @@ declare global {
 // - the 'Authorization: Bearer <jwt>' header, used by API clients such as scripts and the tests.
 // When a request carries both, the header wins, because the caller chose it explicitly.
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
-
   // Step A: Read the 'Authorization' header from the HTTP request.
   const authHeader = req.headers.authorization;
   let token: string | undefined;
@@ -59,13 +58,12 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     // Step F: Verify the token with the shared rules (src/auth/accessToken.ts): HS256 only,
     // this API's issuer and audience, a valid signature and an unexpired "exp" (CWE-347).
     const payload = verifyAccessToken(token);
-    
+
     // Step G: Attach the decoded payload to req.user.
     req.user = payload;
-    
+
     // Step H: Call next() to pass the request to the controller.
     return next();
-    
   } catch {
     // Step I: Immediately reject tokens that were altered, have expired, use another algorithm,
     // or were not issued by and for this API.

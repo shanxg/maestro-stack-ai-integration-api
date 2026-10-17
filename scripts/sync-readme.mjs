@@ -63,8 +63,9 @@ export function adaptForReadme(markdown, includePath) {
       }
       if (fence !== null) return line;
 
-      const shifted = line.replace(/^(#{1,6})(\s)/, (_match, hashes, space) =>
-        '#'.repeat(Math.min(hashes.length + HEADING_SHIFT, 6)) + space
+      const shifted = line.replace(
+        /^(#{1,6})(\s)/,
+        (_match, hashes, space) => '#'.repeat(Math.min(hashes.length + HEADING_SHIFT, 6)) + space
       );
 
       if (folder === '.') return shifted;
@@ -95,6 +96,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const readmePath = path.join(root, 'README.md');
 
   const original = fs.readFileSync(readmePath, 'utf8');
+  // syncIncludes() hands the reader only paths it has already checked (a .md file inside the
+  // repository, see assertSafeIncludePath above), so this non-literal path is safe to read.
+  // eslint-disable-next-line security/detect-non-literal-fs-filename
   const updated = syncIncludes(original, (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8'));
 
   if (updated === original) {

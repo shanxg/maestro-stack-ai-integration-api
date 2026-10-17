@@ -1,0 +1,26 @@
+# 🎨 PRETTIER SCOPE (issue #55)
+# Prettier formats the code: TypeScript, JavaScript and JSON config. The style lives in
+# .prettierrc.json and matches the code as it was written (single quotes, semicolons, no trailing
+# commas, 120 columns). Run `npm run format` to apply it and `npm run format:check` to verify it.
+#
+# Left out on purpose:
+# - Markdown: the remediation log and SECURITY.md are written by hand with CRLF line endings and wide
+#   tables, and README.md is partly generated (scripts/sync-readme.mjs); reflowing them would only
+#   create noise in the history.
+# - YAML: openapi.yaml, the workflows, docker-compose.yml and the k8s manifests are reviewed line by
+#   line, and their layout is part of that review.
+*.md
+*.yml
+*.yaml
+
+# Generated or installed files.
+node_modules/
+dist/
+coverage/
+package-lock.json
+frontend/.next/
+frontend/next-env.d.ts
+frontend/tsconfig.tsbuildinfo
+
+# Python tooling of the backlog sync (not JavaScript).
+.venv/

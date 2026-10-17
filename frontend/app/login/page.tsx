@@ -1,5 +1,5 @@
 'use client'; // 🌐 CLIENT DIRECTIVE: Makes the Next.js App Router treat this file as browser code.
-              // Required to use state (useState), effects (useEffect), and click events.
+// Required to use state (useState), effects (useEffect), and click events.
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation'; // Official router for the modern Next.js App Router.
@@ -13,19 +13,19 @@ export default function LoginPage() {
   // useState binds the screen inputs to React state, which updates as the user types.
   const [username, setUsername] = useState(''); // Stores the text entered in the username field
   const [password, setPassword] = useState(''); // Stores the text entered in the password field
-  const [error, setError] = useState('');       // Stores errors to display as alerts
+  const [error, setError] = useState(''); // Stores errors to display as alerts
   const [loading, setLoading] = useState(false); // Disables the button while the request is in progress
 
   const router = useRouter(); // Create the navigation helper used after login succeeds
 
   /**
-  * 📡 AUTHENTICATION HANDLER (handleLogin)
-  * Runs when the user clicks the form's submit button.
+   * 📡 AUTHENTICATION HANDLER (handleLogin)
+   * Runs when the user clicks the form's submit button.
    */
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault(); // 🛑 Prevent the browser's default full-page reload.
-    setError('');       // Clear any error from a previous attempt
-    setLoading(true);   // Disable repeated clicks while loading
+    setError(''); // Clear any error from a previous attempt
+    setLoading(true); // Disable repeated clicks while loading
 
     try {
       // 🛡️ VALIDATE INPUT BEFORE SENDING:
@@ -51,7 +51,7 @@ export default function LoginPage() {
           password: password.trim()
         },
         fallbackMessage: 'Falha na validação do acesso. Verifique suas credenciais.',
-        requiresSession: false,
+        requiresSession: false
       });
 
       // =========================================================================
@@ -64,16 +64,11 @@ export default function LoginPage() {
 
       // 🔀 Redirect the authenticated user to the chat dashboard.
       router.push('/chat');
-
     } catch (err: unknown) {
       // Catch local validation errors and server connection failures.
       console.error('❌ Falha capturada na esteira de controle de login:', err);
 
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Erro crítico de comunicação com o servidor de autenticação.'
-      );
+      setError(err instanceof Error ? err.message : 'Erro crítico de comunicação com o servidor de autenticação.');
     } finally {
       // Always clear the loading state, whether the request succeeds or fails.
       setLoading(false);
@@ -85,11 +80,15 @@ export default function LoginPage() {
     // min-h-screen: Make the background fill the full viewport height
     // bg-gray-950: Set the default very dark background
     <main className="min-h-screen flex items-center justify-center bg-gray-950 px-4">
-      
       {/* CENTERED FORM CARD */}
-      <div className="max-w-md w-full bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl" suppressHydrationWarning>
+      <div
+        className="max-w-md w-full bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl"
+        suppressHydrationWarning
+      >
         <h1 className="text-3xl font-bold text-center text-white mb-2 tracking-tight">Projeto Maestro</h1>
-        <p className="text-sm text-center text-gray-400 mb-8">Portal de orquestração e gerenciamento de Inteligência Artificial</p>
+        <p className="text-sm text-center text-gray-400 mb-8">
+          Portal de orquestração e gerenciamento de Inteligência Artificial
+        </p>
 
         {/* CONDITIONAL ERROR ALERT (render only when error contains text) */}
         {error && (
@@ -100,7 +99,6 @@ export default function LoginPage() {
 
         {/* LOGIN FORM */}
         <form onSubmit={handleLogin} className="space-y-6">
-          
           {/* USERNAME INPUT */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
@@ -138,13 +136,12 @@ export default function LoginPage() {
           >
             {loading ? 'Processando Acesso...' : 'Entrar no Console'}
           </button>
-          
         </form>
         <div className="text-center pt-4 border-t border-gray-800/60 mt-4">
           <span className="text-xs text-gray-500">Não possui uma chave de acesso? </span>
-          <button 
-            type="button" 
-            onClick={() => router.push('/register')} 
+          <button
+            type="button"
+            onClick={() => router.push('/register')}
             className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold transition-colors cursor-pointer focus:outline-none focus:underline inline-block px-1 py-0.5"
           >
             Criar Nova Conta

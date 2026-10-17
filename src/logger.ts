@@ -19,17 +19,28 @@ import { env } from './config.js';
  * Output is one JSON object per line (level, time, msg and fields), ready for a log collector.
  */
 export const REDACTED_FIELDS = [
-  'password', '*.password',
-  'passwordHash', '*.passwordHash',
-  'email', '*.email',
-  'username', '*.username',
-  'name', '*.name',
-  'token', '*.token',
-  'authorization', '*.authorization', '*.headers.authorization',
-  'cookie', '*.cookie', '*.headers.cookie',
+  'password',
+  '*.password',
+  'passwordHash',
+  '*.passwordHash',
+  'email',
+  '*.email',
+  'username',
+  '*.username',
+  'name',
+  '*.name',
+  'token',
+  '*.token',
+  'authorization',
+  '*.authorization',
+  '*.headers.authorization',
+  'cookie',
+  '*.cookie',
+  '*.headers.cookie',
   // PostgreSQL errors carry a 'detail' that can quote the offending value, for example
   // 'Key (email)=(...) already exists.' for a duplicate account; it is kept out as well.
-  'detail', '*.detail',
+  'detail',
+  '*.detail'
 ];
 
 // Options shared by the application logger and the loggers that tests build.
@@ -38,7 +49,7 @@ export const loggerOptions: LoggerOptions = {
   level: env.LOG_LEVEL,
   // Every line names the service, so lines from the API and other processes can be told apart.
   base: { service: 'maestro-api' },
-  redact: { paths: REDACTED_FIELDS, censor: '[REDACTED]' },
+  redact: { paths: REDACTED_FIELDS, censor: '[REDACTED]' }
 };
 
 // Build a logger with the shared options. Without a destination pino writes to stdout;
