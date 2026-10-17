@@ -1286,3 +1286,47 @@ The list was written for local development and kept in the fixed settings, while
 - Commit `04515c7` — `src/config.ts`, `src/app.ts`, `src/middlewares/originCheck.ts`, `src/realtime/socket-deprecated.ts`, `src/services/EventBrokerService.ts`, `tests/config.spec.ts`, `tests/userRoutes.spec.ts`.
 - Commit `17b0776` — `.env.example`, `k8s/deployment.yaml`, `SECURITY.md`, `openapi.yaml`.
 - Issue #120.
+
+---
+
+## 🔵 [CI-01] README sync workflow relied on an unresolvable third-party action, and its commits skipped secret scanning
+
+**Date:** 2026-10-16
+
+**Detected by:** Author (review of the `sync-readme` workflow added in `218a40e`)
+
+**Severity:** Low
+
+**References:** CWE-829, OWASP A03:2025
+
+**Finding:**
+
+The `sync-readme` workflow, added to copy `SECURITY.md` and this log into the README, had two problems:
+
+- It used `devops-roast/readme-weaver@v1`, a third-party action from a repository with 3 stars and one day of activity, with `contents: write` on this repository and pinned only by a tag. The tag `v1` did not even exist (only `v0.1.0` and `v0.1.1`), so both runs failed before any step ran; had it resolved, code outside this repository's review would have run with permission to push to `main`.
+- Once replaced, the job pushed its README commit with the workflow's `GITHUB_TOKEN`. GitHub does not start other workflows for such pushes, so that commit (`fe250cc`) had no Secret Scanning run, unlike every other push to `main`.
+
+**Root cause:**
+
+The workflow delegated a write-capable step to an unvetted external action, and the token rule that prevents workflow loops also skipped the secret scan for the job's own commits.
+
+**Remediation applied:**
+
+- `scripts/sync-readme.mjs`, a dependency-free script kept in this repository, replaced the external action. It copies each `md:include` file into the README, moves the copied headings two levels down, rewrites relative links and refuses any path that is not a Markdown file of the repository, so a marker cannot publish a file such as `.env`.
+- The workflow has read-only permissions by default; only the sync job gets `contents: write`, runs are serialized, and the job commits only when the README changed.
+- When the job pushes, it starts Secret Scanning on `main` with `workflow_dispatch` (the event GitHub still allows for the workflow token; the job gets `actions: write` for that), so its commit is scanned like any other. A full-history Gitleaks scan, which is what a dispatched run performs, is clean.
+- `SECURITY.md` gained a CI/CD row describing these controls.
+
+**Regression test:**
+
+- `tests/syncReadme.spec.ts`: the copy and its idempotency, link rewriting, code fences, and the refused paths (`.env`, a parent folder, an absolute path).
+- First run of the new workflow on `main` (run 38984141448): the README was filled and pushed as `fe250cc`, which then showed no checks; this entry's merge exercises the secret-scan dispatch.
+- Local full-history scan: `gitleaks git --config .gitleaks.toml` found no leaks in 140 commits.
+- `npx tsc --noEmit` passes; `npm test` passes (8 suites, 71 tests).
+
+**Evidence:**
+
+- Commit `e63aa62` — `scripts/sync-readme.mjs`, `tests/syncReadme.spec.ts`, `.github/workflows/sync-readme.yml`.
+- Commit `313d939` — `.github/workflows/sync-readme.yml`.
+- Commit `f4f9279` — `SECURITY.md`.
+- Pull requests #123 and #124.
