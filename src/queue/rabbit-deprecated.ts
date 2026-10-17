@@ -17,6 +17,7 @@
 
 import amqp from 'amqplib';
 import type { Channel, ChannelModel } from 'amqplib';
+import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
 
 // 🔥 BROKER ADDRESS: Read the host injected by Kubernetes (or the AWS MQ endpoint),
 // using localhost as a local fallback. EventBrokerService resolves the same variable.
@@ -63,7 +64,7 @@ async function openRabbitChannel(): Promise<Channel> {
 
     return channel;
   } catch (error) {
-    console.error('❌ Failed to connect to RabbitMQ:', error);
+    logger.error({ component: 'rabbitmq', err: error }, 'Failed to connect to RabbitMQ');
 
     // 🧹 CLEAN FAILURE STATE: Forget the failed attempt and release any half-open
     // connection, so the next call retries from scratch instead of reusing a broken link.
@@ -88,6 +89,6 @@ export async function closeRabbitChannel(): Promise<void> {
   try {
     await openConnection?.close();
   } catch (error) {
-    console.error('⚠️ Failed to close the RabbitMQ connection cleanly:', error);
+    logger.warn({ component: 'rabbitmq', err: error }, 'Failed to close the RabbitMQ connection cleanly');
   }
 }

@@ -4,6 +4,7 @@ import type { Options } from 'express-rate-limit';
 import type { Redis } from 'ioredis';
 import { RedisRateLimitStore } from '../src/middlewares/redisRateLimitStore.js';
 import { FakeRedis } from './helpers/fakeRedis.js';
+import { logger } from '../src/logger.js'; // The store logs through the shared logger (issue #53)
 
 // The store only reads windowMs from the limiter options.
 const WINDOW_MS = 60_000;
@@ -62,7 +63,8 @@ describe('RedisRateLimitStore (rate-limit counters shared through Redis)', () =>
   // TEST 4: Verify a Redis outage never disables the limit or fails the request.
   // Condition: Every Redis command fails; the store must keep counting in memory and log once.
   it('falls back to in-memory counting and logs once when Redis is unavailable', async () => {
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    // The store warns through the shared logger (issue #53).
+    const warnSpy = jest.spyOn(logger, 'warn');
     const store = createStore();
     FakeRedis.failing = true;
 

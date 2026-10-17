@@ -43,6 +43,7 @@ import { UserRepository } from './repositories/UserRepository.js';
 import { UserService } from './services/UserService.js';
 import { createUserSchema } from './schemas/userSchema.js';
 import { initializeSocket, broadcastUserCreated, closeSocket } from './realtime/socket-deprecated.js';
+import { logger } from './logger.js'; // Structured logger without personal data (issue #53)
 
 // 📮 EVENT CONTRACT: Action name published by UserController for new registrations.
 export const USER_CREATED_ACTION = 'user_created';
@@ -73,7 +74,7 @@ export async function processUserEventMessage(
     // Step A: Convert the Buffer (raw bytes sent over the network) back into a String,
     // and then into a JavaScript object. A malformed JSON throws and is rejected below.
     const content = JSON.parse(message.content.toString());
-    console.log(`📥 New message received from the queue! Action: ${content?.action}`);
+    logger.info({ component: 'worker', action: content?.action }, 'Message received from the queue');
 
     // Step B: Internal routing. Only 'user_created' carries a business rule for this worker.
     if (content?.action === USER_CREATED_ACTION) {
@@ -83,7 +84,7 @@ export async function processUserEventMessage(
       if (!parsed.success) {
         // Log only the failing field names, never the values (they may hold personal data).
         const fields = parsed.error.issues.map((issue) => issue.path.join('.')).join(', ');
-        console.warn(`⚠️ Rejected 'user_created' event with invalid fields: ${fields}`);
+        logger.warn({ component: 'worker', fields }, "Rejected a 'user_created' event with invalid fields");
 
         // REJECTION (nack with requeue=false): an invalid message would fail on every retry,
         // so it must not go back to the queue (that would create a poison-message loop).
@@ -96,12 +97,12 @@ export async function processUserEventMessage(
       // goes through the trusted path that verifies the hash instead of hashing it again.
       const { name, email, password } = parsed.data;
       const newUser = await userService.createUserWithPasswordHash(name, email, password);
-      console.log(`✅ User successfully created in the database via the queue! New ID: ${newUser.id}`);
+      logger.info({ component: 'worker', userId: newUser.id }, 'Account created from the queue');
 
       // 🔥 (REAL-TIME WEBSOCKET TRIGGER): Push the sanitized user to every authenticated client.
       broadcastUserCreated(newUser);
     } else {
-      console.log(`ℹ️ No handler for action "${content?.action}". Acknowledging and skipping.`);
+      logger.info({ component: 'worker', action: content?.action }, 'No handler for this action; acknowledged and skipped');
     }
 
     // CONFIRMATION OF RECEIPT (Acknowledgment / Ack): Notify RabbitMQ that the message was
@@ -109,7 +110,7 @@ export async function processUserEventMessage(
     channel.ack(message);
 
   } catch (error) {
-    console.error('❌ Critical failure while processing the worker message:', error);
+    logger.error({ component: 'worker', err: error }, 'Failed to process the message');
 
     // REJECTION OF MESSAGE (Negative Acknowledgment / Nack):
     // The parameters (false, false) mean "only this message" and "do not requeue".
@@ -126,7 +127,7 @@ let socketServer: http.Server | undefined;
 // 2. INITIALIZER FUNCTION OF THE WORKER ENGINE:
 // Start the dependencies in a safe order, then listen to the RabbitMQ queue.
 export async function startWorker(): Promise<void> {
-  console.log('👷 Worker starting. Preparing database, WebSocket, and queue connections...');
+  logger.info({ component: 'worker' }, 'Worker starting: preparing the database, WebSocket and queue connections');
 
   try {
     // Step A: Instantiate the persistence layer and AWAIT the table bootstrap before
@@ -139,7 +140,7 @@ export async function startWorker(): Promise<void> {
     socketServer = http.createServer();
     initializeSocket(socketServer);
     socketServer.listen(SOCKET_PORT, () => {
-      console.log(`📡 Worker WebSocket channel listening on port ${SOCKET_PORT}`);
+      logger.info({ component: 'worker', port: SOCKET_PORT }, 'Worker WebSocket channel listening');
     });
 
     // Step C: Open the shared channel. prefetch(1) gives each worker replica one message
@@ -149,10 +150,10 @@ export async function startWorker(): Promise<void> {
 
     // Step D: Start consuming. The callback runs for every message the broker delivers.
     await channel.consume(QUEUE_NAME, (message) => processUserEventMessage(channel, message, userService));
-    console.log('👷 Worker started successfully! Listening to the event queue...');
+    logger.info({ component: 'worker' }, 'Worker started; listening to the event queue');
 
   } catch (error) {
-    console.error('❌ Critical error while connecting to and initializing the worker engine:', error);
+    logger.error({ component: 'worker', err: error }, 'Failed to start the worker');
     // Release whatever was opened before the failure, then let the caller decide how to exit.
     await stopWorker();
     throw error;
@@ -179,7 +180,7 @@ const isDirectRun =
 if (isDirectRun) {
   // Container orchestrators send SIGTERM before stopping a task; Ctrl+C sends SIGINT.
   const shutdown = () => {
-    console.log('🛑 Shutdown signal received. Closing worker connections...');
+    logger.info({ component: 'worker' }, 'Shutdown signal received; closing the worker connections');
     void stopWorker().finally(() => process.exit(0));
   };
   process.once('SIGTERM', shutdown);

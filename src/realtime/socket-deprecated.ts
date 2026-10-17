@@ -18,6 +18,7 @@ import { verifyAccessToken } from '../auth/accessToken.js'; // The same token ru
 import { env } from '../config.js';
 import { Server, type Socket } from 'socket.io';
 import { type User } from '../models/User.js';
+import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
 
 // 🌐 CORS ALLOWLIST: The same browser origins the REST API accepts (ALLOWED_ORIGINS in src/config.ts).
 // A wildcard would let any website open an authenticated socket from a victim's browser.
@@ -74,10 +75,10 @@ export function initializeSocket(server: http.Server): Server {
 
   // Configure the default real-time connection listeners.
   io.on('connection', (socket) => {
-    console.log(`🔌 New authenticated client connected via WebSocket! ID: ${socket.id}`);
+    logger.info({ component: 'websocket', socketId: socket.id }, 'Authenticated WebSocket client connected');
 
     socket.on('disconnect', () => {
-      console.log(`❌ Client disconnected from WebSocket: ${socket.id}`);
+      logger.info({ component: 'websocket', socketId: socket.id }, 'WebSocket client disconnected');
     });
   });
 

@@ -1,6 +1,7 @@
 // 1. IMPORTS: Express types for an error-handling middleware and the expected-error class.
 import { type Request, type Response, type NextFunction } from 'express';
 import { AppError } from '../errors/AppError.js';
+import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
 
 /**
  * 🧯 CENTRAL ERROR HANDLER (CWE-209):
@@ -30,7 +31,7 @@ export function errorHandler(error: unknown, req: Request, res: Response, next: 
     // Server-side failures (5xx) still go to the log, so an outage stays visible to operators.
     // req.path is logged instead of req.originalUrl, so query strings stay out of the log.
     if (error.statusCode >= 500) {
-      console.warn(`⚠️ [Error] ${req.method} ${req.path} answered ${error.statusCode} ${error.code}: ${error.message}`);
+      logger.warn({ component: 'http', method: req.method, path: req.path, status: error.statusCode, code: error.code }, error.message);
     }
     res.status(error.statusCode).json({
       error: { code: error.code, message: error.message }
@@ -54,7 +55,9 @@ export function errorHandler(error: unknown, req: Request, res: Response, next: 
 
   // Step D: Anything else is unexpected. The full error, stack trace included, goes to the
   // server log only; the client gets a fixed message and no details (CWE-209).
-  console.error(`❌ [Error] Unhandled failure on ${req.method} ${req.path}:`, error);
+  // 'err' is pino's error key: the line carries the message, stack and the error's own fields,
+  // with any personal field (such as a PostgreSQL 'detail' quoting a value) redacted (src/logger.ts).
+  logger.error({ component: 'http', method: req.method, path: req.path, err: error }, 'Unhandled failure');
   res.status(500).json({
     error: {
       code: 'INTERNAL_SERVER_ERROR',

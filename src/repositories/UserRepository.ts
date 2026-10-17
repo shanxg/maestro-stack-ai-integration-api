@@ -4,6 +4,7 @@ import { type User } from "../models/User.js";
 import pg from 'pg'; // Use the official 'pg' driver to connect to the relational database.
 import { env, settings } from '../config.js'; // Validated database settings (no default password) and pool limits
 import { databaseReadFailure } from './databaseErrors.js'; // Outage -> 503, query error -> 500 (CWE-392)
+import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
 
 // 2. CLASS: 'implements IUserRepository' tells TypeScript that this class
 // must implement the four methods required by the contract (findAll, findById, findByEmail, create).
@@ -30,7 +31,7 @@ constructor() {
     // no listener into an uncaught exception, which stopped the whole API. The pool already discards
     // the broken connection and opens a new one on the next query, so logging is all that is needed.
     this.pool.on('error', (error) => {
-      console.error('❌ [PostgreSQL] An idle connection failed and was discarded:', error.message);
+      logger.error({ component: 'postgres', err: error }, 'An idle connection failed and was discarded');
     });
 
     // 🛑 REMEDIATION - ANTI-RACE CONDITION BLOCK (OWASP CORE):
@@ -68,9 +69,9 @@ constructor() {
     try {
       await client.query(createTableQuery);
       await client.query(addRoleColumnQuery);
-      console.log('✅ [PostgreSQL] The "users" table is validated and active in the database.');
+      logger.info({ component: 'postgres' }, 'The users table is ready');
     } catch (error) {
-      console.error('❌ Critical error while initializing the table in PostgreSQL:', error);
+      logger.error({ component: 'postgres', err: error }, 'Failed to initialize the users table');
       throw error; // Rethrow to enforce a deterministic runtime crash instead of running in a corrupted state
     } finally {
       client.release(); // Return the resource pool slice back immediately to prevent connection exhaustion
@@ -167,7 +168,8 @@ constructor() {
       const result = await this.pool.query(queryConfig);
       return result.rows[0];
     } catch (error) {
-      console.error('❌ Operational failure while persisting the user in PostgreSQL:', error);
+      // A duplicate e-mail fails here with a 'detail' that quotes the address; the logger redacts it (issue #53).
+      logger.error({ component: 'postgres', err: error }, 'Failed to persist the user');
       throw new Error('Internal persistence exception triggered inside repository boundary.');
     }
   }

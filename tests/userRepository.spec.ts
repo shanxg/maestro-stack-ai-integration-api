@@ -6,6 +6,7 @@ import http from 'node:http';
 import { describe, beforeAll, beforeEach, it, expect, jest } from '@jest/globals';
 import request from 'supertest';
 import { FakeRedis } from './helpers/fakeRedis.js';
+import { captureLogs } from './helpers/logCapture.js';
 
 // 1. FAKE POSTGRESQL DRIVER: Every pool shares one query mock, so a test decides how the database
 // answers. The pool is an EventEmitter like pg.Pool, so a test can emit the 'error' event pg emits
@@ -57,6 +58,7 @@ const { settings } = await import('../src/config.js');
 const { signAccessToken } = await import('../src/auth/accessToken.js');
 const { UserRepository } = await import('../src/repositories/UserRepository.js');
 const { AppError } = await import('../src/errors/AppError.js');
+const { logger } = await import('../src/logger.js');
 
 // The ways PostgreSQL can be unavailable, as the 'pg' driver reports them.
 const refusedConnection = () => Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:5433'), { code: 'ECONNREFUSED' });
@@ -82,7 +84,7 @@ describe('UserRepository database failures (integration tests)', () => {
   // shutdown (SQLSTATE 57P01). Before, findAll answered [] and findById/findByEmail answered null.
   it('findAll, findById and findByEmail reject with 503 DATABASE_UNAVAILABLE when PostgreSQL is down', async () => {
     const repository = new UserRepository();
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const logs = captureLogs(logger);
 
     try {
       for (const outage of [refusedConnection, poolTimeout, serverShuttingDown]) {
@@ -104,10 +106,11 @@ describe('UserRepository database failures (integration tests)', () => {
         }
       }
 
-      // The cause is not lost: the original driver error reaches the server log.
-      expect(consoleErrorSpy.mock.calls.some((call) => call.some((entry) => entry instanceof Error && entry.message.includes('ECONNREFUSED')))).toBe(true);
+      // The cause is not lost: the original driver error reaches the server log (pino's 'err' key).
+      const loggedErrors = logs.errorCalls().map((call) => (call[0] as { err?: unknown }).err);
+      expect(loggedErrors.some((entry) => entry instanceof Error && entry.message.includes('ECONNREFUSED'))).toBe(true);
     } finally {
-      consoleErrorSpy.mockRestore();
+      logs.restore();
     }
   });
 
@@ -134,8 +137,7 @@ describe('UserRepository database failures (integration tests)', () => {
   it('GET /users, GET /users/{id}, GET /users/me and POST /auth/login answer 503 when PostgreSQL is down', async () => {
     poolQueryMock.mockRejectedValue(refusedConnection());
     const cacheWriteSpy = jest.spyOn(FakeRedis.prototype, 'set');
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
-    const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const logs = captureLogs(logger);
 
     try {
       const responses = {
@@ -155,8 +157,7 @@ describe('UserRepository database failures (integration tests)', () => {
       expect(cacheWriteSpy).not.toHaveBeenCalled();
     } finally {
       cacheWriteSpy.mockRestore();
-      consoleErrorSpy.mockRestore();
-      consoleWarnSpy.mockRestore();
+      logs.restore();
     }
   });
 
@@ -166,13 +167,13 @@ describe('UserRepository database failures (integration tests)', () => {
   it('handles the pool error event emitted for a broken idle connection', () => {
     new UserRepository();
     const pool = FakePool.instances.at(-1) as FakePool;
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const logs = captureLogs(logger);
 
     try {
       expect(() => pool.emit('error', new Error('Connection terminated unexpectedly'))).not.toThrow();
-      expect(consoleErrorSpy).toHaveBeenCalled();
+      expect(logs.errorCalls().length).toBeGreaterThan(0);
     } finally {
-      consoleErrorSpy.mockRestore();
+      logs.restore();
     }
   });
 

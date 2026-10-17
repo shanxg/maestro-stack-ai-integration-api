@@ -1,6 +1,7 @@
 // 1. IMPORTS: The PostgreSQL driver (for its DatabaseError class) and the expected-error class.
 import pg from 'pg';
 import { AppError } from '../errors/AppError.js';
+import { logger } from '../logger.js'; // Structured logger without personal data (issue #53)
 
 /**
  * 🩺 DATABASE FAILURE CLASSIFICATION (CWE-392, issue #93):
@@ -46,7 +47,7 @@ export function databaseReadFailure(operation: string, error: unknown): unknown 
     return error;
   }
 
-  console.error(`❌ [PostgreSQL] ${operation} failed: the database is unavailable.`, error);
+  logger.error({ component: 'postgres', operation, err: error }, 'Database unavailable');
   return new AppError(
     503,
     'DATABASE_UNAVAILABLE',

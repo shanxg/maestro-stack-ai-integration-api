@@ -38,6 +38,7 @@ import { signAccessToken } from './auth/accessToken.js';
 // The HttpOnly session cookie (CWE-922) and the CSRF Origin check that protects it (CWE-352).
 import { SESSION_COOKIE_NAME, sessionCookieOptions } from './auth/sessionCookie.js';
 import { originCheck } from './middlewares/originCheck.js';
+import { logger } from './logger.js'; // Structured logger without personal data (issue #53)
 
 /**
  * 🏭 APPLICATION FACTORY (createApp):
@@ -201,7 +202,9 @@ export async function createApp(customUserService?: UserService) {
     // field, so this parse only returns the values, with the e-mail already trimmed.
     const { username, password } = loginSchema.shape.body.parse(req.body);
 
-    console.log(`🔑 [Auth] Intercepting authentication token request for address: ${username}`);
+    // NO PERSONAL DATA IN LOGS (CWE-532, issue #53): this line used to print the e-mail of every
+    // login attempt. The attempt stays visible; the account is identified only after success, by id.
+    logger.info({ component: 'auth' }, 'Login attempt received');
 
     // Locate the account entity using the unique email record pointer mapping
     const userRecord = await userService.getUserByEmail(username);
@@ -236,7 +239,7 @@ export async function createApp(customUserService?: UserService) {
     // settings.jwt, the same rules authMiddleware checks (src/auth/accessToken.ts).
     const token = signAccessToken(sessionPayload);
 
-    console.log(`✅ [Auth] Handshake verified successfully. JWT token issued for user ID: ${userRecord.id}`);
+    logger.info({ component: 'auth', userId: userRecord.id }, 'Login succeeded; session token issued');
 
     // SESSION COOKIE (CWE-922): the token goes into an HttpOnly, SameSite=Strict cookie that page
     // scripts cannot read, and it is no longer returned in the body, so the frontend never holds it.
@@ -318,13 +321,12 @@ export async function createApp(customUserService?: UserService) {
   // ==========================================
   const PORT = env.PORT;
   if (env.NODE_ENV === 'test') {
-    console.log("⚠️ Test mode enabled: The HTTP server will not start to avoid port conflicts.");
+    logger.info({ component: 'server' }, 'Test mode: the HTTP server does not listen, to avoid port conflicts');
   } else {
     // Listen on 0.0.0.0 to accept Kubernetes traffic.
     server.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 REST API & SSE notifications running securely at http://localhost:${PORT}`);
-    console.log(`📡 Real-time SSE notifications channel active at http://localhost:${PORT}/events`);
-  });
+      logger.info({ component: 'server', port: PORT }, 'REST API and Server-Sent Events stream listening');
+    });
   }
   return server;
 }
