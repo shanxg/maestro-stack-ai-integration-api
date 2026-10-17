@@ -1,7 +1,7 @@
 // 1. IMPORTS: Jest utilities, the YAML parser and Node's file and path helpers.
 import fs from 'node:fs';
 import path from 'node:path';
-import yaml from 'js-yaml';
+import { load } from 'js-yaml'; // js-yaml 5 has named exports only
 import { describe, it, expect } from '@jest/globals';
 
 // The parts of a GitHub Actions workflow this suite reads. A permissions block is either a map of
@@ -27,7 +27,7 @@ function loadWorkflows(): Array<{ file: string; workflow: Workflow }> {
     .filter((file) => file.endsWith('.yml') || file.endsWith('.yaml'))
     .map((file) => ({
       file,
-      workflow: yaml.load(fs.readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8')) as Workflow
+      workflow: load(fs.readFileSync(path.join(WORKFLOWS_DIR, file), 'utf8')) as Workflow
     }));
 }
 
