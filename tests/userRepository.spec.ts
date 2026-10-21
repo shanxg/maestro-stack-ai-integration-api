@@ -222,8 +222,8 @@ describe('UserRepository database failures (integration tests)', () => {
     const repository = new UserRepository();
     const user = {
       id: 'abc-777',
-      name: 'Lucas Duplicado',
-      email: 'duplicado@maestro.test',
+      name: 'Lucas Duplicate',
+      email: 'duplicate@maestro.test',
       password: '$2b$12$' + 'a'.repeat(53)
     };
 
@@ -231,13 +231,13 @@ describe('UserRepository database failures (integration tests)', () => {
       Object.assign(
         new FakeDatabaseError('duplicate key value violates unique constraint "users_email_key"', '23505'),
         {
-          detail: 'Key (email)=(duplicado@maestro.test) already exists.'
+          detail: 'Key (email)=(duplicate@maestro.test) already exists.'
         }
       )
     );
     const duplicate = await repository.create(user).catch((error: unknown) => error);
     expect(duplicate).toBeInstanceOf(DuplicateEmailError);
-    expect(String((duplicate as Error).message)).not.toContain('duplicado@maestro.test');
+    expect(String((duplicate as Error).message)).not.toContain('duplicate@maestro.test');
 
     const queryError = new FakeDatabaseError('relation "users" does not exist', '42P01');
     poolQueryMock.mockRejectedValueOnce(queryError);

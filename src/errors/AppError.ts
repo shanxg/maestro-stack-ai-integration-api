@@ -7,7 +7,7 @@
  * The central error handler (src/middlewares/errorHandler.ts) turns it into the shared
  * JSON error envelope: { error: { code, message } }.
  *
- * SAFE BY CONSTRUCTION: the message is written for the client (in Portuguese, like the
+ * SAFE BY CONSTRUCTION: the message is written for the client (in English, like the
  * other API responses), so the handler can send it as it is. Any other error is treated
  * as unexpected: its text stays in the server log and the client gets a generic 500.
  */

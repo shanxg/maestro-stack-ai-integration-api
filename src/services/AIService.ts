@@ -81,7 +81,7 @@ export class AIService {
       );
 
       // Extract the text from the first response choice returned by the model.
-      return completion.choices[0]?.message?.content || 'Não foi possível processar uma resposta inteligível.';
+      return completion.choices[0]?.message?.content || 'Could not produce an intelligible answer.';
     } catch (error) {
       // MODEL SERVER UNAVAILABLE: APIConnectionError covers a server that cannot be reached and,
       // through its APIConnectionTimeoutError subclass, a request that hit the timeout above.
@@ -92,7 +92,7 @@ export class AIService {
         throw new AppError(
           503,
           'AI_SERVICE_UNAVAILABLE',
-          'O assistente de IA está indisponível no momento. Tente novamente em instantes.'
+          'The AI assistant is unavailable right now. Please try again shortly.'
         );
       }
 

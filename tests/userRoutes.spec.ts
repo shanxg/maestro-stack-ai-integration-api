@@ -156,16 +156,16 @@ describe('User routes (integration tests)', () => {
     hashPassword: jest.fn<(password: string) => Promise<string>>(async (password) => bcrypt.hash(password, 4)),
     createUser: jest.fn().mockResolvedValue({
       id: 'mock-id-123',
-      name: 'Lucas Integrado',
-      email: 'lucas@integrado.com'
+      name: 'Lucas Integrated',
+      email: 'lucas@integrated.com'
     } as never),
     getAllUsers: jest
       .fn()
-      .mockResolvedValue([{ id: '1', name: 'Lucas Integrado', email: 'lucas@integrado.com' }] as never),
+      .mockResolvedValue([{ id: '1', name: 'Lucas Integrated', email: 'lucas@integrated.com' }] as never),
     // Return null for ID '999' to simulate a missing user.
     getUserById: jest.fn<(id: string) => Promise<User | null>>(async (id) => {
       if (id === '999') return null;
-      return { id, name: 'Lucas Buscado', email: 'lucas@busca.com' };
+      return { id, name: 'Lucas Found', email: 'lucas@lookup.com' };
     }),
     // Return the stored hash and the ADMIN role only for the test administrator, like the PostgreSQL lookup would.
     getUserByEmail: jest.fn<(email: string) => Promise<User | null>>(async (email) => {
@@ -195,7 +195,12 @@ describe('User routes (integration tests)', () => {
     tokenAdmin = sessionTokenOf(response);
 
     // A regular account (role USER), signed like the login signs tokens.
-    tokenRegular = signAccessToken({ id: REGULAR_ID, user: 'Lucas Comum', email: 'comum@maestro.test', role: 'USER' });
+    tokenRegular = signAccessToken({
+      id: REGULAR_ID,
+      user: 'Lucas Regular',
+      email: 'regular@maestro.test',
+      role: 'USER'
+    });
   });
 
   // The rate-limit counters live in the shared fake Redis; start every test from zero.
@@ -266,7 +271,7 @@ describe('User routes (integration tests)', () => {
 
     expect(response.status).toBe(200);
     expect(response.body.id).toBe('abc-777');
-    expect(response.body.name).toBe('Lucas Buscado');
+    expect(response.body.name).toBe('Lucas Found');
   });
 
   // TEST 7: Verify that a missing ID returns HTTP 404.
@@ -285,13 +290,13 @@ describe('User routes (integration tests)', () => {
     const plainPassword = crypto.randomUUID();
 
     const response = await request(serverTarget).post('/api/v1/users').send({
-      name: 'Lucas Novo',
-      email: 'lucas.novo@maestro.com',
+      name: 'Lucas New',
+      email: 'lucas.new@maestro.com',
       password: plainPassword
     });
 
     expect(response.status).toBe(202);
-    expect(response.body.message).toContain('Solicitação de cadastro recebida com sucesso!');
+    expect(response.body.message).toContain('Registration request received!');
 
     // 🛡️ CLEARTEXT SHIELD (CWE-256): The queued event must carry the hash, never the password.
     const [action, queuedData] = publishEventMock.mock.calls[0] as [string, { password: string }];
@@ -468,7 +473,7 @@ describe('User routes (integration tests)', () => {
       await request(serverTarget).get('/api/v1/users/abc-777').set('Authorization', `Bearer ${tokenAdmin}`),
       await request(serverTarget)
         .post('/api/v1/users')
-        .send({ name: 'Lucas Falha', email: 'lucas.falha@maestro.com', password: crypto.randomUUID() })
+        .send({ name: 'Lucas Failure', email: 'lucas.failure@maestro.com', password: crypto.randomUUID() })
     ];
 
     // pino's error key is 'err': errorHandler logs { err: error, ... } for every unexpected failure.
@@ -521,7 +526,7 @@ describe('User routes (integration tests)', () => {
 
     const response = await request(serverTarget)
       .post('/api/v1/users')
-      .send({ name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: crypto.randomUUID() });
+      .send({ name: 'Lucas Queue', email: 'lucas.queue@maestro.com', password: crypto.randomUUID() });
 
     expect(response.status).toBe(503);
     expect(response.body.error.code).toBe('SERVICE_UNAVAILABLE');
@@ -762,13 +767,13 @@ describe('User routes (integration tests)', () => {
   it('GET /api/v1/users, /api/v1/users/:id and /api/v1/users/me -> answer only the public fields of a user', async () => {
     const internalRecord = {
       id: 'abc-777',
-      name: 'Lucas Interno',
-      email: 'interno@maestro.test',
+      name: 'Lucas Internal',
+      email: 'internal@maestro.test',
       password: adminPasswordHash,
       role: 'ADMIN',
       created_at: '2026-10-16T21:00:00.000Z'
     };
-    const publicView = { id: 'abc-777', name: 'Lucas Interno', email: 'interno@maestro.test' };
+    const publicView = { id: 'abc-777', name: 'Lucas Internal', email: 'internal@maestro.test' };
     mockUserService.getAllUsers.mockResolvedValueOnce([internalRecord] as never);
     mockUserService.getUserById
       .mockResolvedValueOnce(internalRecord as never)
@@ -792,7 +797,7 @@ describe('User routes (integration tests)', () => {
   // before, the login printed the e-mail of every attempt.
   it('POST /api/v1/auth/login and POST /api/v1/users -> log no e-mail, name or password', async () => {
     const freshServer = await createApp(userServiceForApp);
-    const registration = { name: 'Lucas Rastreavel', email: 'rastreavel@maestro.test', password: crypto.randomUUID() };
+    const registration = { name: 'Lucas Traceable', email: 'traceable@maestro.test', password: crypto.randomUUID() };
     publishEventMock.mockResolvedValueOnce(true);
 
     const logs = captureLogs(logger);
@@ -840,7 +845,7 @@ describe('User routes (integration tests)', () => {
     try {
       const response = await request(serverTarget)
         .post('/api/v1/users')
-        .send({ name: 'Lucas Sem Scan', email: 'sem.scan@maestro.test', password: crypto.randomUUID() });
+        .send({ name: 'Lucas No Scan', email: 'no.scan@maestro.test', password: crypto.randomUUID() });
 
       expect(response.status).toBe(202);
       expect(keysSpy).not.toHaveBeenCalled();
@@ -891,7 +896,7 @@ describe('User routes (integration tests)', () => {
       [
         'POST /ai/chat',
         () =>
-          request(serverTarget).post('/ai/chat').set('Authorization', `Bearer ${tokenAdmin}`).send({ prompt: 'Olá' })
+          request(serverTarget).post('/ai/chat').set('Authorization', `Bearer ${tokenAdmin}`).send({ prompt: 'Hello' })
       ],
       ['GET /events', () => request(serverTarget).get('/events').set('Authorization', `Bearer ${tokenAdmin}`)]
     ];
@@ -949,7 +954,9 @@ describe('User routes (integration tests)', () => {
     expect(response.status).toBe(401);
     expect(response.body.error.code).toBe('INVALID_TOKEN');
     expect(response.body.error.details).toBeUndefined();
-    expect(JSON.stringify(response.body)).not.toMatch(/expired/i);
+    // The generic message says "Invalid or expired token" for every rejected token, so the check
+    // looks for the library's own error details (its message, error name and expiry date).
+    expect(JSON.stringify(response.body)).not.toMatch(/jwt expired|TokenExpiredError|expiredAt/i);
     expect(mockUserService.getAllUsers).not.toHaveBeenCalled();
   });
 
@@ -1005,7 +1012,7 @@ describe('AI chat route (integration tests)', () => {
   beforeEach(() => {
     FakeRedis.reset();
     createCompletionMock.mockReset();
-    createCompletionMock.mockResolvedValue({ choices: [{ message: { content: 'Resposta de teste.' } }] });
+    createCompletionMock.mockResolvedValue({ choices: [{ message: { content: 'Test answer.' } }] });
   });
 
   // TEST 1: Verify an oversized prompt is rejected before it reaches the model (CWE-770 / LLM10:2025).
@@ -1027,10 +1034,10 @@ describe('AI chat route (integration tests)', () => {
   // Condition: A valid prompt; the request sent to the SDK must hold max_tokens, the configured
   // model, the timeout and no automatic retries.
   it('POST /api/v1/ai/chat -> sends max_tokens, the configured model, a timeout and no retries to the model', async () => {
-    const response = await sendPrompt(tokenFor('user-a'), '  Explique o padrão Cache-Aside.  ');
+    const response = await sendPrompt(tokenFor('user-a'), '  Explain the Cache-Aside pattern.  ');
 
     expect(response.status).toBe(200);
-    expect(response.body.response).toBe('Resposta de teste.');
+    expect(response.body.response).toBe('Test answer.');
 
     const [body, options] = createCompletionMock.mock.calls[0] as [
       Record<string, unknown>,
@@ -1043,7 +1050,7 @@ describe('AI chat route (integration tests)', () => {
 
     // The prompt reaches the model trimmed, as chatSchema returns it.
     const messages = body.messages as Array<{ role: string; content: string }>;
-    expect(messages.at(-1)).toEqual({ role: 'user', content: 'Explique o padrão Cache-Aside.' });
+    expect(messages.at(-1)).toEqual({ role: 'user', content: 'Explain the Cache-Aside pattern.' });
   });
 
   // TEST 3: Verify an unreachable or timed-out model server answers 503 without connection details.
@@ -1052,7 +1059,7 @@ describe('AI chat route (integration tests)', () => {
     createCompletionMock.mockRejectedValueOnce(new FakeAPIConnectionError('connect ECONNREFUSED 127.0.0.1:11434'));
     const warnSpy = jest.spyOn(logger, 'warn');
 
-    const response = await sendPrompt(tokenFor('user-a'), 'Olá?');
+    const response = await sendPrompt(tokenFor('user-a'), 'Hello?');
     warnSpy.mockRestore();
 
     expect(response.status).toBe(503);
@@ -1068,14 +1075,14 @@ describe('AI chat route (integration tests)', () => {
     const tokenB = tokenFor('user-b');
 
     for (let i = 0; i < settings.rateLimits.aiChat.max; i++) {
-      expect((await sendPrompt(tokenA, `Pergunta ${i}`)).status).toBe(200);
+      expect((await sendPrompt(tokenA, `Question ${i}`)).status).toBe(200);
     }
 
-    const blockedA = await sendPrompt(tokenA, 'Mais uma pergunta');
+    const blockedA = await sendPrompt(tokenA, 'One more question');
     expect(blockedA.status).toBe(429);
     expect(blockedA.body.error.code).toBe('LLM_COMPUTE_LIMIT_EXCEEDED');
 
-    const servedB = await sendPrompt(tokenB, 'Primeira pergunta de outra conta');
+    const servedB = await sendPrompt(tokenB, 'First question from another account');
     expect(servedB.status).toBe(200);
   });
 
@@ -1086,7 +1093,7 @@ describe('AI chat route (integration tests)', () => {
     const prompt = loadPrompt('chat-system');
     expect(prompt.version).toMatch(/^\d+\.\d+\.\d+$/);
 
-    const response = await sendPrompt(tokenFor('user-a'), 'Olá?');
+    const response = await sendPrompt(tokenFor('user-a'), 'Hello?');
     expect(response.status).toBe(200);
 
     const [body] = createCompletionMock.mock.calls[0] as [Record<string, unknown>];
@@ -1268,18 +1275,18 @@ describe('Legacy cloud blueprint (deprecated modules, isolated from the API)', (
       content: Buffer.from(
         JSON.stringify({
           action: 'user_created',
-          data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: passwordHash }
+          data: { name: 'Lucas Queue', email: 'lucas.queue@maestro.com', password: passwordHash }
         })
       )
     };
 
     await workerModule.processUserEventMessage(channel as never, message as never, { createUserWithPasswordHash });
 
-    expect(createUserWithPasswordHash).toHaveBeenCalledWith('Lucas Fila', 'lucas.fila@maestro.com', passwordHash);
+    expect(createUserWithPasswordHash).toHaveBeenCalledWith('Lucas Queue', 'lucas.queue@maestro.com', passwordHash);
     expect(emitSpy).toHaveBeenCalledWith('user_created', {
       id: 'queued-id',
-      name: 'Lucas Fila',
-      email: 'lucas.fila@maestro.com'
+      name: 'Lucas Queue',
+      email: 'lucas.queue@maestro.com'
     });
     expect(channel.ack).toHaveBeenCalledWith(message);
     expect(channel.nack).not.toHaveBeenCalled();

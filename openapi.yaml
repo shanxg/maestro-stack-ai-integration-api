@@ -91,10 +91,10 @@ paths:
               example:
                 error:
                   code: VALIDATION_FAILURE
-                  message: "Falha na validação dos dados de entrada."
+                  message: "Input validation failed."
                   details:
                     - field: body.username
-                      message: "O e-mail (username) é obrigatório e precisa ser um texto."
+                      message: "The e-mail (username) is required and must be a string."
         '401':
           description: Invalid credentials. Unknown emails and wrong passwords get this same response.
         '403':
@@ -173,10 +173,10 @@ paths:
               example:
                 error:
                   code: VALIDATION_FAILURE
-                  message: "Falha na validação dos dados de entrada."
+                  message: "Input validation failed."
                   details:
                     - field: query.limit
-                      message: "O limit deve ser no máximo 100."
+                      message: "The limit must be at most 100."
         '401':
           description: Access denied because the JWT is missing or invalid.
         '403':
@@ -216,10 +216,10 @@ paths:
               example:
                 error:
                   code: VALIDATION_FAILURE
-                  message: "Falha na validação dos dados de entrada."
+                  message: "Input validation failed."
                   details:
                     - field: body.email
-                      message: "Insira um formato de e-mail válido (exemplo: usuario@email.com)."
+                      message: "Enter a valid e-mail format (for example: user@example.com)."
         '403':
           $ref: '#/components/responses/ForeignOrigin'
         '429':
@@ -237,7 +237,7 @@ paths:
               example:
                 error:
                   code: SERVICE_UNAVAILABLE
-                  message: "O serviço de cadastro está temporariamente indisponível. Tente novamente em instantes."
+                  message: "The registration service is temporarily unavailable. Please try again shortly."
 
   /api/v1/users/me:
     get:
@@ -353,10 +353,10 @@ paths:
               example:
                 error:
                   code: VALIDATION_FAILURE
-                  message: "Falha na validação dos dados de entrada."
+                  message: "Input validation failed."
                   details:
                     - field: body.prompt
-                      message: "O prompt pode ter no máximo 2000 caracteres."
+                      message: "The prompt can have at most 2000 caracteres."
         '401':
           description: Access denied because the JWT is missing, expired or invalid.
         '403':
@@ -376,7 +376,7 @@ paths:
               example:
                 error:
                   code: AI_SERVICE_UNAVAILABLE
-                  message: "O assistente de IA está indisponível no momento. Tente novamente em instantes."
+                  message: "The AI assistant is unavailable right now. Please try again shortly."
 
   /api/v1/events:
     get:
@@ -490,7 +490,7 @@ components:
           example:
             error:
               code: CSRF_ORIGIN_REJECTED
-              message: "Origem da requisição não autorizada."
+              message: "Request origin not allowed."
 
     Forbidden:
       description: >
@@ -503,7 +503,7 @@ components:
           example:
             error:
               code: FORBIDDEN
-              message: "Apenas administradores podem listar os usuários."
+              message: "Only administrators can list the users."
 
     TooManyRequests:
       description: >
@@ -536,7 +536,7 @@ components:
           example:
             error:
               code: INTERNAL_SERVER_ERROR
-              message: "Erro interno no servidor. Tente novamente mais tarde."
+              message: "Internal server error. Please try again later."
 
     DatabaseUnavailable:
       description: >
@@ -551,7 +551,7 @@ components:
           example:
             error:
               code: DATABASE_UNAVAILABLE
-              message: "O banco de dados está temporariamente indisponível. Tente novamente em instantes."
+              message: "The database is temporarily unavailable. Please try again shortly."
 
   schemas:
     User:
@@ -580,7 +580,7 @@ components:
       type: object
       description: >
         Error envelope shared by the REST routes. Clients should branch on error.code;
-        error.message is human-readable text, currently a mix of Portuguese and English.
+        error.message is human-readable English text.
       required:
         - error
       properties:

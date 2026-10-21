@@ -34,7 +34,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
       return res.status(401).json({
         error: {
           code: 'UNAUTHORIZED',
-          message: 'Token mal formatado'
+          message: 'Malformed token'
         }
       });
     }
@@ -49,7 +49,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     return res.status(401).json({
       error: {
         code: 'UNAUTHORIZED',
-        message: 'Token não fornecido'
+        message: 'Token not provided'
       }
     });
   }
@@ -73,7 +73,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction) 
     return res.status(401).json({
       error: {
         code: 'INVALID_TOKEN',
-        message: 'Token inválido ou expirado'
+        message: 'Invalid or expired token'
       }
     });
   }

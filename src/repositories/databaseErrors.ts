@@ -51,6 +51,6 @@ export function databaseReadFailure(operation: string, error: unknown): unknown 
   return new AppError(
     503,
     'DATABASE_UNAVAILABLE',
-    'O banco de dados está temporariamente indisponível. Tente novamente em instantes.'
+    'The database is temporarily unavailable. Please try again shortly.'
   );
 }

@@ -8,17 +8,17 @@ export const loginSchema = z.object({
     // E-mail used as the account name. Surrounding spaces are removed before the lookup.
     username: z
       .string({
-        message: 'O e-mail (username) é obrigatório e precisa ser um texto.'
+        message: 'The e-mail (username) is required and must be a string.'
       })
       .trim()
-      .min(1, { message: 'O e-mail (username) não pode ficar em branco.' }),
+      .min(1, { message: 'The e-mail (username) cannot be blank.' }),
 
     // The password is compared exactly as typed (no trim), because registration stores it unchanged.
     // It only needs at least one character that is not a space.
     password: z
       .string({
-        message: 'A senha (password) é obrigatória e precisa ser um texto.'
+        message: 'The password is required and must be a string.'
       })
-      .regex(/\S/, { message: 'A senha (password) não pode ficar em branco.' })
+      .regex(/\S/, { message: 'The password cannot be blank.' })
   })
 });

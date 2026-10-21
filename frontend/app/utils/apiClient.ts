@@ -13,7 +13,7 @@
  * 2. always sends credentials: 'include', so the browser attaches the HttpOnly session cookie
  *    (page scripts never see the token, CWE-922) and stores the one the login response sets;
  * 3. sends and reads JSON, and turns the API error envelope { error: { code, message } } into an
- *    ApiError that carries the HTTP status, the code and the Portuguese message for the user;
+ *    ApiError that carries the HTTP status, the code and the message for the user;
  * 4. on a 401 for a request that needs a session, clears the "signed in" flag, which sends the
  *    open page back to /login (see session.ts).
  */
@@ -24,8 +24,8 @@ const DEFAULT_API_URL = 'http://localhost:3000';
 
 // Messages shown when there is no API message to show: the API could not be reached, or it
 // answered something that is not the JSON this client expects (for example a proxy error page).
-const NETWORK_ERROR_MESSAGE = 'Não foi possível conectar à API do Maestro. Verifique se ela está online.';
-const INVALID_RESPONSE_MESSAGE = 'O servidor retornou uma resposta inválida. Verifique se a API está online.';
+const NETWORK_ERROR_MESSAGE = 'Could not connect to the Maestro API. Check that it is online.';
+const INVALID_RESPONSE_MESSAGE = 'The server returned an invalid response. Check that the API is online.';
 
 /**
  * A failed API call. status is the HTTP status (0 when no response arrived) and code is the
@@ -93,7 +93,7 @@ export async function apiRequest<T = unknown>(path: string, options: ApiRequestO
       ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     });
   } catch (error: unknown) {
-    console.error('❌ Falha de rede ao chamar a API do Maestro:', error);
+    console.error('❌ Network failure calling the Maestro API:', error);
     throw new ApiError(NETWORK_ERROR_MESSAGE, 0);
   }
 

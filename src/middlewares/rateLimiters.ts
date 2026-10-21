@@ -26,7 +26,7 @@ export function createRateLimiters(redis: Redis) {
     message: {
       error: {
         code: 'TOO_MANY_REQUESTS',
-        message: 'Você atingiu o limite máximo de requisições toleradas. Aguarde 15 minutos.'
+        message: 'You have reached the maximum number of requests allowed. Wait 15 minutes.'
       }
     }
   });

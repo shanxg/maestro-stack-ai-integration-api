@@ -26,21 +26,21 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
-# Segredos
+# Secrets
 .env
 .env.*
 !.env.example
 
-# Planilhas (se optar pela opção A)
+# Spreadsheets (sync_backlog.py backlog file)
 *.xlsx
 
-# Sistema
+# Operating system files
 .DS_Store
 Thumbs.db
 # Next.js build cache
 frontend/.next/
 .next/
 
-# Scripts locais de diagn�stico
+# Local diagnostic scripts
 diagnostico.py
 delete-issues.py

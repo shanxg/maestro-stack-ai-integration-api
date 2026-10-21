@@ -165,7 +165,7 @@ export async function createApp(customUserService?: UserService) {
     res.status(404).json({
       error: {
         code: 'NOT_FOUND',
-        message: 'A rota solicitada não existe nesta API.'
+        message: 'The requested route does not exist in this API.'
       }
     });
   });

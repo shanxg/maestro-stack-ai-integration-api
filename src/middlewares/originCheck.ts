@@ -28,7 +28,7 @@ export function originCheck(req: Request, res: Response, next: NextFunction): vo
   res.status(403).json({
     error: {
       code: 'CSRF_ORIGIN_REJECTED',
-      message: 'Origem da requisição não autorizada.'
+      message: 'Request origin not allowed.'
     }
   });
 }
