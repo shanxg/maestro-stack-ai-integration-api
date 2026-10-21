@@ -21,8 +21,8 @@ const geistMono = Geist_Mono({
 // ==========================================
 // Define the HTML headers (<title>, <meta description>) statically on the Next.js server.
 export const metadata: Metadata = {
-  title: 'Projeto Maestro',
-  description: 'Console de orquestração e monitoramento de Inteligência Artificial da API Maestro'
+  title: 'Maestro Project',
+  description: 'Artificial Intelligence orchestration and monitoring console for the Maestro API'
 };
 
 /**

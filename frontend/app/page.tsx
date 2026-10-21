@@ -25,7 +25,7 @@ export default function HomePage() {
   return (
     // Briefly display this transition while Next.js processes navigation.
     <main className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-500 text-sm tracking-widest font-mono uppercase animate-pulse">
-      Carregando ecossistema Maestro...
+      Loading the Maestro ecosystem...
     </main>
   );
 }

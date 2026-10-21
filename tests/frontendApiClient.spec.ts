@@ -56,11 +56,11 @@ describe('Frontend API client (frontend/app/utils/apiClient.ts)', () => {
   // body with its Content-Type, and return the parsed answer.
   it('sends JSON with credentials to NEXT_PUBLIC_API_URL and returns the parsed body', async () => {
     process.env.NEXT_PUBLIC_API_URL = 'https://api.maestro.example';
-    fetchMock.mockResolvedValue(jsonResponse(200, { response: 'Olá' }));
+    fetchMock.mockResolvedValue(jsonResponse(200, { response: 'Hello' }));
 
     const data = await apiRequest<{ response: string }>('/api/v1/ai/chat', { method: 'POST', body: { prompt: 'oi' } });
 
-    expect(data).toEqual({ response: 'Olá' });
+    expect(data).toEqual({ response: 'Hello' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
     expect(url).toBe('https://api.maestro.example/api/v1/ai/chat');
@@ -90,14 +90,14 @@ describe('Frontend API client (frontend/app/utils/apiClient.ts)', () => {
     browser.storage.setItem(SESSION_FLAG_KEY, '1');
     const storageEvents: Event[] = [];
     browser.browserWindow.addEventListener('storage', (event) => storageEvents.push(event));
-    fetchMock.mockResolvedValue(jsonResponse(401, { error: { code: 'UNAUTHORIZED', message: 'Sessão expirada.' } }));
+    fetchMock.mockResolvedValue(jsonResponse(401, { error: { code: 'UNAUTHORIZED', message: 'Session expired.' } }));
 
     const failure = await apiRequest('/api/v1/ai/chat', { method: 'POST', body: { prompt: 'oi' } }).catch(
       (error: unknown) => error
     );
 
     expect(failure).toBeInstanceOf(ApiError);
-    expect(failure).toMatchObject({ status: 401, code: 'UNAUTHORIZED', message: 'Sessão expirada.' });
+    expect(failure).toMatchObject({ status: 401, code: 'UNAUTHORIZED', message: 'Session expired.' });
     expect(browser.storage.getItem(SESSION_FLAG_KEY)).toBeNull();
     expect(storageEvents).toHaveLength(1);
   });
@@ -108,7 +108,7 @@ describe('Frontend API client (frontend/app/utils/apiClient.ts)', () => {
   it('keeps the signed-in flag on a 401 for the login call', async () => {
     browser.storage.setItem(SESSION_FLAG_KEY, '1');
     fetchMock.mockResolvedValue(
-      jsonResponse(401, { error: { code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' } })
+      jsonResponse(401, { error: { code: 'INVALID_CREDENTIALS', message: 'Invalid credentials.' } })
     );
 
     const failure = await apiRequest('/api/v1/auth/login', {
@@ -117,32 +117,32 @@ describe('Frontend API client (frontend/app/utils/apiClient.ts)', () => {
       requiresSession: false
     }).catch((error: unknown) => error);
 
-    expect(failure).toMatchObject({ status: 401, code: 'INVALID_CREDENTIALS', message: 'Credenciais inválidas.' });
+    expect(failure).toMatchObject({ status: 401, code: 'INVALID_CREDENTIALS', message: 'Invalid credentials.' });
     expect(browser.storage.getItem(SESSION_FLAG_KEY)).toBe('1');
   });
 
   // TEST 4: Verify failures without an API message still reach the page as a readable ApiError.
   // Condition: An error status with no envelope uses the caller's fallback message; a body that is
-  // not JSON (a proxy's HTML page) and a network failure (fetch rejects) get fixed Portuguese
+  // not JSON (a proxy's HTML page) and a network failure (fetch rejects) get fixed English
   // messages instead of a crash in response.json() or the browser's English "Failed to fetch".
   it('turns envelope-less errors, non-JSON bodies and network failures into ApiError', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined); // The client logs the network error
 
     fetchMock.mockResolvedValueOnce(jsonResponse(502, { unexpected: true }));
     await expect(
-      apiRequest('/api/v1/users', { method: 'POST', fallbackMessage: 'Falha ao cadastrar.' })
-    ).rejects.toMatchObject({ status: 502, code: undefined, message: 'Falha ao cadastrar.' });
+      apiRequest('/api/v1/users', { method: 'POST', fallbackMessage: 'Registration failed.' })
+    ).rejects.toMatchObject({ status: 502, code: undefined, message: 'Registration failed.' });
 
     fetchMock.mockResolvedValueOnce(new Response('<html>Bad Gateway</html>', { status: 502 }));
     await expect(apiRequest('/api/v1/users')).rejects.toMatchObject({
       status: 502,
-      message: 'O servidor retornou uma resposta inválida. Verifique se a API está online.'
+      message: 'The server returned an invalid response. Check that the API is online.'
     });
 
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     await expect(apiRequest('/api/v1/users')).rejects.toMatchObject({
       status: 0,
-      message: 'Não foi possível conectar à API do Maestro. Verifique se ela está online.'
+      message: 'Could not connect to the Maestro API. Check that it is online.'
     });
   });
 

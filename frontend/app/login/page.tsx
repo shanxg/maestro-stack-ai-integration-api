@@ -32,7 +32,7 @@ export default function LoginPage() {
       // .trim() removes accidental whitespace around the text.
       // If either field is blank, raise a local error without making a network request.
       if (!username.trim() || !password.trim()) {
-        throw new Error('Por favor, preencha todos os campos do formulário para prosseguir.');
+        throw new Error('Please fill in every field of the form to continue.');
       }
 
       // =========================================================================
@@ -50,7 +50,7 @@ export default function LoginPage() {
           username: username.trim(),
           password: password.trim()
         },
-        fallbackMessage: 'Falha na validação do acesso. Verifique suas credenciais.',
+        fallbackMessage: 'Sign-in validation failed. Check your credentials.',
         requiresSession: false
       });
 
@@ -66,9 +66,9 @@ export default function LoginPage() {
       router.push('/chat');
     } catch (err: unknown) {
       // Catch local validation errors and server connection failures.
-      console.error('❌ Falha capturada na esteira de controle de login:', err);
+      console.error('❌ Login flow failure:', err);
 
-      setError(err instanceof Error ? err.message : 'Erro crítico de comunicação com o servidor de autenticação.');
+      setError(err instanceof Error ? err.message : 'Critical error communicating with the authentication server.');
     } finally {
       // Always clear the loading state, whether the request succeeds or fails.
       setLoading(false);
@@ -85,9 +85,9 @@ export default function LoginPage() {
         className="max-w-md w-full bg-gray-900 border border-gray-800 p-8 rounded-2xl shadow-2xl"
         suppressHydrationWarning
       >
-        <h1 className="text-3xl font-bold text-center text-white mb-2 tracking-tight">Projeto Maestro</h1>
+        <h1 className="text-3xl font-bold text-center text-white mb-2 tracking-tight">Maestro Project</h1>
         <p className="text-sm text-center text-gray-400 mb-8">
-          Portal de orquestração e gerenciamento de Inteligência Artificial
+          Artificial Intelligence orchestration and management portal
         </p>
 
         {/* CONDITIONAL ERROR ALERT (render only when error contains text) */}
@@ -102,13 +102,13 @@ export default function LoginPage() {
           {/* USERNAME INPUT */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
-              Identificador (Username)
+              Identifier (Username)
             </label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)} // Update React state as each character is typed
-              placeholder="Ex: admin"
+              placeholder="e.g. admin"
               className="w-full bg-gray-950 border border-gray-800 text-white rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors placeholder-gray-600"
             />
           </div>
@@ -116,7 +116,7 @@ export default function LoginPage() {
           {/* PASSWORD INPUT */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2">
-              Chave de Acesso (Password)
+              Access Key (Password)
             </label>
             <input
               type="password"
@@ -134,17 +134,17 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/40 text-white font-medium py-3 rounded-xl transition-all shadow-lg shadow-indigo-600/10 active:scale-[0.98]"
           >
-            {loading ? 'Processando Acesso...' : 'Entrar no Console'}
+            {loading ? 'Signing In...' : 'Enter the Console'}
           </button>
         </form>
         <div className="text-center pt-4 border-t border-gray-800/60 mt-4">
-          <span className="text-xs text-gray-500">Não possui uma chave de acesso? </span>
+          <span className="text-xs text-gray-500">No access key yet? </span>
           <button
             type="button"
             onClick={() => router.push('/register')}
             className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold transition-colors cursor-pointer focus:outline-none focus:underline inline-block px-1 py-0.5"
           >
-            Criar Nova Conta
+            Create New Account
           </button>
         </div>
       </div>

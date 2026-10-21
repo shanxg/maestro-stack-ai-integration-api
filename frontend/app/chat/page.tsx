@@ -43,7 +43,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: 'Olá! Sou o assistente inteligente Maestro. Como posso te ajudar com as análises do ecossistema hoje?'
+      content: 'Hello! I am Maestro, the intelligent assistant. How can I help you with the ecosystem analysis today?'
     }
   ]);
 
@@ -67,7 +67,7 @@ export default function ChatPage() {
   }, [messages]);
 
   /**
-   * 📡 ENVIO DO PROMPT AUTENTICADO
+   * 📡 AUTHENTICATED PROMPT SUBMISSION
    */
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,7 +87,7 @@ export default function ChatPage() {
       const data = await apiRequest<{ response: string }>('/api/v1/ai/chat', {
         method: 'POST',
         body: { prompt: userPrompt },
-        fallbackMessage: 'Falha ao obter resposta do motor de IA.'
+        fallbackMessage: 'Failed to get an answer from the AI engine.'
       });
 
       setMessages((prev) => [...prev, { role: 'assistant', content: data.response }]);
@@ -97,8 +97,8 @@ export default function ChatPage() {
       // and the effect above redirects to /login, so there is no error to show.
       if (err instanceof ApiError && err.status === 401) return;
 
-      console.error('❌ Falha na esteira de transmissão do chat:', err);
-      setError(err instanceof Error ? err.message : 'Ocorreu um erro ao tentar se conectar com a API do Maestro.');
+      console.error('❌ Chat request pipeline failed:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while connecting to the Maestro API.');
     } finally {
       setLoading(false);
     }
@@ -111,7 +111,7 @@ export default function ChatPage() {
       await apiRequest('/api/v1/auth/logout', { method: 'POST' });
     } catch (err: unknown) {
       // Even if the API cannot be reached, leave the page; the cookie expires with the token.
-      console.error('❌ Falha ao encerrar a sessão na API:', err);
+      console.error('❌ Failed to end the session on the API:', err);
     }
     // useSyncExternalStore detects the removal and the effect redirects to /login
     clearSignedIn();
@@ -121,7 +121,7 @@ export default function ChatPage() {
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-500 text-sm tracking-wide">
-        Autenticando sessão do console...
+        Authenticating the console session...
       </div>
     );
   }
@@ -141,11 +141,11 @@ export default function ChatPage() {
           onClick={handleLogout}
           className="text-xs bg-gray-800 hover:bg-red-950/40 hover:text-red-400 border border-gray-700 hover:border-red-900 px-4 py-2 rounded-xl transition-all font-medium"
         >
-          Sair do Sistema
+          Sign Out
         </button>
       </header>
 
-      {/* PAINEL DE MENSAGENS */}
+      {/* MESSAGE PANEL */}
       <section className="flex-1 overflow-y-auto px-4 py-6 space-y-6 max-w-4xl w-full mx-auto scrollbar-thin">
         {messages.map((msg, index) => (
           <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -195,7 +195,7 @@ export default function ChatPage() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={loading}
-            placeholder="Faça uma pergunta sobre negócios para o assistente Maestro..."
+            placeholder="Ask the Maestro assistant a business question..."
             className="flex-1 bg-gray-950 border border-gray-800 text-white placeholder-gray-600 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-indigo-500 transition-colors disabled:opacity-50"
           />
           <button
@@ -203,7 +203,7 @@ export default function ChatPage() {
             disabled={loading || !input.trim()}
             className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-800 disabled:text-gray-500 text-white font-medium px-6 rounded-xl transition-all shadow-lg shadow-indigo-600/10 disabled:shadow-none"
           >
-            Enviar
+            Send
           </button>
         </form>
       </footer>
