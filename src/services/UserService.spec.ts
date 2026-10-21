@@ -18,7 +18,7 @@ const mockUserRepository: jest.Mocked<IUserRepository> = {
 };
 
 // 3. SERVICE TESTS: Group tests related to UserService.
-describe('UserService (Testes Unitários)', () => {
+describe('UserService (unit tests)', () => {
   let userService: UserService;
 
   // Run 'beforeEach' before every test to ensure a clean environment.
@@ -30,12 +30,12 @@ describe('UserService (Testes Unitários)', () => {
   });
 
   // TEST 1: Verify that the service generates a random ID and calls persistence correctly.
-  it('deve gerar um ID aleatório e criar um usuário com sucesso', async () => {
+  it('generates a random ID and creates a user', async () => {
     // Configure the mock to return the user passed to 'create'.
     mockUserRepository.create.mockImplementation(async (user: User) => user);
 
-    const name = 'Lucas Teste';
-    const email = 'lucas@teste.com';
+    const name = 'Lucas Test';
+    const email = 'lucas@test.com';
     const password = 'cryptographic_password_string_123'; // APPSEC REMEDIATION: Inject mock credential token
 
     // Call the real service method with the input data vector.
@@ -51,7 +51,7 @@ describe('UserService (Testes Unitários)', () => {
   });
 
   // 🔥 TEST 2: Verify paginated listing (covers the general lookup path).
-  it('deve retornar uma lista de usuários de forma paginada', async () => {
+  it('returns a paginated list of users', async () => {
     const mockUsersList: User[] = [
       { id: '1', name: 'User One', email: 'one@test.com' },
       { id: '2', name: 'User Two', email: 'two@test.com' }
@@ -69,7 +69,7 @@ describe('UserService (Testes Unitários)', () => {
   });
 
   // 🔥 TEST 3: Verify lookup by ID (covers the ID lookup path).
-  it('deve retornar um usuário específico ao buscar por um ID válido', async () => {
+  it('returns the user that matches a valid ID', async () => {
     const mockUser: User = { id: '123', name: 'User Target', email: 'target@test.com' };
 
     mockUserRepository.findById.mockResolvedValue(mockUser);
@@ -102,7 +102,7 @@ describe('UserService (Testes Unitários)', () => {
     mockUserRepository.create.mockImplementation(async (user: User) => user);
     const passwordHash = await userService.hashPassword('queued-password');
 
-    await userService.createUserWithPasswordHash('Lucas Fila', 'lucas.fila@maestro.com', passwordHash);
+    await userService.createUserWithPasswordHash('Lucas Queue', 'lucas.queue@maestro.com', passwordHash);
 
     expect(mockUserRepository.create.mock.calls[0]?.[0].password).toBe(passwordHash);
   });
@@ -115,7 +115,7 @@ describe('UserService (Testes Unitários)', () => {
 
     for (const value of rejected) {
       await expect(
-        userService.createUserWithPasswordHash('Lucas Fila', 'lucas.fila@maestro.com', value)
+        userService.createUserWithPasswordHash('Lucas Queue', 'lucas.queue@maestro.com', value)
       ).rejects.toThrow();
     }
     expect(mockUserRepository.create).not.toHaveBeenCalled();

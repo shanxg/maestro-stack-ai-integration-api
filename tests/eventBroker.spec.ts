@@ -78,15 +78,15 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
       content: Buffer.from(
         JSON.stringify({
           action: 'user_created',
-          data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: passwordHash }
+          data: { name: 'Lucas Queue', email: 'lucas.queue@maestro.com', password: passwordHash }
         })
       )
     };
     await onMessage(message);
 
     expect(userService.createUserWithPasswordHash).toHaveBeenCalledWith(
-      'Lucas Fila',
-      'lucas.fila@maestro.com',
+      'Lucas Queue',
+      'lucas.queue@maestro.com',
       passwordHash
     );
     expect(userService.createUser).not.toHaveBeenCalled();
@@ -117,8 +117,8 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
     const userService = {
       createUserWithPasswordHash: jest.fn(async () => ({
         id: 'queued-id',
-        name: 'Lucas Fila',
-        email: 'lucas.fila@maestro.com'
+        name: 'Lucas Queue',
+        email: 'lucas.queue@maestro.com'
       }))
     };
     fakeChannel.consume.mockClear();
@@ -133,7 +133,7 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
       content: Buffer.from(
         JSON.stringify({
           action: 'user_created',
-          data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
+          data: { name: 'Lucas Queue', email: 'lucas.queue@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
         })
       )
     });
@@ -148,8 +148,8 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
     const userService = {
       createUserWithPasswordHash: jest.fn(async () => ({
         id: 'queued-id',
-        name: 'Lucas Fila',
-        email: 'lucas.fila@maestro.com'
+        name: 'Lucas Queue',
+        email: 'lucas.queue@maestro.com'
       }))
     };
     fakeChannel.consume.mockClear();
@@ -163,15 +163,15 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
         content: Buffer.from(
           JSON.stringify({
             action: 'user_created',
-            data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
+            data: { name: 'Lucas Queue', email: 'lucas.queue@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
           })
         )
       });
 
       // The id identifies the record; the personal fields stay out of every log line.
       expect(logs.text()).toContain('queued-id');
-      expect(logs.text()).not.toContain('lucas.fila@maestro.com');
-      expect(logs.text()).not.toContain('Lucas Fila');
+      expect(logs.text()).not.toContain('lucas.queue@maestro.com');
+      expect(logs.text()).not.toContain('Lucas Queue');
     } finally {
       logs.restore();
     }
@@ -196,7 +196,7 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
       content: Buffer.from(
         JSON.stringify({
           action: 'user_created',
-          data: { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
+          data: { name: 'Lucas Queue', email: 'lucas.queue@maestro.com', password: '$2b$12$' + 'a'.repeat(53) }
         })
       )
     });
@@ -263,7 +263,7 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
   const registration = (data: Record<string, unknown>) => ({
     content: Buffer.from(JSON.stringify({ action: 'user_created', data }))
   });
-  const validData = { name: 'Lucas Fila', email: 'lucas.fila@maestro.com', password: '$2b$12$' + 'a'.repeat(53) };
+  const validData = { name: 'Lucas Queue', email: 'lucas.queue@maestro.com', password: '$2b$12$' + 'a'.repeat(53) };
 
   // TEST 9: Verify the queue is declared with a dead-letter exchange, so rejected messages are kept (issue #50).
   // Condition: Before, 'user_events' had no dead-letter exchange and RabbitMQ deleted every nacked message.
@@ -322,7 +322,7 @@ describe('EventBrokerService (RabbitMQ connection)', () => {
     const onMessage = await startConsumer(service);
     const notJson = { content: Buffer.from('{not-json') };
     const badEmail = registration({ ...validData, email: 'email_invalido' });
-    const plaintext = registration({ ...validData, password: 'senha-em-texto' });
+    const plaintext = registration({ ...validData, password: 'plain-text-password' });
 
     for (const message of [notJson, badEmail, plaintext]) {
       await onMessage(message);

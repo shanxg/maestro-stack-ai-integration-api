@@ -28,25 +28,25 @@ describe('Logger (personal data redaction)', () => {
       new Error('duplicate key value violates unique constraint "users_email_key"'),
       {
         code: '23505',
-        detail: 'Key (email)=(vazou@maestro.test) already exists.'
+        detail: 'Key (email)=(leaked@maestro.test) already exists.'
       }
     );
 
     logger.info(
       {
         component: 'test',
-        email: 'vazou@maestro.test',
-        name: 'Nome Vazado',
-        password: 'senha-vazada-123',
-        user: { email: 'vazou@maestro.test', username: 'vazou@maestro.test', token: 'jwt.vazado.aqui' },
-        req: { headers: { authorization: 'Bearer jwt.vazado.aqui', cookie: 'maestro_session=jwt.vazado.aqui' } }
+        email: 'leaked@maestro.test',
+        name: 'Leaked Name',
+        password: 'leaked-password-123',
+        user: { email: 'leaked@maestro.test', username: 'leaked@maestro.test', token: 'leaked.jwt.here' },
+        req: { headers: { authorization: 'Bearer leaked.jwt.here', cookie: 'maestro_session=leaked.jwt.here' } }
       },
       'Registration received'
     );
     logger.error({ component: 'test', err: duplicateError }, 'Failed to persist the user');
 
     const written = lines.join('');
-    for (const secret of ['vazou@maestro.test', 'Nome Vazado', 'senha-vazada-123', 'jwt.vazado.aqui']) {
+    for (const secret of ['leaked@maestro.test', 'Leaked Name', 'leaked-password-123', 'leaked.jwt.here']) {
       expect({ secret, written: written.includes(secret) }).toEqual({ secret, written: false });
     }
     expect(written).toContain('[REDACTED]');
