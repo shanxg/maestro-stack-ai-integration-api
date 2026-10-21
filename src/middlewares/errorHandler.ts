@@ -50,7 +50,7 @@ export function errorHandler(error: unknown, req: Request, res: Response, next: 
     res.status(error.status).json({
       error: {
         code: 'INVALID_REQUEST_BODY',
-        message: 'O corpo da requisição não pôde ser lido. Verifique se é um JSON válido e dentro do tamanho permitido.'
+        message: 'The request body could not be read. Check that it is valid JSON within the allowed size.'
       }
     });
     return;
@@ -64,7 +64,7 @@ export function errorHandler(error: unknown, req: Request, res: Response, next: 
   res.status(500).json({
     error: {
       code: 'INTERNAL_SERVER_ERROR',
-      message: 'Erro interno no servidor. Tente novamente mais tarde.'
+      message: 'Internal server error. Please try again later.'
     }
   });
 }

@@ -25,7 +25,7 @@ export const validateMiddleware = (schema: ZodObject) => {
         res.status(400).json({
           error: {
             code: 'VALIDATION_FAILURE',
-            message: 'Falha na validação dos dados de entrada.',
+            message: 'Input validation failed.',
             details: error.issues.map((issue) => ({
               field: issue.path.join('.'), // Show the exact field path (for example, "body.email")
               message: issue.message // Include the custom message defined in the schema

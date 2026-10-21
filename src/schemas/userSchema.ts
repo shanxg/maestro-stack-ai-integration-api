@@ -9,24 +9,24 @@ export const createUserSchema = z.object({
     // Name is required, must be a string, and must contain at least three characters
     name: z
       .string({
-        message: 'O nome é obrigatório.'
+        message: 'The name is required.'
       })
-      .min(3, 'O nome deve conter pelo menos 3 caracteres.'),
+      .min(3, 'The name must have at least 3 characters.'),
 
     // Email is required and must use a valid RFC-compliant email structure
     email: z
       .string({
-        message: 'O e-mail é obrigatório.'
+        message: 'The e-mail is required.'
       })
-      .email({ message: 'Insira um formato de e-mail válido (exemplo: usuario@email.com).' }),
+      .email({ message: 'Enter a valid e-mail format (for example: user@example.com).' }),
 
     // APPSEC REMEDIATION - ENFORCE PASSWORD COMPLEXITY AT INGESTION EDGE (CWE-521)
     // Enforces a mandatory minimum string size block to mitigate weak credential exploits.
     password: z
       .string({
-        message: 'A senha é obrigatória.'
+        message: 'The password is required.'
       })
-      .min(8, { message: 'A senha deve conter pelo menos 8 caracteres.' })
+      .min(8, { message: 'The password must have at least 8 characters.' })
   })
 });
 
@@ -37,10 +37,10 @@ export const createUserSchema = z.object({
 export const userIdParamsSchema = z.object({
   params: z.object({
     id: z
-      .string({ message: 'O id do usuário é obrigatório.' })
+      .string({ message: 'The user id is required.' })
       .trim()
-      .min(1, { message: 'O id do usuário não pode ser vazio.' })
-      .max(50, { message: 'O id do usuário pode ter no máximo 50 caracteres.' })
+      .min(1, { message: 'The user id cannot be empty.' })
+      .max(50, { message: 'The user id can have at most 50 characters.' })
   })
 });
 
@@ -50,17 +50,17 @@ export const listUsersSchema = z.object({
   query: z.object({
     // Page size: a whole number between 1 and the cap in src/config.ts
     limit: z.coerce
-      .number({ message: 'O limit deve ser um número.' })
-      .int({ message: 'O limit deve ser um número inteiro.' })
-      .min(1, { message: 'O limit deve ser no mínimo 1.' })
-      .max(settings.pagination.maxLimit, { message: `O limit deve ser no máximo ${settings.pagination.maxLimit}.` })
+      .number({ message: 'The limit must be a number.' })
+      .int({ message: 'The limit must be an integer.' })
+      .min(1, { message: 'The limit must be at least 1.' })
+      .max(settings.pagination.maxLimit, { message: `The limit must be at most ${settings.pagination.maxLimit}.` })
       .default(settings.pagination.defaultLimit),
 
     // Records skipped before the page starts: a whole number, zero or more
     offset: z.coerce
-      .number({ message: 'O offset deve ser um número.' })
-      .int({ message: 'O offset deve ser um número inteiro.' })
-      .min(0, { message: 'O offset não pode ser negativo.' })
+      .number({ message: 'The offset must be a number.' })
+      .int({ message: 'The offset must be an integer.' })
+      .min(0, { message: 'The offset cannot be negative.' })
       .default(0)
   })
 });

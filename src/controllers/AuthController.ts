@@ -29,7 +29,7 @@ export class AuthController {
       res.status(401).json({
         error: {
           code: 'UNAUTHORIZED_ACCESS',
-          message: 'Credenciais inválidas. Verifique o usuário e a senha inseridos.'
+          message: 'Invalid credentials. Check the username and password you entered.'
         }
       });
       return;

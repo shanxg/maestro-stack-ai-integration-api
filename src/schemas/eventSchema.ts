@@ -24,6 +24,6 @@ export const userCreatedEventSchema = z.object({
   data: z.object({
     name: createUserSchema.shape.body.shape.name,
     email: createUserSchema.shape.body.shape.email,
-    password: z.string().regex(BCRYPT_HASH_FORMAT, { message: 'A senha na fila deve ser um hash bcrypt completo.' })
+    password: z.string().regex(BCRYPT_HASH_FORMAT, { message: 'The queued password must be a complete bcrypt hash.' })
   })
 });

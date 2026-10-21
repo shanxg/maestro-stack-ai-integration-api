@@ -17,7 +17,7 @@ import { UsersCache } from '../cache/usersCache.js';
 // req.user is always set; a missing value would mean a route was wired without it, so fail closed with 401.
 function requesterOf(req: Request): AccessTokenClaims {
   if (!req.user) {
-    throw new AppError(401, 'UNAUTHORIZED', 'Token não fornecido');
+    throw new AppError(401, 'UNAUTHORIZED', 'Token not provided');
   }
   return req.user;
 }
@@ -49,7 +49,7 @@ export class UserController {
     // ACCESS RULE (BFLA, OWASP API5:2023): listing every account is for admins only. The check runs
     // before the cache read, so a cached page is never served to an account that may not see it.
     if (!canListUsers(requesterOf(req))) {
-      throw new AppError(403, 'FORBIDDEN', 'Apenas administradores podem listar os usuários.');
+      throw new AppError(403, 'FORBIDDEN', 'Only administrators can list the users.');
     }
 
     // Read pagination from the query string. validateMiddleware(listUsersSchema) has already
@@ -111,7 +111,7 @@ export class UserController {
     // ACCESS RULE (BOLA, OWASP API1:2023): a record is visible to its owner and to admins. The check
     // runs before the lookup, so another account's id gets 403 whether that account exists or not.
     if (!canReadUser(requesterOf(req), id)) {
-      throw new AppError(403, 'FORBIDDEN', 'Você só pode consultar o seu próprio cadastro.');
+      throw new AppError(403, 'FORBIDDEN', 'You can only view your own account.');
     }
 
     // Forward the lookup to the service layer.
@@ -122,7 +122,7 @@ export class UserController {
       res.status(404).json({
         error: {
           code: 'NOT_FOUND',
-          message: 'O usuário solicitado não foi localizado na base de dados relacional.'
+          message: 'The requested user was not found in the relational database.'
         }
       });
       return;
@@ -145,7 +145,7 @@ export class UserController {
       res.status(404).json({
         error: {
           code: 'NOT_FOUND',
-          message: 'O usuário solicitado não foi localizado na base de dados relacional.'
+          message: 'The requested user was not found in the relational database.'
         }
       });
       return;
@@ -196,7 +196,7 @@ export class UserController {
       throw new AppError(
         503,
         'SERVICE_UNAVAILABLE',
-        'O serviço de cadastro está temporariamente indisponível. Tente novamente em instantes.'
+        'The registration service is temporarily unavailable. Please try again shortly.'
       );
     }
 
@@ -206,7 +206,7 @@ export class UserController {
     // The consumer (EventBrokerService) now invalidates the cache right after the row is written.
 
     res.status(202).json({
-      message: 'Solicitação de cadastro recebida com sucesso! Processando em lote assíncrono na fila de eventos...'
+      message: 'Registration request received! Processing it asynchronously through the event queue...'
     });
   };
 }
